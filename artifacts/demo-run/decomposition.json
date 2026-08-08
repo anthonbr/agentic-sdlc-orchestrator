@@ -1,0 +1,28 @@
+{
+  "work_items": [
+    {
+      "id": "WI-001",
+      "source_requirement_id": "REQ-001",
+      "source_requirement": "Accept a long URL.",
+      "action": "Define URL submission handling and validate the long URL."
+    },
+    {
+      "id": "WI-002",
+      "source_requirement_id": "REQ-002",
+      "source_requirement": "Generate a unique short URL.",
+      "action": "Define short-code generation with a uniqueness guarantee."
+    },
+    {
+      "id": "WI-003",
+      "source_requirement_id": "REQ-003",
+      "source_requirement": "Redirect the short URL to the original URL.",
+      "action": "Define short-code lookup and redirect behavior."
+    },
+    {
+      "id": "WI-004",
+      "source_requirement_id": "REQ-004",
+      "source_requirement": "Return an error for unknown short URLs.",
+      "action": "Define the error response for an unknown short code."
+    }
+  ]
+}
