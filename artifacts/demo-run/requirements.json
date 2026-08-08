@@ -1,0 +1,27 @@
+{
+  "project_name": "URL Shortener",
+  "submitted_requirements": [
+    "Accept a long URL.",
+    "Generate a unique short URL.",
+    "Redirect the short URL to the original URL.",
+    "Return an error for unknown short URLs."
+  ],
+  "normalized_requirements": [
+    {
+      "id": "REQ-001",
+      "text": "Accept a long URL."
+    },
+    {
+      "id": "REQ-002",
+      "text": "Generate a unique short URL."
+    },
+    {
+      "id": "REQ-003",
+      "text": "Redirect the short URL to the original URL."
+    },
+    {
+      "id": "REQ-004",
+      "text": "Return an error for unknown short URLs."
+    }
+  ]
+}
