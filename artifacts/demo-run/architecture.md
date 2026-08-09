@@ -1,6 +1,6 @@
 # Architecture
 
-A small service design covering 4 requirements through 8 planned steps.
+A small service design covering 4 requirements through 7 planned steps.
 
 ## Conceptual components
 
