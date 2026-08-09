@@ -1,8 +1,17 @@
-"""Deterministic workflow nodes for the V0.1 orchestration prototype."""
+"""Deterministic workflow nodes for the V0.2 orchestration prototype."""
 
 from __future__ import annotations
 
+from typing import cast
+
+from langgraph.types import interrupt
+
 from agentic_sdlc.state import (
+    MAX_PLAN_REVISIONS_REASON,
+    PLAN_REJECTED_REASON,
+    ApprovalDecision,
+    ApprovalEvent,
+    ApprovalResponse,
     ArchitectureArtifact,
     PlanStep,
     TestPlanArtifact,
@@ -32,6 +41,11 @@ def requirements_intake(state: WorkflowState) -> WorkflowState:
         "requirements": original_requirements,
         "normalized_requirements": normalized_requirements,
         "entry_gate_passed": False,
+        "implementation_plan_decision": None,
+        "approval_feedback": "",
+        "plan_revision_count": 0,
+        "approval_history": [],
+        "safe_stop_reason": "",
         "synchronization_complete": False,
         "exit_gate_passed": False,
         "workflow_status": "pending",
@@ -145,7 +159,91 @@ def create_implementation_plan(state: WorkflowState) -> WorkflowState:
 
     return {
         "implementation_plan": implementation_plan,
+        "workflow_status": "awaiting_approval",
         "trace": ["[create_implementation_plan] complete"],
+    }
+
+
+def implementation_plan_approval(state: WorkflowState) -> WorkflowState:
+    """Pause for a human decision and record the response on resume."""
+
+    response = cast(
+        ApprovalResponse,
+        interrupt(
+            {
+                "checkpoint": "implementation_plan",
+                "message": "Implementation plan requires approval.",
+                "implementation_plan": state["implementation_plan"],
+                "revision_number": state.get("plan_revision_count", 0),
+                "allowed_decisions": ["APPROVE", "REQUEST_CHANGES", "REJECT"],
+            }
+        ),
+    )
+    decision = response.get("decision")
+    if decision not in {"APPROVE", "REQUEST_CHANGES", "REJECT"}:
+        raise ValueError("Unsupported implementation-plan approval decision.")
+
+    feedback = response.get("feedback", "").strip()
+    if decision == "REQUEST_CHANGES" and not feedback:
+        raise ValueError("REQUEST_CHANGES requires human feedback.")
+
+    revision_number = state.get("plan_revision_count", 0)
+    event: ApprovalEvent = {
+        "sequence": len(state.get("approval_history", [])) + 1,
+        "checkpoint": "implementation_plan",
+        "decision": cast(ApprovalDecision, decision),
+        "feedback": feedback,
+        "revision_number": revision_number,
+    }
+    return {
+        "implementation_plan_decision": cast(ApprovalDecision, decision),
+        "approval_feedback": feedback,
+        "approval_history": [event],
+        "workflow_status": "pending",
+        "trace": [f"[implementation_plan_approval] {decision.lower()}"],
+    }
+
+
+def revise_implementation_plan(state: WorkflowState) -> WorkflowState:
+    """Append a deterministic plan action that preserves the human feedback."""
+
+    revision_number = state.get("plan_revision_count", 0) + 1
+    revised_plan = [*state["implementation_plan"]]
+    revised_plan.append(
+        {
+            "order": len(revised_plan) + 1,
+            "action": (
+                f"Address implementation-plan review feedback (revision "
+                f"{revision_number}): {state['approval_feedback']}"
+            ),
+            "work_item_ids": [item["id"] for item in state["work_items"]],
+        }
+    )
+    return {
+        "implementation_plan": revised_plan,
+        "implementation_plan_decision": None,
+        "approval_feedback": "",
+        "plan_revision_count": revision_number,
+        "workflow_status": "awaiting_approval",
+        "trace": [f"[revise_implementation_plan] revision {revision_number} complete"],
+    }
+
+
+def safe_stop(state: WorkflowState) -> WorkflowState:
+    """Terminate governed execution without running downstream design work."""
+
+    reason = (
+        PLAN_REJECTED_REASON
+        if state.get("implementation_plan_decision") == "REJECT"
+        else MAX_PLAN_REVISIONS_REASON
+    )
+    return {
+        "safe_stop_reason": reason,
+        "synchronization_complete": False,
+        "exit_gate_passed": False,
+        "workflow_status": "safe_stopped",
+        "errors": [*state.get("errors", []), reason],
+        "trace": ["[safe_stop] complete"],
     }
 
 
@@ -250,7 +348,7 @@ def synchronize(state: WorkflowState) -> WorkflowState:
 
 
 def exit_gate(state: WorkflowState) -> WorkflowState:
-    """Validate all required V0.1 outputs before declaring success."""
+    """Validate all required V0.2 outputs before declaring success."""
 
     validations = {
         "processed requirements": bool(
@@ -259,6 +357,10 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
         ),
         "requirement decomposition": bool(state.get("work_items")),
         "implementation plan": bool(state.get("implementation_plan")),
+        "implementation plan approval": bool(
+            state.get("implementation_plan_decision") == "APPROVE"
+            and state.get("approval_history")
+        ),
         "architecture": bool(
             state.get("architecture")
             and state["architecture"].get("components")
