@@ -1,6 +1,6 @@
 # Test Plan
 
-Verify each requirement at the service boundary, then cover validation and repeat-request behavior.
+Verify each approved requirement at the service boundary; V0.4 plans the work but does not execute these tests.
 
 ## Cases
 
@@ -8,5 +8,3 @@ Verify each requirement at the service boundary, then cover validation and repea
 - **Unique short-code creation** — Distinct stored URLs do not receive colliding codes.
 - **Redirect correctness** — A known short code redirects to its original URL.
 - **Unknown short code** — An unknown code returns the defined error response.
-- **Malformed input** — An invalid long URL is rejected clearly.
-- **Repeated request** — Define and verify whether repeated submissions reuse an existing short code or generate a new one.

@@ -1,6 +1,6 @@
 # Architecture
 
-A small service design covering 4 requirements through 7 planned steps.
+A small conceptual service design supporting 6 approved engineering tasks; the tasks are not executed in V0.4.
 
 ## Conceptual components
 
@@ -13,4 +13,4 @@ A small service design covering 4 requirements through 7 planned steps.
 
 - Keep transport, shortening logic, and storage concerns separate.
 - Define the storage boundary now; choose a concrete database later.
-- Treat unknown-code behavior as an explicit API contract.
+- Treat approved ambiguities as unresolved until their linked tasks decide them.

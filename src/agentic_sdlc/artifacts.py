@@ -1,29 +1,24 @@
-"""Write compact, reviewable artifacts after a completed workflow run."""
+"""Write compact, reviewable artifacts after a terminal V0.4 workflow run."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from agentic_sdlc.state import WorkflowState
+from agentic_sdlc.state import ApprovalEvent, TaskGraphData, WorkflowState
 
 
 ARTIFACT_FILENAMES = (
     "requirements.json",
     "requirement_analysis.md",
-    "decomposition.json",
-    "implementation_plan.md",
+    "approved_requirement_spec.json",
+    "task_graph.json",
+    "task_graph.md",
     "architecture.md",
     "test_plan.md",
     "summary.md",
 )
-SAFE_STOP_ARTIFACT_FILENAMES = (
-    "requirements.json",
-    "requirement_analysis.md",
-    "decomposition.json",
-    "implementation_plan.md",
-    "summary.md",
-)
+LEGACY_ARTIFACT_FILENAMES = ("decomposition.json", "implementation_plan.md")
 
 
 def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
@@ -39,13 +34,12 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
         raise ValueError("Artifacts require a successful or safely stopped workflow.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    generated_filenames = (
-        ARTIFACT_FILENAMES if is_success else _safe_stop_filenames(state)
-    )
+    generated = ARTIFACT_FILENAMES if is_success else _safe_stop_filenames(state)
     paths = {filename: output_dir / filename for filename in ARTIFACT_FILENAMES}
-
-    for filename in set(ARTIFACT_FILENAMES) - set(generated_filenames):
-        paths[filename].unlink(missing_ok=True)
+    for filename in (
+        set(ARTIFACT_FILENAMES) | set(LEGACY_ARTIFACT_FILENAMES)
+    ) - set(generated):
+        (output_dir / filename).unlink(missing_ok=True)
 
     _write_json(
         paths["requirements.json"],
@@ -56,15 +50,20 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
             "normalized_requirements": state["normalized_requirements"],
         },
     )
-    if "requirement_analysis.md" in generated_filenames:
+    if "requirement_analysis.md" in generated:
         paths["requirement_analysis.md"].write_text(
             _requirement_analysis_markdown(state), encoding="utf-8"
         )
-    if "decomposition.json" in generated_filenames:
-        _write_json(paths["decomposition.json"], {"work_items": state["work_items"]})
-    if "implementation_plan.md" in generated_filenames:
-        paths["implementation_plan.md"].write_text(
-            _implementation_plan_markdown(state), encoding="utf-8"
+    if "approved_requirement_spec.json" in generated:
+        _write_json(
+            paths["approved_requirement_spec.json"],
+            state["approved_requirement_spec"],
+        )
+    if "task_graph.json" in generated:
+        graph = state.get("approved_task_graph") or state["candidate_task_graph"]
+        _write_json(paths["task_graph.json"], graph)
+        paths["task_graph.md"].write_text(
+            _task_graph_markdown(state, graph), encoding="utf-8"
         )
     if is_success:
         paths["architecture.md"].write_text(
@@ -74,38 +73,25 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
             _test_plan_markdown(state), encoding="utf-8"
         )
     paths["summary.md"].write_text(
-        _summary_markdown(state, generated_filenames), encoding="utf-8"
+        _summary_markdown(state, generated), encoding="utf-8"
     )
-    return [paths[filename] for filename in generated_filenames]
+    return [paths[filename] for filename in generated]
 
 
 def _safe_stop_filenames(state: WorkflowState) -> tuple[str, ...]:
     filenames = ["requirements.json"]
     if state.get("requirement_analysis"):
         filenames.append("requirement_analysis.md")
-    if state.get("work_items"):
-        filenames.append("decomposition.json")
-    if state.get("implementation_plan"):
-        filenames.append("implementation_plan.md")
+    if state.get("approved_requirement_spec"):
+        filenames.append("approved_requirement_spec.json")
+    if state.get("candidate_task_graph"):
+        filenames.extend(["task_graph.json", "task_graph.md"])
     filenames.append("summary.md")
     return tuple(filenames)
 
 
 def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-
-
-def _implementation_plan_markdown(state: WorkflowState) -> str:
-    lines = ["# Implementation Plan", ""]
-    for step in state["implementation_plan"]:
-        related_items = ", ".join(step["work_item_ids"])
-        lines.extend(
-            [
-                f"{step['order']}. {step['action']}",
-                f"   - Related work items: {related_items}",
-            ]
-        )
-    return "\n".join(lines) + "\n"
 
 
 def _requirement_analysis_markdown(state: WorkflowState) -> str:
@@ -152,50 +138,104 @@ def _requirement_analysis_markdown(state: WorkflowState) -> str:
                 f"   - Model: {record['model_name']}",
                 "   - Normalized problem: "
                 + record["analysis"]["normalized_problem_statement"],
+                "   - Ambiguities: "
+                + (
+                    "; ".join(record["analysis"]["ambiguities"])
+                    or "None identified."
+                ),
+                "   - Assumptions: "
+                + (
+                    "; ".join(record["analysis"]["assumptions"])
+                    or "None identified."
+                ),
             ]
-        )
-        ambiguities = record["analysis"]["ambiguities"]
-        assumptions = record["analysis"]["assumptions"]
-        lines.append(
-            "   - Ambiguities: "
-            + ("; ".join(ambiguities) if ambiguities else "None identified.")
-        )
-        lines.append(
-            "   - Assumptions: "
-            + ("; ".join(assumptions) if assumptions else "None identified.")
         )
         if record["reviewer_feedback"]:
             lines.append(f"   - Reviewer feedback: {record['reviewer_feedback']}")
 
     lines.extend(["", "## Human requirement-review history", ""])
-    for event in state.get("requirement_review_history", []):
-        lines.extend(
-            [
-                f"{event['sequence']}. {event['decision']}",
-                f"   - Revision: {event['revision_number']}",
-            ]
-        )
-        if event["feedback"]:
-            lines.append(f"   - Feedback: {event['feedback']}")
+    _append_approval_history(lines, state.get("requirement_review_history", []))
+    return "\n".join(lines) + "\n"
+
+
+def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
+    semantics = state["task_graph_semantics"]
+    tasks = {task["task_id"]: task for task in graph["tasks"]}
+    lines = [
+        "# Engineering Task Dependency Graph",
+        "",
+        f"- Graph: {graph['graph_id']}",
+        f"- Version: {graph['version']}",
+        f"- Requirement specification: {graph['requirement_spec_id']}",
+        f"- Content hash: `{graph['content_hash']}`",
+        "- Execution status: not executed (planning only)",
+        "",
+        "## Derived execution layers",
+        "",
+    ]
+    for layer_number, task_ids in enumerate(
+        semantics["execution_layers"], start=1
+    ):
+        parallel = " — parallel" if len(task_ids) > 1 else ""
+        lines.extend([f"### Layer {layer_number}{parallel}", ""])
+        for task_id in task_ids:
+            task = tasks[task_id]
+            depends_on = ", ".join(task["depends_on"]) or "ENTRY"
+            lines.extend(
+                [
+                    f"#### {task_id} — {task['title']}",
+                    "",
+                    f"- Type: {task['task_type']}",
+                    f"- Depends on: {depends_on}",
+                    "- Requirements: "
+                    + (", ".join(task["requirement_refs"]) or "None"),
+                    "- Acceptance criteria: "
+                    + (", ".join(task["acceptance_criteria_refs"]) or "None"),
+                    "- Risks: " + (", ".join(task["risk_refs"]) or "None"),
+                    "- Ambiguities: "
+                    + (", ".join(task["ambiguity_refs"]) or "None"),
+                    f"- Description: {task['description']}",
+                    "- Expected outputs: "
+                    + (", ".join(task["expected_outputs"]) or "None"),
+                    "",
+                ]
+            )
+    lines.extend(
+        [
+            "## Deterministic graph semantics",
+            "",
+            "- ENTRY-ready: " + ", ".join(semantics["entry_ready_tasks"]),
+            "- EXIT predecessors: "
+            + ", ".join(semantics["exit_predecessor_tasks"]),
+            "- Synchronization points: "
+            + (", ".join(semantics["synchronization_points"]) or "None"),
+            "- Topological order: " + ", ".join(semantics["topological_order"]),
+            "",
+            "## Human task-graph review history",
+            "",
+        ]
+    )
+    _append_approval_history(lines, state.get("task_graph_review_history", []))
     return "\n".join(lines) + "\n"
 
 
 def _architecture_markdown(state: WorkflowState) -> str:
     architecture = state["architecture"]
-    lines = [
-        "# Architecture",
-        "",
-        architecture["summary"],
-        "",
-        "## Conceptual components",
-        "",
-        *(f"- {component}" for component in architecture["components"]),
-        "",
-        "## Design notes",
-        "",
-        *(f"- {note}" for note in architecture["design_notes"]),
-    ]
-    return "\n".join(lines) + "\n"
+    return "\n".join(
+        [
+            "# Architecture",
+            "",
+            architecture["summary"],
+            "",
+            "## Conceptual components",
+            "",
+            *(f"- {component}" for component in architecture["components"]),
+            "",
+            "## Design notes",
+            "",
+            *(f"- {note}" for note in architecture["design_notes"]),
+        ]
+    ) + "\n"
 
 
 def _test_plan_markdown(state: WorkflowState) -> str:
@@ -220,6 +260,11 @@ def _summary_markdown(
         + state.get("requirement_analysis_status", "not reached"),
         "- Requirement review: "
         + (state.get("requirement_review_decision") or "not reached"),
+        "- Approved requirement spec: "
+        + state.get("approved_requirement_spec", {}).get("spec_id", "not reached"),
+        "- Task planning: " + state.get("task_planning_status", "not reached"),
+        "- Task-graph review: "
+        + (state.get("task_graph_decision") or "not reached"),
         "- Synchronization: "
         + (
             "not reached"
@@ -235,64 +280,44 @@ def _summary_markdown(
         "",
     ]
     if safe_stopped:
-        downstream_work = (
-            "architecture and test planning"
-            if state.get("implementation_plan")
-            else "requirement decomposition and all later planning"
-        )
         lines.extend(
             [
                 f"Execution stopped safely: {state['safe_stop_reason']}",
-                f"Downstream {downstream_work} did not run.",
+                "No engineering task was executed.",
                 "",
             ]
         )
     else:
         lines.extend(
             [
-                "The governed V0.3 workflow validated an LLM-backed requirement "
-                "analysis, received requirement and implementation-plan approvals, "
-                "ran deterministic architecture and test planning in parallel, "
-                "synchronized both results, and validated the final state.",
+                "The governed V0.4 workflow converted the approved analysis into an "
+                "immutable requirement specification, validated and approved an "
+                "LLM-proposed engineering dependency graph, and completed the "
+                "existing deterministic artifact branches without executing tasks.",
                 "",
             ]
         )
 
-    lines.extend(
-        ["## Human Approval History", "", "### Requirement Analysis", ""]
-    )
-    for event in state.get("requirement_review_history", []):
-        lines.extend(
-            [
-                f"{event['sequence']}. {event['decision']}",
-                f"   - Revision: {event['revision_number']}",
-            ]
-        )
-        if event["feedback"]:
-            lines.append(f"   - Feedback: {event['feedback']}")
+    lines.extend(["## Human Approval History", "", "### Requirement Analysis", ""])
+    _append_approval_history(lines, state.get("requirement_review_history", []))
+    lines.extend(["", "### Engineering Task Graph", ""])
+    _append_approval_history(lines, state.get("task_graph_review_history", []))
 
-    if state.get("requirement_analysis_failures"):
-        lines.extend(["", "### Requirement-analysis failures", ""])
-        for failure in state["requirement_analysis_failures"]:
-            lines.extend(
-                [
-                    f"{failure['sequence']}. Attempt {failure['attempt_number']}",
-                    f"   - Revision: {failure['revision_number']}",
-                    f"   - Retryable: {str(failure['retryable']).lower()}",
-                    f"   - Reason: {failure['reason']}",
-                ]
-            )
-
-    lines.extend(["", "### Implementation Plan", ""])
-    for event in state.get("approval_history", []):
-        lines.extend(
-            [
-                f"{event['sequence']}. {event['decision']}",
-                f"   - Revision: {event['revision_number']}",
-            ]
-        )
-        if event["feedback"]:
-            lines.append(f"   - Feedback: {event['feedback']}")
+    for heading, failures in (
+        ("Requirement-analysis failures", state.get("requirement_analysis_failures", [])),
+        ("Task-planning failures", state.get("task_planning_failures", [])),
+    ):
+        if failures:
+            lines.extend(["", f"### {heading}", ""])
+            for failure in failures:
+                lines.extend(
+                    [
+                        f"{failure['sequence']}. Attempt {failure['attempt_number']}",
+                        f"   - Revision: {failure['revision_number']}",
+                        f"   - Retryable: {str(failure['retryable']).lower()}",
+                        f"   - Reason: {failure['reason']}",
+                    ]
+                )
 
     lines.extend(
         [
@@ -303,3 +328,20 @@ def _summary_markdown(
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def _append_approval_history(
+    lines: list[str], events: list[ApprovalEvent]
+) -> None:
+    if not events:
+        lines.append("No decision recorded.")
+        return
+    for event in events:
+        lines.extend(
+            [
+                f"{event['sequence']}. {event['decision']}",
+                f"   - Revision: {event['revision_number']}",
+            ]
+        )
+        if event["feedback"]:
+            lines.append(f"   - Feedback: {event['feedback']}")

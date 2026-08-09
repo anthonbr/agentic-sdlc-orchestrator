@@ -1,4 +1,4 @@
-"""Typed shared state and demonstration input for the V0.3 workflow."""
+"""Typed shared state and demonstration input for the V0.4 workflow."""
 
 from __future__ import annotations
 
@@ -7,27 +7,10 @@ from typing import Annotated, Literal, TypedDict
 
 
 class NormalizedRequirement(TypedDict):
-    """A normalized requirement with a stable workflow identifier."""
+    """Submitted requirement with a stable intake identifier."""
 
     id: str
     text: str
-
-
-class WorkItem(TypedDict):
-    """An actionable item traced back to one source requirement."""
-
-    id: str
-    source_requirement_id: str
-    source_requirement: str
-    action: str
-
-
-class PlanStep(TypedDict):
-    """One ordered implementation-planning step."""
-
-    order: int
-    action: str
-    work_item_ids: list[str]
 
 
 class ArchitectureArtifact(TypedDict):
@@ -56,7 +39,7 @@ ApprovalDecision = Literal["APPROVE", "REQUEST_CHANGES", "REJECT"]
 
 
 class ApprovalResponse(TypedDict):
-    """Human response used to resume either governance checkpoint."""
+    """Human response used to resume a governance checkpoint."""
 
     decision: ApprovalDecision
     feedback: str
@@ -104,7 +87,105 @@ class RequirementAnalysisRecord(TypedDict):
 
 
 class RequirementAnalysisFailure(TypedDict):
-    """One provider or schema failure considered by retry policy."""
+    """One requirement-analysis provider or schema failure."""
+
+    sequence: int
+    revision_number: int
+    attempt_number: int
+    reason: str
+    retryable: bool
+
+
+class RequirementSpecItemData(TypedDict):
+    """JSON-safe canonical approved requirement item."""
+
+    item_id: str
+    lineage_id: str
+    text: str
+
+
+class ApprovedRequirementSpecData(TypedDict):
+    """JSON-safe immutable requirement specification."""
+
+    spec_id: str
+    lineage_id: str
+    version: int
+    supersedes_spec_id: str | None
+    source_analysis_revision: int
+    created_at: str
+    content_hash: str
+    normalized_problem_statement: str
+    requirement_type: Literal["greenfield", "brownfield", "ambiguous"]
+    assumptions: list[str]
+    functional_requirements: list[RequirementSpecItemData]
+    nonfunctional_requirements: list[RequirementSpecItemData]
+    constraints: list[RequirementSpecItemData]
+    acceptance_criteria: list[RequirementSpecItemData]
+    risks: list[RequirementSpecItemData]
+    ambiguities: list[RequirementSpecItemData]
+
+
+TaskTypeData = Literal[
+    "DESIGN", "IMPLEMENTATION", "TEST", "DOCUMENTATION", "VALIDATION", "RELEASE"
+]
+TaskPlanningStatus = Literal["pending", "candidate", "validated", "failed"]
+
+
+class TaskData(TypedDict):
+    """JSON-safe canonical task definition."""
+
+    task_id: str
+    lineage_id: str
+    source_key: str
+    title: str
+    description: str
+    task_type: TaskTypeData
+    depends_on: list[str]
+    requirement_refs: list[str]
+    acceptance_criteria_refs: list[str]
+    risk_refs: list[str]
+    ambiguity_refs: list[str]
+    expected_outputs: list[str]
+
+
+class TaskGraphData(TypedDict):
+    """JSON-safe canonical engineering task graph."""
+
+    graph_id: str
+    lineage_id: str
+    version: int
+    requirement_spec_id: str
+    requirement_spec_version: int
+    supersedes_graph_id: str | None
+    created_at: str
+    content_hash: str
+    tasks: list[TaskData]
+
+
+class TaskGraphSemanticsData(TypedDict):
+    """JSON-safe derived interpretation of one canonical task graph."""
+
+    topological_order: list[str]
+    execution_layers: list[list[str]]
+    entry_ready_tasks: list[str]
+    exit_predecessor_tasks: list[str]
+    synchronization_points: list[str]
+
+
+class TaskGraphRecord(TypedDict):
+    """One validated candidate graph with generation lineage."""
+
+    sequence: int
+    revision_number: int
+    attempt_number: int
+    prompt_version: str
+    model_name: str
+    reviewer_feedback: str
+    task_graph: TaskGraphData
+
+
+class TaskPlanningFailure(TypedDict):
+    """One provider, schema, or deterministic graph-validation failure."""
 
     sequence: int
     revision_number: int
@@ -125,7 +206,7 @@ WorkflowStatus = Literal[
 
 
 class WorkflowState(TypedDict, total=False):
-    """Shared state updated by governed LangGraph nodes."""
+    """Shared JSON-safe state updated by the static LangGraph control plane."""
 
     project_name: str
     requirements: list[str]
@@ -149,12 +230,22 @@ class WorkflowState(TypedDict, total=False):
     requirement_review_decision: ApprovalDecision | None
     requirement_review_feedback: str
     requirement_review_history: Annotated[list[ApprovalEvent], operator.add]
-    work_items: list[WorkItem]
-    implementation_plan: list[PlanStep]
-    implementation_plan_decision: ApprovalDecision | None
-    approval_feedback: str
-    plan_revision_count: int
-    approval_history: Annotated[list[ApprovalEvent], operator.add]
+    approved_requirement_spec: ApprovedRequirementSpecData
+    task_planning_candidate: object | None
+    task_planning_status: TaskPlanningStatus
+    task_planning_attempt_count: int
+    task_planning_retryable: bool
+    task_planning_error: str
+    task_graph_revision_count: int
+    task_planning_model: str
+    candidate_task_graph: TaskGraphData
+    task_graph_semantics: TaskGraphSemanticsData
+    approved_task_graph: TaskGraphData
+    task_graph_history: Annotated[list[TaskGraphRecord], operator.add]
+    task_planning_failures: Annotated[list[TaskPlanningFailure], operator.add]
+    task_graph_decision: ApprovalDecision | None
+    task_graph_feedback: str
+    task_graph_review_history: Annotated[list[ApprovalEvent], operator.add]
     safe_stop_reason: str
     architecture: ArchitectureArtifact
     test_plan: TestPlanArtifact
@@ -165,14 +256,10 @@ class WorkflowState(TypedDict, total=False):
     trace: Annotated[list[str], operator.add]
 
 
-MAX_PLAN_REVISIONS = 3
 MAX_REQUIREMENT_ANALYSIS_ATTEMPTS = 3
 MAX_REQUIREMENT_REVISIONS = 3
-PLAN_REJECTED_REASON = "Implementation plan rejected by human."
-MAX_PLAN_REVISIONS_REASON = (
-    f"Maximum implementation plan revisions ({MAX_PLAN_REVISIONS}) reached; "
-    "no further revisions are allowed."
-)
+MAX_TASK_PLANNING_ATTEMPTS = 3
+MAX_TASK_GRAPH_REVISIONS = 3
 REQUIREMENT_ANALYSIS_REJECTED_REASON = "Requirement analysis rejected by human."
 MAX_REQUIREMENT_REVISIONS_REASON = (
     f"Maximum requirement-analysis revisions ({MAX_REQUIREMENT_REVISIONS}) reached; "
@@ -180,6 +267,14 @@ MAX_REQUIREMENT_REVISIONS_REASON = (
 )
 REQUIREMENT_ANALYSIS_ATTEMPTS_REASON = (
     f"Requirement analysis failed after {MAX_REQUIREMENT_ANALYSIS_ATTEMPTS} attempts."
+)
+TASK_GRAPH_REJECTED_REASON = "Engineering task graph rejected by human."
+MAX_TASK_GRAPH_REVISIONS_REASON = (
+    f"Maximum task-graph revisions ({MAX_TASK_GRAPH_REVISIONS}) reached; "
+    "no further revisions are allowed."
+)
+TASK_PLANNING_ATTEMPTS_REASON = (
+    f"Task planning failed after {MAX_TASK_PLANNING_ATTEMPTS} attempts."
 )
 
 DEMO_REQUIREMENTS = (

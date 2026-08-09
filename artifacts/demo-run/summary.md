@@ -5,23 +5,22 @@
 - Entry gate: passed
 - Requirement analysis: validated
 - Requirement review: APPROVE
+- Approved requirement spec: SPEC-67DBB6D9EABE-V001
+- Task planning: validated
+- Task-graph review: APPROVE
 - Synchronization: complete
 - Exit gate: passed
 
-The governed V0.3 workflow validated an LLM-backed requirement analysis, received requirement and implementation-plan approvals, ran deterministic architecture and test planning in parallel, synchronized both results, and validated the final state.
+The governed V0.4 workflow converted the approved analysis into an immutable requirement specification, validated and approved an LLM-proposed engineering dependency graph, and completed the existing deterministic artifact branches without executing tasks.
 
 ## Human Approval History
 
 ### Requirement Analysis
 
-1. REQUEST_CHANGES
+1. APPROVE
    - Revision: 0
-   - Feedback: Treat URL expiration behavior as an unresolved ambiguity and do not assume
-whether shortened URLs expire.
-2. APPROVE
-   - Revision: 1
 
-### Implementation Plan
+### Engineering Task Graph
 
 1. APPROVE
    - Revision: 0
@@ -30,8 +29,9 @@ whether shortened URLs expire.
 
 - `requirements.json`
 - `requirement_analysis.md`
-- `decomposition.json`
-- `implementation_plan.md`
+- `approved_requirement_spec.json`
+- `task_graph.json`
+- `task_graph.md`
 - `architecture.md`
 - `test_plan.md`
 - `summary.md`
