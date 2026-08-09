@@ -22,7 +22,7 @@ def write_workflow_diagram(output_path: Path) -> None:
 
 
 def main(arguments: list[str] | None = None) -> int:
-    """Run the one V0.3 command without introducing a CLI dependency."""
+    """Run the one V0.4 command without introducing a CLI dependency."""
 
     args = list(sys.argv[1:] if arguments is None else arguments)
     if args != ["demo"]:
@@ -54,8 +54,8 @@ def main(arguments: list[str] | None = None) -> int:
         payload = _interrupt_payload(state)
         if payload.get("stage") == "requirement_analysis_review":
             response = _prompt_for_requirement_analysis_decision(payload)
-        elif payload.get("stage") == "implementation_plan_review":
-            response = _prompt_for_implementation_plan_decision(payload)
+        elif payload.get("stage") == "task_graph_review":
+            response = _prompt_for_task_graph_decision(payload)
         else:
             raise ValueError("The workflow paused at an unknown review stage.")
         state = resume_workflow(
@@ -122,16 +122,65 @@ def _print_analysis_list(label: str, values: list[str]) -> None:
         print(f"  - {value}")
 
 
-def _prompt_for_implementation_plan_decision(
-    payload: dict[str, Any],
-) -> ApprovalResponse:
-    """Collect one valid response for the active approval interrupt."""
+def _prompt_for_task_graph_decision(payload: dict[str, Any]) -> ApprovalResponse:
+    """Show canonical identities and derived layers before human authority."""
 
-    print("\nImplementation plan requires approval.")
-    print(f"Current revision: {payload['revision_number']}")
-    for step in payload["implementation_plan"]:
-        print(f"  {step['order']}. {step['action']}")
+    spec = payload["approved_requirement_spec"]
+    graph = payload["candidate_task_graph"]
+    semantics = payload["graph_semantics"]
+    tasks = {task["task_id"]: task for task in graph["tasks"]}
 
+    print("\nEngineering task graph requires human review.")
+    print(
+        f"Approved requirement spec: {spec['spec_id']} "
+        f"(analysis revision {spec['source_analysis_revision']})"
+    )
+    for label, field_name in (
+        ("Functional", "functional_requirements"),
+        ("Nonfunctional", "nonfunctional_requirements"),
+        ("Constraints", "constraints"),
+        ("Acceptance criteria", "acceptance_criteria"),
+        ("Risks", "risks"),
+        ("Ambiguities", "ambiguities"),
+    ):
+        values = spec[field_name]
+        if values:
+            print(f"{label} IDs: " + ", ".join(item["item_id"] for item in values))
+
+    print(f"TaskGraph revision: {payload['revision_number']}")
+    for layer_number, task_ids in enumerate(
+        semantics["execution_layers"], start=1
+    ):
+        suffix = " — parallel" if len(task_ids) > 1 else ""
+        print(f"\nLayer {layer_number}{suffix}")
+        for task_id in task_ids:
+            task = tasks[task_id]
+            print(f"  {task_id}  {task['title']}")
+            print(f"    Type: {task['task_type']}")
+            print(
+                "    Depends on: "
+                + (", ".join(task["depends_on"]) or "ENTRY")
+            )
+            print(
+                "    Requirements: "
+                + (", ".join(task["requirement_refs"]) or "None")
+            )
+            print(
+                "    Acceptance: "
+                + (", ".join(task["acceptance_criteria_refs"]) or "None")
+            )
+            print("    Risks: " + (", ".join(task["risk_refs"]) or "None"))
+            print(
+                "    Ambiguities: "
+                + (", ".join(task["ambiguity_refs"]) or "None")
+            )
+    print(
+        "\nSynchronization points: "
+        + (", ".join(semantics["synchronization_points"]) or "None")
+    )
+    print(
+        "EXIT predecessors: " + ", ".join(semantics["exit_predecessor_tasks"])
+    )
     return _prompt_for_decision()
 
 

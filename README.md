@@ -1,78 +1,147 @@
 # Agentic SDLC Orchestrator
 
-This repository is the foundation for an Agentic Software Engineering / SDLC
-orchestration system. The long-term goal is controlled execution across
-requirements, design, implementation, testing, documentation, release readiness,
-and governance.
+This repository incrementally demonstrates controlled, auditable execution across
+the software-development lifecycle.
 
-## V0.3 prototype
+## Version progression
 
-V0.3 introduces the project's first LLM-backed reasoning stage: a Requirement
-Analyst converts the raw demonstration request into a validated, structured
-engineering analysis. The result separates functional and nonfunctional
-requirements, constraints, ambiguities, explicit assumptions, acceptance criteria,
-risks, clarification needs, and confidence.
+- **V0.1 — LangGraph orchestration foundation:** explicit sequential and parallel
+  control flow, synchronization, gates, state, trace, and artifacts.
+- **V0.2 — Stateful human governance:** checkpointed APPROVE,
+  REQUEST_CHANGES, REJECT, bounded revisions, and safe stop.
+- **V0.3 — Governed LLM requirement reasoning:** schema-backed requirement
+  analysis, deterministic validation, human revision, and decision lineage.
+- **V0.4 — Governed LLM task planning:** a human-approved requirement
+  specification, LLM-proposed engineering task dependencies, deterministic graph
+  normalization/validation, and human TaskGraph approval.
 
-The LLM can propose an analysis, but it cannot approve itself or select a graph
-route. LangGraph owns control flow, Pydantic defines the structural boundary,
-deterministic retry/revision policies bound autonomy, and a human remains the
-approval authority. A valid analysis therefore pauses at a real LangGraph
-interrupt before deterministic decomposition and planning can begin.
+V0.4 plans engineering work but deliberately does **not execute tasks**, write
+application code, or implement the URL Shortener demonstration service.
 
-The requirement reviewer may approve, request changes with feedback, or reject.
-Requested changes preserve the earlier analysis and feedback, invoke the analyst
-again, validate the revision, and return to the same review checkpoint. Provider
-and schema failures have a separate three-attempt retry budget. Human-requested
-analysis revisions are also limited to three. Rejection or exhaustion enters an
-explicit safe stop with explanatory state and partial artifacts.
+## Two distinct graphs
 
-V0.3 preserves the V0.2 implementation-plan checkpoint. After requirement
-approval, the deterministic workflow still decomposes requirements, creates a
-plan, and pauses for a separate human plan decision. Plan approval fans out to the
-existing parallel architecture and test-plan branches.
+V0.4 intentionally keeps two graph concepts separate.
 
-The built-in input remains a four-requirement **URL Shortener** scenario. The URL
-shortener is only the engineering problem processed by the workflow; the service
-itself is **not implemented**.
+### Orchestration / control graph
 
-## Workflow
+The static application workflow is implemented with LangGraph. It owns routing,
+bounded retries and revisions, human interrupts, safe-stop behavior, checkpointed
+state, the existing parallel artifact branches, synchronization, and the exit
+gate. The LLM never creates or changes LangGraph nodes or routes.
 
 ```mermaid
 flowchart TD
-    START --> requirements_intake
-    requirements_intake --> entry_gate
-    entry_gate -->|failed| END
-    entry_gate -->|passed| requirement_analysis_task
-    requirement_analysis_task -->|candidate| validate_requirement_analysis
-    requirement_analysis_task -->|retryable failure| prepare_requirement_analysis_retry
-    validate_requirement_analysis -->|invalid| prepare_requirement_analysis_retry
-    prepare_requirement_analysis_retry -->|attempt remains| requirement_analysis_task
-    requirement_analysis_task -->|non-retryable or exhausted| safe_stop
-    validate_requirement_analysis -->|exhausted| safe_stop
-    validate_requirement_analysis -->|valid| requirement_analysis_review
-    requirement_analysis_review -->|request changes| prepare_requirement_analysis_revision
-    prepare_requirement_analysis_revision --> requirement_analysis_task
-    requirement_analysis_review -->|reject or revision limit| safe_stop
-    requirement_analysis_review -->|approve| decompose_requirements
-    decompose_requirements --> create_implementation_plan
-    create_implementation_plan --> implementation_plan_approval
-    implementation_plan_approval -->|request changes| revise_implementation_plan
-    revise_implementation_plan --> implementation_plan_approval
-    implementation_plan_approval -->|reject or revision limit| safe_stop
-    implementation_plan_approval -->|approve| architecture_task
-    implementation_plan_approval -->|approve| test_plan_task
-    architecture_task --> synchronize
-    test_plan_task --> synchronize
-    synchronize --> exit_gate
-    safe_stop --> END
-    exit_gate --> END
+    START --> intake[requirements_intake]
+    intake --> entry[entry_gate]
+    entry -->|failed| END
+    entry --> analyst[requirement_analysis_task]
+    analyst --> validateAnalysis[validate_requirement_analysis]
+    analyst -->|provider failure| analysisRetry[bounded analysis retry]
+    validateAnalysis -->|invalid| analysisRetry
+    analysisRetry --> analyst
+    analyst -->|exhausted/non-retryable| safe[safe_stop]
+    validateAnalysis -->|valid| requirementReview[requirement_analysis_review]
+    requirementReview -->|request changes| analysisRevision[prepare analysis revision]
+    analysisRevision --> analyst
+    requirementReview -->|reject/revision limit| safe
+    requirementReview -->|approve| spec[build_approved_requirement_spec]
+    spec --> planner[task_decomposition_task]
+    planner --> validateGraph[normalize_and_validate_task_graph]
+    planner -->|provider failure| graphRetry[bounded task-planning retry]
+    validateGraph -->|invalid| graphRetry
+    graphRetry --> planner
+    planner -->|exhausted/non-retryable| safe
+    validateGraph -->|valid| graphReview[task_graph_review]
+    graphReview -->|request changes| graphRevision[prepare graph revision]
+    graphRevision --> planner
+    graphReview -->|reject/revision limit| safe
+    graphReview -->|approve| approved[approve_task_graph]
+    approved --> architecture[architecture_task]
+    approved --> tests[test_plan_task]
+    architecture --> sync[synchronize]
+    tests --> sync
+    sync --> exit[exit_gate]
+    safe --> END
+    exit --> END
 ```
 
-Both human checkpoints use LangGraph `interrupt()` plus a process-local
-`InMemorySaver`. The CLI resumes the same thread with `Command(resume=...)`.
-Interrupted runs therefore retain state within the current process, but do not
-survive a process restart. The architecture and test-plan nodes remain separate
-parallel branches; their multi-predecessor edge is the synchronization barrier.
+Both human checkpoints use LangGraph `interrupt()` and a process-local
+`InMemorySaver`; the CLI resumes the same thread with `Command(resume=...)`.
+Interrupted state survives within the current process, not across process restarts.
+
+### Engineering task dependency graph
+
+The `TaskGraph` is a dynamic per-run domain artifact. The LLM proposes semantic
+tasks and dependencies using temporary keys. Application code assigns authoritative
+identity, validates references and the DAG, derives graph semantics, and a human
+approves the result. A future executor may interpret this graph; V0.4 does not.
+
+Connectivity is represented once through `Task.depends_on`. Topological order,
+execution layers, naturally parallel tasks, ENTRY-ready tasks, EXIT predecessors,
+and synchronization points are derived rather than stored as competing
+authoritative graph copies.
+
+## Governed planning and lineage
+
+After requirement-analysis approval, deterministic code packages the exact
+approved text into an immutable `ApprovedRequirementSpec`. There is no second LLM
+rewrite between approval and specification creation.
+
+The application assigns these human-readable namespaces:
+
+- `FR-001`, `FR-002`, ... — functional requirements
+- `NFR-001`, ... — nonfunctional requirements
+- `CON-001`, ... — constraints
+- `AC-001`, ... — acceptance criteria
+- `RISK-001`, ... — risks
+- `AMB-001`, ... — approved unresolved ambiguities
+
+Each item also receives a deterministic application-generated lineage UUID. Its
+initial identity includes the namespace, canonical item ID, and exact text, so two
+same-namespace items with duplicate text still have distinct lineage IDs. Future
+cross-version semantic reconciliation is deliberately deferred. Text is copied
+exactly from the approved analysis.
+
+The spec has a version, content hash, creation timestamp, optional predecessor ID,
+and source analysis revision. A content hash covers the canonical hashed payload,
+including its source provenance and application-assigned identities; it excludes
+version-envelope fields such as timestamp, version, and predecessor. `SPEC-...-V001`
+or `GRAPH-...-V002` identifies a specific immutable artifact version, while its
+lineage UUID connects deliberately related versions.
+
+The task planner receives only this approved specification. It may propose task
+titles, descriptions, types, temporary keys, dependencies, traceability references,
+and expected outputs. It cannot assign `TASK-###`, graph IDs, lineage IDs,
+timestamps, hashes, versions, layers, ENTRY/EXIT tasks, approval state, or execution
+state.
+
+Deterministic normalization maps proposal order to `TASK-001`, `TASK-002`, and so
+on, remaps temporary dependency keys, and assigns stable task lineage from the graph
+lineage plus semantic key. Validation rejects duplicate keys/IDs, missing or self
+dependencies, cycles, invalid specification references, and graphs without valid
+synthetic ENTRY/EXIT semantics. Invalid graphs never reach human review.
+
+Core traceability is bidirectional: every task reference must resolve to the
+approved specification, and every approved FR, NFR, CON, and AC item must be
+covered by at least one task. Missing coverage enters the bounded task-planning
+retry path and cannot be human-approved as structurally complete. RISK and AMB
+references are validated when present, but complete risk/ambiguity disposition is
+intentionally deferred until a later milestone has an explicit disposition model.
+
+An approved ambiguity remains explicit. For example, `AMB-001: URL expiration is
+unspecified` can support a task to resolve that policy; the planner is instructed
+not to silently replace it with a made-up 30-day expiration rule.
+
+TaskGraph review supports APPROVE, REQUEST_CHANGES, and REJECT. Requested changes
+preserve feedback and the prior validated graph, receive a fresh three-attempt
+machine retry budget, create a new immutable graph version, and return to review.
+Human graph revisions are separately limited to three. Rejection or exhaustion
+safe-stops without executing tasks.
+
+The models include versions, content hashes, lineage IDs, and optional predecessor
+IDs so a future milestone can represent `SPEC-v1 -> GRAPH-v1` followed by
+`SPEC-v2 -> GRAPH-v2` without mutating history. V0.4 does not implement upstream
+change reconciliation or execution-state migration.
 
 ## Setup and run
 
@@ -84,9 +153,9 @@ python3 -m venv .venv
 cp .env.example .env
 ```
 
-Set a real `OPENAI_API_KEY` in the ignored local `.env`. The optional
-`OPENAI_MODEL` defaults to `gpt-5.6-luna`. The project deliberately does not load
-`.env` files itself, so export the variables into the shell before running:
+Set a real `OPENAI_API_KEY` in the ignored local `.env`. `OPENAI_MODEL` defaults
+to `gpt-5.6-luna`. The project does not load `.env` itself, so export it before the
+interactive demo:
 
 ```bash
 set -a
@@ -95,38 +164,32 @@ set +a
 .venv/bin/python -m agentic_sdlc demo
 ```
 
-The CLI first displays the full structured requirement analysis and requests an
-approve, request-changes, or reject decision. If approved, it later displays the
-implementation plan for the existing second approval. Missing API credentials do
-not trigger a fake fallback: the workflow records a clear, non-retryable failure
-and stops safely without downstream planning.
+The CLI presents the full requirement analysis first. After requirement approval,
+it displays the canonical specification namespaces, TaskGraph tasks and links,
+derived execution layers, parallelism, joins, and ENTRY/EXIT semantics. It then
+pauses for separate TaskGraph approval. REQUEST_CHANGES feedback at either stage
+may span multiple lines and ends with a blank line.
 
-When requesting changes at either review stage, enter one or more feedback lines
-and finish the feedback with a blank line.
+Missing credentials never trigger a fake fallback. A missing key at either LLM
+stage records a clear non-retryable failure and safely stops.
 
-A successful V0.3 demo writes:
+Successful artifacts are written under `artifacts/demo-run/`:
 
 ```text
-artifacts/
-├── workflow_diagram.png
-└── demo-run/
-    ├── requirements.json
-    ├── requirement_analysis.md
-    ├── decomposition.json
-    ├── implementation_plan.md
-    ├── architecture.md
-    ├── test_plan.md
-    └── summary.md
+requirements.json
+requirement_analysis.md
+approved_requirement_spec.json
+task_graph.json
+task_graph.md
+architecture.md
+test_plan.md
+summary.md
 ```
 
-`requirement_analysis.md` records the current analysis, model and prompt version,
-prior analysis revisions, and requirement-review decisions. `summary.md` includes
-both requirement-review and implementation-plan approval history. A safe stop
-writes only the artifacts for stages that actually completed.
-
-The workflow PNG is generated from the actual compiled LangGraph `WORKFLOW` and
-documents the orchestrator rather than one scenario. Diagram-rendering failure is
-reported as a warning and does not change workflow status.
+`task_graph.json` is the canonical graph. `task_graph.md` is a human-readable view
+that includes derived layers and governance history. The generated
+`artifacts/workflow_diagram.png` documents the static LangGraph control plane, not
+the per-run engineering TaskGraph.
 
 ## Tests
 
@@ -134,14 +197,15 @@ reported as a warning and does not change workflow status.
 .venv/bin/python -m pytest
 ```
 
-The test suite injects `FakeRequirementAnalysisClient` with scripted structured
-responses and failures. It makes no network requests, requires no API key, and
-does not silently substitute that fake in normal runtime execution.
+Tests inject scripted `FakeRequirementAnalysisClient` and
+`FakeTaskPlanningClient` instances. They require no API key or network access and
+cover structured parsing, retries, safe stops, identity assignment, lineage,
+reference integrity, DAG validation, derived parallel/join semantics, both human
+approval loops, artifacts, and the preserved static parallel branches.
 
 ## Deliberately deferred
 
-V0.3 limits LLM reasoning to requirement understanding. It does not provide LLM
-task decomposition, implementation planning, architecture generation, test-plan
-generation, code generation, autonomous repository modification, URL-shortener
-implementation, generalized dynamic replanning, a persistence/database layer,
-deployment, or a web UI. Those remain candidates for later milestones.
+V0.4 does not include task execution, code-generation or repository-writing
+agents, dynamically generated LangGraph nodes, full dynamic replanning, completed
+task reconciliation, brownfield impact analysis, rollback, a database/audit store,
+distributed scheduling, deployment, or a web UI.
