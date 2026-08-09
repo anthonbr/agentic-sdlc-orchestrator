@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pydantic import ValidationError
-from pytest import raises
+from pytest import mark, raises
 
 from agentic_sdlc.requirement_analysis import RequirementAnalysis
 from agentic_sdlc.requirement_spec import build_approved_requirement_spec
@@ -58,11 +58,19 @@ def _task(
         title=key.replace("_", " ").title(),
         description=f"Produce the {key} engineering definition.",
         task_type=TaskType.DESIGN,
-        depends_on=depends_on or [],
-        requirement_refs=requirement_refs or ["FR-001"],
-        acceptance_criteria_refs=acceptance_refs or [],
-        risk_refs=risk_refs or [],
-        ambiguity_refs=ambiguity_refs or [],
+        depends_on=depends_on if depends_on is not None else [],
+        requirement_refs=(
+            requirement_refs
+            if requirement_refs is not None
+            else ["FR-001", "FR-002", "NFR-001", "CON-001"]
+        ),
+        acceptance_criteria_refs=(
+            acceptance_refs
+            if acceptance_refs is not None
+            else ["AC-001", "AC-002"]
+        ),
+        risk_refs=risk_refs if risk_refs is not None else [],
+        ambiguity_refs=ambiguity_refs if ambiguity_refs is not None else [],
         expected_outputs=[f"{key}.md"],
     )
 
@@ -109,6 +117,42 @@ def test_approved_spec_hash_and_ids_are_deterministic() -> None:
     assert [item.lineage_id for item in first.all_items()] == [
         item.lineage_id for item in second.all_items()
     ]
+
+
+def test_duplicate_requirement_text_has_distinct_deterministic_lineage() -> None:
+    analysis = _analysis().model_copy(
+        update={"functional_requirements": ["Return an error.", "Return an error."]}
+    )
+    first = build_approved_requirement_spec(
+        analysis, source_analysis_revision=0, created_at=FIXED_TIME
+    )
+    second = build_approved_requirement_spec(
+        analysis, source_analysis_revision=0, created_at=FIXED_TIME
+    )
+
+    assert [item.item_id for item in first.functional_requirements] == [
+        "FR-001",
+        "FR-002",
+    ]
+    assert [item.text for item in first.functional_requirements] == [
+        "Return an error.",
+        "Return an error.",
+    ]
+    assert first.functional_requirements[0].lineage_id != (
+        first.functional_requirements[1].lineage_id
+    )
+    assert [item.lineage_id for item in first.functional_requirements] == [
+        item.lineage_id for item in second.functional_requirements
+    ]
+
+
+def test_spec_content_hash_includes_source_analysis_provenance() -> None:
+    first = _spec()
+    later_revision = build_approved_requirement_spec(
+        _analysis(), source_analysis_revision=3, created_at=FIXED_TIME
+    )
+
+    assert later_revision.content_hash != first.content_hash
 
 
 def test_approved_spec_version_has_unique_identity_and_stable_lineage() -> None:
@@ -200,6 +244,90 @@ def test_parallel_and_join_semantics_are_derived_from_dependencies() -> None:
     assert semantics.exit_predecessor_tasks == ("TASK-003",)
 
 
+def test_complete_core_specification_coverage_passes() -> None:
+    graph, _ = normalize_and_validate_task_graph(
+        _proposal(_task("cover_everything")),
+        _spec(),
+        version=1,
+    )
+
+    assert graph.tasks[0].requirement_refs == (
+        "FR-001",
+        "FR-002",
+        "NFR-001",
+        "CON-001",
+    )
+    assert graph.tasks[0].acceptance_criteria_refs == ("AC-001", "AC-002")
+
+
+@mark.parametrize(
+    ("requirement_refs", "acceptance_refs", "uncovered_id"),
+    [
+        (["FR-001", "NFR-001", "CON-001"], ["AC-001", "AC-002"], "FR-002"),
+        (["FR-001", "FR-002", "CON-001"], ["AC-001", "AC-002"], "NFR-001"),
+        (["FR-001", "FR-002", "NFR-001"], ["AC-001", "AC-002"], "CON-001"),
+        (["FR-001", "FR-002", "NFR-001", "CON-001"], ["AC-001"], "AC-002"),
+    ],
+)
+def test_missing_required_specification_coverage_is_rejected(
+    requirement_refs: list[str],
+    acceptance_refs: list[str],
+    uncovered_id: str,
+) -> None:
+    with raises(TaskGraphValidationError, match=uncovered_id):
+        normalize_and_validate_task_graph(
+            _proposal(
+                _task(
+                    "incomplete",
+                    requirement_refs=requirement_refs,
+                    acceptance_refs=acceptance_refs,
+                )
+            ),
+            _spec(),
+            version=1,
+        )
+
+
+def test_multiple_uncovered_items_are_reported_in_namespace_order() -> None:
+    with raises(TaskGraphValidationError) as captured:
+        normalize_and_validate_task_graph(
+            _proposal(
+                _task(
+                    "incomplete",
+                    requirement_refs=["FR-001"],
+                    acceptance_refs=[],
+                )
+            ),
+            _spec(),
+            version=1,
+        )
+
+    assert str(captured.value) == (
+        "Uncovered approved specification items: "
+        "FR-002, NFR-001, CON-001, AC-001, AC-002."
+    )
+
+
+def test_complete_risk_coverage_is_not_required() -> None:
+    graph, _ = normalize_and_validate_task_graph(
+        _proposal(_task("core_coverage", risk_refs=[])),
+        _spec(),
+        version=1,
+    )
+
+    assert graph.tasks[0].risk_refs == ()
+
+
+def test_complete_ambiguity_coverage_is_not_required() -> None:
+    graph, _ = normalize_and_validate_task_graph(
+        _proposal(_task("core_coverage", ambiguity_refs=[])),
+        _spec(),
+        version=1,
+    )
+
+    assert graph.tasks[0].ambiguity_refs == ()
+
+
 def test_duplicate_proposal_key_is_rejected() -> None:
     with raises(TaskGraphValidationError, match="keys must be unique"):
         normalize_and_validate_task_graph(
@@ -239,10 +367,22 @@ def test_dependency_cycle_is_rejected() -> None:
         )
 
 
-def test_invalid_requirement_reference_is_rejected() -> None:
+@mark.parametrize("invalid_reference", ["FR-999", "NFR-999", "CON-999"])
+def test_invalid_requirement_reference_is_rejected(invalid_reference: str) -> None:
     with raises(TaskGraphValidationError, match="requirement references"):
         normalize_and_validate_task_graph(
-            _proposal(_task("task", requirement_refs=["FR-999"])),
+            _proposal(
+                _task(
+                    "task",
+                    requirement_refs=[
+                        "FR-001",
+                        "FR-002",
+                        "NFR-001",
+                        "CON-001",
+                        invalid_reference,
+                    ],
+                )
+            ),
             _spec(),
             version=1,
         )

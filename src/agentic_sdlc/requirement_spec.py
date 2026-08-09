@@ -140,16 +140,22 @@ def build_approved_requirement_spec(
 
 
 def _items(kind: SpecItemKind, texts: list[str]) -> tuple[RequirementSpecItem, ...]:
-    return tuple(
-        RequirementSpecItem(
-            item_id=f"{kind}-{index:03d}",
-            lineage_id=str(
-                uuid5(LINEAGE_NAMESPACE, f"requirement-item:{kind}:{text}")
-            ),
-            text=text,
+    items: list[RequirementSpecItem] = []
+    for index, text in enumerate(texts, start=1):
+        item_id = f"{kind}-{index:03d}"
+        items.append(
+            RequirementSpecItem(
+                item_id=item_id,
+                lineage_id=str(
+                    uuid5(
+                        LINEAGE_NAMESPACE,
+                        f"requirement-item:{kind}:{item_id}:{text}",
+                    )
+                ),
+                text=text,
+            )
         )
-        for index, text in enumerate(texts, start=1)
-    )
+    return tuple(items)
 
 
 def _content_hash(value: object) -> str:

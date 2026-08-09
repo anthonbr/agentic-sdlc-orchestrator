@@ -143,6 +143,7 @@ def normalize_and_validate_task_graph(
         uuid5(LINEAGE_NAMESPACE, f"task-graph:{spec.lineage_id}")
     )
     _validate_proposal_references(proposal, spec, key_to_id)
+    _validate_required_specification_coverage(proposal, spec)
 
     tasks = tuple(
         Task(
@@ -300,6 +301,38 @@ def _validate_proposal_references(
                     + ", ".join(sorted(missing))
                     + "."
                 )
+
+
+def _validate_required_specification_coverage(
+    proposal: ProposedTaskGraph,
+    spec: ApprovedRequirementSpec,
+) -> None:
+    covered_requirements = {
+        reference for task in proposal.tasks for reference in task.requirement_refs
+    }
+    covered_acceptance_criteria = {
+        reference
+        for task in proposal.tasks
+        for reference in task.acceptance_criteria_refs
+    }
+    required_groups = (
+        (spec.functional_requirements, covered_requirements),
+        (spec.nonfunctional_requirements, covered_requirements),
+        (spec.constraints, covered_requirements),
+        (spec.acceptance_criteria, covered_acceptance_criteria),
+    )
+    uncovered = [
+        item.item_id
+        for items, covered in required_groups
+        for item in items
+        if item.item_id not in covered
+    ]
+    if uncovered:
+        raise TaskGraphValidationError(
+            "Uncovered approved specification items: "
+            + ", ".join(uncovered)
+            + "."
+        )
 
 
 def _content_hash(value: object) -> str:

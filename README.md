@@ -96,9 +96,18 @@ The application assigns these human-readable namespaces:
 - `RISK-001`, ... — risks
 - `AMB-001`, ... — approved unresolved ambiguities
 
-Each item also receives an application-generated durable lineage UUID. The spec
-has a version, content hash, creation timestamp, optional predecessor ID, and
-source analysis revision. Text is copied exactly from the approved analysis.
+Each item also receives a deterministic application-generated lineage UUID. Its
+initial identity includes the namespace, canonical item ID, and exact text, so two
+same-namespace items with duplicate text still have distinct lineage IDs. Future
+cross-version semantic reconciliation is deliberately deferred. Text is copied
+exactly from the approved analysis.
+
+The spec has a version, content hash, creation timestamp, optional predecessor ID,
+and source analysis revision. A content hash covers the canonical hashed payload,
+including its source provenance and application-assigned identities; it excludes
+version-envelope fields such as timestamp, version, and predecessor. `SPEC-...-V001`
+or `GRAPH-...-V002` identifies a specific immutable artifact version, while its
+lineage UUID connects deliberately related versions.
 
 The task planner receives only this approved specification. It may propose task
 titles, descriptions, types, temporary keys, dependencies, traceability references,
@@ -111,6 +120,13 @@ on, remaps temporary dependency keys, and assigns stable task lineage from the g
 lineage plus semantic key. Validation rejects duplicate keys/IDs, missing or self
 dependencies, cycles, invalid specification references, and graphs without valid
 synthetic ENTRY/EXIT semantics. Invalid graphs never reach human review.
+
+Core traceability is bidirectional: every task reference must resolve to the
+approved specification, and every approved FR, NFR, CON, and AC item must be
+covered by at least one task. Missing coverage enters the bounded task-planning
+retry path and cannot be human-approved as structurally complete. RISK and AMB
+references are validated when present, but complete risk/ambiguity disposition is
+intentionally deferred until a later milestone has an explicit disposition model.
 
 An approved ambiguity remains explicit. For example, `AMB-001: URL expiration is
 unspecified` can support a task to resolve that policy; the planner is instructed

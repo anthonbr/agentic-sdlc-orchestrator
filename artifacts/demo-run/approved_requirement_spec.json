@@ -1,172 +1,136 @@
 {
-  "spec_id": "SPEC-67DBB6D9EABE-V001",
-  "lineage_id": "f0ced9bc-e0c4-53c9-8288-c17331bda4de",
+  "spec_id": "SPEC-BE8F3861784B-V001",
+  "lineage_id": "e3983cca-dab6-52d8-9807-65d37840889c",
   "version": 1,
   "supersedes_spec_id": null,
   "source_analysis_revision": 0,
-  "created_at": "2026-08-09T22:35:20.030255+00:00",
-  "content_hash": "67dbb6d9eabe012cadaa17784ace49dacca84c7b68675dae29c18a0440d3833a",
-  "normalized_problem_statement": "Create a service that accepts a long URL, generates a unique short URL for it, redirects requests for the short URL to the stored original URL, and reports an error when the short URL does not exist.",
+  "created_at": "2026-08-09T23:03:02.831613+00:00",
+  "content_hash": "be8f3861784b7124131e121b2b712dc7df8b0013ea8149714884dde63a97e903",
+  "normalized_problem_statement": "Build a service that accepts a long URL, creates a unique short URL associated with it, redirects requests for the short URL to the original URL, and reports an error when the short URL does not exist.",
   "requirement_type": "greenfield",
   "assumptions": [
-    "The service exposes an API or equivalent interface for submitting long URLs and requesting short URLs, although the exact interface is unspecified.",
-    "A generated short identifier maps to one original URL for the lifetime of that mapping.",
-    "Redirect handling follows standard URL-shortener behavior, with the specific redirect status code left unspecified."
+    "The service uses HTTP and represents short URLs as URL-addressable identifiers.",
+    "Generated mappings remain available for subsequent redirect requests for at least the duration of the service's configured persistence.",
+    "A short identifier must not map to more than one original URL."
   ],
   "functional_requirements": [
     {
       "item_id": "FR-001",
-      "lineage_id": "5fb93ce7-d2ea-5242-ac99-64e7a93d2938",
-      "text": "Accept a long URL as input for shortening."
+      "lineage_id": "37d56d33-b742-5844-a9bc-62f9f5c5c00a",
+      "text": "The system shall accept a long URL as input for shortening."
     },
     {
       "item_id": "FR-002",
-      "lineage_id": "ded3e222-f497-5771-86ff-44f0677994dd",
-      "text": "Generate a unique short identifier and corresponding short URL for each accepted long URL."
+      "lineage_id": "f43247c1-ed2a-5e0f-a733-c7a5b798e8c3",
+      "text": "The system shall generate a short URL identifier that is unique among stored mappings."
     },
     {
       "item_id": "FR-003",
-      "lineage_id": "f8a5c2de-3e0e-5ca3-b34b-98def6113724",
-      "text": "Persist or otherwise retain the mapping between each short identifier and its original long URL so it can be used for later redirection."
+      "lineage_id": "d048ca2c-3fb9-5b0b-96c6-2b0bf68b89f8",
+      "text": "The system shall persist an association between each generated short identifier and its original long URL."
     },
     {
       "item_id": "FR-004",
-      "lineage_id": "5b81d09f-d7f5-5aac-8182-d85a544ca265",
-      "text": "When a known short URL is requested, redirect the client to its associated original URL."
+      "lineage_id": "cc0842cc-0a69-5110-b112-ae915f6603ed",
+      "text": "When a request uses a known short URL, the system shall redirect the requester to the associated original URL."
     },
     {
       "item_id": "FR-005",
-      "lineage_id": "cb1529a6-fbcc-50a9-a81b-258631834c55",
-      "text": "When an unknown short URL is requested, return an error response."
+      "lineage_id": "fdd0c431-44e0-5943-b3a0-dbc140a1b874",
+      "text": "When a request uses an unknown short URL, the system shall return an error response."
     }
   ],
   "nonfunctional_requirements": [],
-  "constraints": [
-    {
-      "item_id": "CON-001",
-      "lineage_id": "a0b63c25-f2aa-5625-ae24-65eac8626abc",
-      "text": "Short identifiers must be unique among active mappings."
-    },
-    {
-      "item_id": "CON-002",
-      "lineage_id": "d4ca2a7e-ecb0-5dcf-93b9-0a61093a7de7",
-      "text": "The input and output URL formats, HTTP methods, status codes, and error body format are not specified."
-    }
-  ],
+  "constraints": [],
   "acceptance_criteria": [
     {
       "item_id": "AC-001",
-      "lineage_id": "e846c456-b9d0-5cae-b973-78938a1229a4",
-      "text": "Given an accepted valid long URL, the service returns a short URL."
+      "lineage_id": "262f7c70-11a3-5151-9839-c02b529ec9fc",
+      "text": "Given a valid long URL, when a shortening request is submitted, the system returns a short URL."
     },
     {
       "item_id": "AC-002",
-      "lineage_id": "93bcb19a-f185-5c0c-90a2-80b9ee85c72a",
-      "text": "Every generated short URL has a unique short identifier within the service's active mappings."
+      "lineage_id": "3c599a0e-0b6a-5c62-9240-4935ba7a9e53",
+      "text": "For every successfully created short URL, the system stores a mapping to the submitted original URL."
     },
     {
       "item_id": "AC-003",
-      "lineage_id": "1e26c103-7233-54e2-a8f1-78700235064a",
-      "text": "After a mapping is created, requesting its short URL causes the client to be redirected to the exact stored original URL."
+      "lineage_id": "fd69da12-359b-56db-bc1e-dd9c8d0df167",
+      "text": "Given two successfully created mappings, their short identifiers are distinct."
     },
     {
       "item_id": "AC-004",
-      "lineage_id": "67b7ef6a-39b0-5d01-a090-575e8391d798",
-      "text": "Requesting a short URL with no corresponding mapping returns an error rather than a successful redirect."
+      "lineage_id": "bcbc1623-c1c1-5110-b119-2ae19a7b01c3",
+      "text": "Given a previously created short URL, when it is requested, the system redirects the requester to the exact original URL associated with it."
     },
     {
       "item_id": "AC-005",
-      "lineage_id": "09aa545d-01cf-5974-ba02-a9b04ed267f5",
-      "text": "A mapping remains available for redirection according to the service's retention behavior; because retention is unspecified, the required lifetime must be clarified."
+      "lineage_id": "738540c0-45d5-5fac-8541-c67c2fa97779",
+      "text": "Given a short URL with no stored mapping, when it is requested, the system returns an error rather than redirecting."
     },
     {
       "item_id": "AC-006",
-      "lineage_id": "6a2ef913-1c32-53ff-b610-fd294082efca",
-      "text": "The service does not redirect an unknown short identifier to an unrelated destination."
+      "lineage_id": "7e593321-a9dd-5a16-8882-cac7e71ef39a",
+      "text": "The system does not return an error for a known short URL solely because the original URL is long."
     }
   ],
   "risks": [
     {
       "item_id": "RISK-001",
-      "lineage_id": "b569e3d4-d763-5860-8521-51c88b3b35c1",
-      "text": "Insufficiently defined URL validation could allow malformed or unsafe destinations."
+      "lineage_id": "d5997d2e-fc1f-5d1b-b9c7-e037c606e150",
+      "text": "Insufficient uniqueness guarantees could cause one short URL to overwrite or incorrectly resolve to another mapping."
     },
     {
       "item_id": "RISK-002",
-      "lineage_id": "08c88bd8-1f35-537f-aac4-8c3275d1e178",
-      "text": "Non-atomic identifier generation or concurrent writes could produce duplicate short identifiers or overwrite mappings."
+      "lineage_id": "23ba9814-baae-5973-9b8b-16502aee899b",
+      "text": "Unspecified URL validation could allow malformed or unsafe destinations."
     },
     {
       "item_id": "RISK-003",
-      "lineage_id": "4c46820e-095f-5e81-bc3a-9a4f00974080",
-      "text": "Without specified persistence and retention requirements, mappings could be lost or expire unexpectedly."
+      "lineage_id": "dc0495fe-ef4a-59c7-b45a-a3612c3da734",
+      "text": "Unspecified persistence behavior could cause previously generated short URLs to stop working."
     },
     {
       "item_id": "RISK-004",
-      "lineage_id": "470b38d0-6d2c-535b-aff0-2bedb12153e6",
-      "text": "Unspecified redirect and error semantics may cause client incompatibility."
+      "lineage_id": "b6c9f8de-ee0a-5a14-a66c-20f2651e6f6c",
+      "text": "Ambiguous redirect and error semantics may lead to incompatible client behavior."
     },
     {
       "item_id": "RISK-005",
-      "lineage_id": "45ed3010-6870-5396-8962-5d9c163f38aa",
-      "text": "An open URL-shortening service may be susceptible to phishing, malware, spam, abuse, and denial-of-service attacks."
-    },
-    {
-      "item_id": "RISK-006",
-      "lineage_id": "a18b383a-8f25-514d-8396-5d8d3d617bf8",
-      "text": "Unspecified scale and availability targets make capacity and reliability difficult to assess."
+      "lineage_id": "dbe14971-36a6-5d3a-9f05-584c778014b4",
+      "text": "Without performance and availability requirements, the service may not meet operational expectations at scale."
     }
   ],
   "ambiguities": [
     {
       "item_id": "AMB-001",
-      "lineage_id": "9f43eaed-8ba3-509d-9102-0e0801f9fb09",
-      "text": "What constitutes a valid long URL, and how should invalid URLs be handled?"
+      "lineage_id": "12e18526-18ff-590d-8b95-2d26a1809e8a",
+      "text": "The acceptable URL syntax and validation rules are unspecified."
     },
     {
       "item_id": "AMB-002",
-      "lineage_id": "78018bf1-b4bd-50fe-b841-ae00927187bd",
-      "text": "Must multiple submissions of the same long URL produce the same short URL or may they produce different ones?"
+      "lineage_id": "e704edee-2379-50e9-a38d-9b0257ed3e18",
+      "text": "The required short URL format, length, and character set are unspecified."
     },
     {
       "item_id": "AMB-003",
-      "lineage_id": "d9042271-bf99-5a56-a821-61b144b92f81",
-      "text": "What is the required short URL format and identifier length?"
+      "lineage_id": "9c5db13d-d1f9-50c6-b947-91b873d6c0b4",
+      "text": "The uniqueness scope and persistence duration are unspecified."
     },
     {
       "item_id": "AMB-004",
-      "lineage_id": "9e44277e-a033-5bf0-97bd-56521e5932bb",
-      "text": "What persistence and data-retention behavior is required?"
+      "lineage_id": "b574de46-81c9-542b-b9de-cf4a093a85bf",
+      "text": "The required error type, HTTP status code, and response body for unknown short URLs are unspecified."
     },
     {
       "item_id": "AMB-005",
-      "lineage_id": "788c9642-d6cb-5b71-9a95-3e21d8154b44",
-      "text": "Which HTTP methods and status codes should be used for shortening, redirection, and unknown short URLs?"
+      "lineage_id": "d10b8bef-d349-5537-af89-437ac796b38d",
+      "text": "The redirect status code and redirect behavior are unspecified."
     },
     {
       "item_id": "AMB-006",
-      "lineage_id": "68dbd6ac-1fe2-51b9-88a4-baa5c60afd87",
-      "text": "What error response format is required for unknown short URLs?"
-    },
-    {
-      "item_id": "AMB-007",
-      "lineage_id": "994596ac-a75a-5a92-9ced-6aeb1eca21b6",
-      "text": "Are authentication, authorization, rate limiting, expiration, analytics, or abuse prevention required?"
-    },
-    {
-      "item_id": "AMB-008",
-      "lineage_id": "fee75e4f-2def-5a43-b043-ad540593d655",
-      "text": "What scale, availability, latency, and concurrency targets apply?"
-    },
-    {
-      "item_id": "AMB-009",
-      "lineage_id": "9bbf9cae-77bd-5cc4-816c-b80a6ade51fc",
-      "text": "Should URL schemes such as HTTP and HTTPS be restricted or normalized?"
-    },
-    {
-      "item_id": "AMB-010",
-      "lineage_id": "e3c4a8d8-390d-5fe1-bc9c-a57443899c33",
-      "text": "What behavior is required if a stored destination URL is no longer reachable?"
+      "lineage_id": "59dc97d6-6cb8-521e-b4b6-7629a0956593",
+      "text": "The storage, availability, scalability, security, and performance requirements are unspecified."
     }
   ]
 }

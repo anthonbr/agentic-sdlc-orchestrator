@@ -1,6 +1,6 @@
 # Architecture
 
-A small conceptual service design supporting 6 approved engineering tasks; the tasks are not executed in V0.4.
+A small conceptual service design supporting 7 approved engineering tasks; the tasks are not executed in V0.4.
 
 ## Conceptual components
 

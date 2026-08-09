@@ -442,7 +442,9 @@ def test_openai_task_planner_uses_approved_spec_and_schema_without_network() -> 
 
 def test_task_planning_prompt_reserves_authoritative_metadata() -> None:
     prompt = " ".join(TASK_PLANNING_SYSTEM_PROMPT.casefold().split())
-    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1"
+    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.1"
+    assert "cover every fr, nfr, con, and ac item" in prompt
+    assert "deterministic application validation is authoritative" in prompt
     assert "do not assign task-### ids" in prompt
     assert "do not silently choose an implementation outcome" in prompt
     assert "do not execute tasks" in prompt
@@ -460,6 +462,46 @@ def test_invalid_task_graph_retries_then_reaches_review() -> None:
     assert len(paused["task_planning_failures"]) == 1
     assert "FR-999" in paused["task_planning_failures"][0]["reason"]
     assert len(planner.calls) == 2
+
+
+def test_incomplete_core_coverage_retries_before_human_review() -> None:
+    incomplete = _proposal().model_dump(mode="json")
+    incomplete["tasks"][3]["requirement_refs"] = []
+    planner = FakeTaskPlanningClient([incomplete, _proposal("retry")])
+    workflow, thread_id, _, _, _ = _start_demo(planner=planner)
+
+    paused = _approve_requirements(workflow, thread_id)
+
+    assert paused["task_planning_attempt_count"] == 2
+    assert len(paused["task_planning_failures"]) == 1
+    assert paused["task_planning_failures"][0]["reason"] == (
+        "Uncovered approved specification items: NFR-001."
+    )
+    assert _interrupt_stage(paused) == "task_graph_review"
+    assert len(planner.calls) == 2
+
+
+def test_incomplete_core_coverage_exhaustion_safe_stops() -> None:
+    responses = []
+    for _ in range(3):
+        incomplete = _proposal().model_dump(mode="json")
+        incomplete["tasks"][3]["requirement_refs"] = []
+        responses.append(incomplete)
+    planner = FakeTaskPlanningClient(responses)
+    workflow, thread_id, _, _, _ = _start_demo(planner=planner)
+
+    result = resume_workflow(
+        thread_id,
+        {"decision": "APPROVE", "feedback": ""},
+        workflow=workflow,
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert "Task planning failed after 3 attempts" in result["safe_stop_reason"]
+    assert "NFR-001" in result["safe_stop_reason"]
+    assert len(result["task_planning_failures"]) == 3
+    assert "candidate_task_graph" not in result
+    assert "approved_task_graph" not in result
 
 
 def test_transient_task_provider_failure_retries() -> None:
@@ -711,6 +753,9 @@ def test_successful_run_writes_canonical_artifact_set(tmp_path: Path) -> None:
     assert graph["tasks"][0]["task_id"] == "TASK-001"
     assert "Layer 1 — parallel" in graph_markdown
     assert "Execution status: not executed" in graph_markdown
+    assert "Required specification coverage: complete (FR/NFR/CON/AC)" in (
+        graph_markdown
+    )
     assert "Requirement Analysis" in summary
     assert "Engineering Task Graph" in summary
     assert "No engineering task was executed" not in summary

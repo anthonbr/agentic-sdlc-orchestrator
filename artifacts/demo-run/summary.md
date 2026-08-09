@@ -5,7 +5,7 @@
 - Entry gate: passed
 - Requirement analysis: validated
 - Requirement review: APPROVE
-- Approved requirement spec: SPEC-67DBB6D9EABE-V001
+- Approved requirement spec: SPEC-BE8F3861784B-V001
 - Task planning: validated
 - Task-graph review: APPROVE
 - Synchronization: complete

@@ -12,19 +12,19 @@
 
 - Requirement type: greenfield
 - Needs clarification: true
-- Confidence: 0.96
+- Confidence: 0.97
 
 ### Normalized problem
 
-Create a service that accepts a long URL, generates a unique short URL for it, redirects requests for the short URL to the stored original URL, and reports an error when the short URL does not exist.
+Build a service that accepts a long URL, creates a unique short URL associated with it, redirects requests for the short URL to the original URL, and reports an error when the short URL does not exist.
 
 ### Functional requirements
 
-- Accept a long URL as input for shortening.
-- Generate a unique short identifier and corresponding short URL for each accepted long URL.
-- Persist or otherwise retain the mapping between each short identifier and its original long URL so it can be used for later redirection.
-- When a known short URL is requested, redirect the client to its associated original URL.
-- When an unknown short URL is requested, return an error response.
+- The system shall accept a long URL as input for shortening.
+- The system shall generate a short URL identifier that is unique among stored mappings.
+- The system shall persist an association between each generated short identifier and its original long URL.
+- When a request uses a known short URL, the system shall redirect the requester to the associated original URL.
+- When a request uses an unknown short URL, the system shall return an error response.
 
 ### Nonfunctional requirements
 
@@ -32,45 +32,39 @@ Create a service that accepts a long URL, generates a unique short URL for it, r
 
 ### Constraints
 
-- Short identifiers must be unique among active mappings.
-- The input and output URL formats, HTTP methods, status codes, and error body format are not specified.
+- None identified.
 
 ### Ambiguities
 
-- What constitutes a valid long URL, and how should invalid URLs be handled?
-- Must multiple submissions of the same long URL produce the same short URL or may they produce different ones?
-- What is the required short URL format and identifier length?
-- What persistence and data-retention behavior is required?
-- Which HTTP methods and status codes should be used for shortening, redirection, and unknown short URLs?
-- What error response format is required for unknown short URLs?
-- Are authentication, authorization, rate limiting, expiration, analytics, or abuse prevention required?
-- What scale, availability, latency, and concurrency targets apply?
-- Should URL schemes such as HTTP and HTTPS be restricted or normalized?
-- What behavior is required if a stored destination URL is no longer reachable?
+- The acceptable URL syntax and validation rules are unspecified.
+- The required short URL format, length, and character set are unspecified.
+- The uniqueness scope and persistence duration are unspecified.
+- The required error type, HTTP status code, and response body for unknown short URLs are unspecified.
+- The redirect status code and redirect behavior are unspecified.
+- The storage, availability, scalability, security, and performance requirements are unspecified.
 
 ### Assumptions
 
-- The service exposes an API or equivalent interface for submitting long URLs and requesting short URLs, although the exact interface is unspecified.
-- A generated short identifier maps to one original URL for the lifetime of that mapping.
-- Redirect handling follows standard URL-shortener behavior, with the specific redirect status code left unspecified.
+- The service uses HTTP and represents short URLs as URL-addressable identifiers.
+- Generated mappings remain available for subsequent redirect requests for at least the duration of the service's configured persistence.
+- A short identifier must not map to more than one original URL.
 
 ### Acceptance criteria
 
-- Given an accepted valid long URL, the service returns a short URL.
-- Every generated short URL has a unique short identifier within the service's active mappings.
-- After a mapping is created, requesting its short URL causes the client to be redirected to the exact stored original URL.
-- Requesting a short URL with no corresponding mapping returns an error rather than a successful redirect.
-- A mapping remains available for redirection according to the service's retention behavior; because retention is unspecified, the required lifetime must be clarified.
-- The service does not redirect an unknown short identifier to an unrelated destination.
+- Given a valid long URL, when a shortening request is submitted, the system returns a short URL.
+- For every successfully created short URL, the system stores a mapping to the submitted original URL.
+- Given two successfully created mappings, their short identifiers are distinct.
+- Given a previously created short URL, when it is requested, the system redirects the requester to the exact original URL associated with it.
+- Given a short URL with no stored mapping, when it is requested, the system returns an error rather than redirecting.
+- The system does not return an error for a known short URL solely because the original URL is long.
 
 ### Risks
 
-- Insufficiently defined URL validation could allow malformed or unsafe destinations.
-- Non-atomic identifier generation or concurrent writes could produce duplicate short identifiers or overwrite mappings.
-- Without specified persistence and retention requirements, mappings could be lost or expire unexpectedly.
-- Unspecified redirect and error semantics may cause client incompatibility.
-- An open URL-shortening service may be susceptible to phishing, malware, spam, abuse, and denial-of-service attacks.
-- Unspecified scale and availability targets make capacity and reliability difficult to assess.
+- Insufficient uniqueness guarantees could cause one short URL to overwrite or incorrectly resolve to another mapping.
+- Unspecified URL validation could allow malformed or unsafe destinations.
+- Unspecified persistence behavior could cause previously generated short URLs to stop working.
+- Ambiguous redirect and error semantics may lead to incompatible client behavior.
+- Without performance and availability requirements, the service may not meet operational expectations at scale.
 
 ## Analysis lineage
 
@@ -78,9 +72,9 @@ Create a service that accepts a long URL, generates a unique short URL for it, r
    - Attempt: 1
    - Prompt: requirement-analysis-v1.1
    - Model: gpt-5.6-luna
-   - Normalized problem: Create a service that accepts a long URL, generates a unique short URL for it, redirects requests for the short URL to the stored original URL, and reports an error when the short URL does not exist.
-   - Ambiguities: What constitutes a valid long URL, and how should invalid URLs be handled?; Must multiple submissions of the same long URL produce the same short URL or may they produce different ones?; What is the required short URL format and identifier length?; What persistence and data-retention behavior is required?; Which HTTP methods and status codes should be used for shortening, redirection, and unknown short URLs?; What error response format is required for unknown short URLs?; Are authentication, authorization, rate limiting, expiration, analytics, or abuse prevention required?; What scale, availability, latency, and concurrency targets apply?; Should URL schemes such as HTTP and HTTPS be restricted or normalized?; What behavior is required if a stored destination URL is no longer reachable?
-   - Assumptions: The service exposes an API or equivalent interface for submitting long URLs and requesting short URLs, although the exact interface is unspecified.; A generated short identifier maps to one original URL for the lifetime of that mapping.; Redirect handling follows standard URL-shortener behavior, with the specific redirect status code left unspecified.
+   - Normalized problem: Build a service that accepts a long URL, creates a unique short URL associated with it, redirects requests for the short URL to the original URL, and reports an error when the short URL does not exist.
+   - Ambiguities: The acceptable URL syntax and validation rules are unspecified.; The required short URL format, length, and character set are unspecified.; The uniqueness scope and persistence duration are unspecified.; The required error type, HTTP status code, and response body for unknown short URLs are unspecified.; The redirect status code and redirect behavior are unspecified.; The storage, availability, scalability, security, and performance requirements are unspecified.
+   - Assumptions: The service uses HTTP and represents short URLs as URL-addressable identifiers.; Generated mappings remain available for subsequent redirect requests for at least the duration of the service's configured persistence.; A short identifier must not map to more than one original URL.
 
 ## Human requirement-review history
 

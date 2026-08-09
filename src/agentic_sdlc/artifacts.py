@@ -210,6 +210,7 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
             "- Synchronization points: "
             + (", ".join(semantics["synchronization_points"]) or "None"),
             "- Topological order: " + ", ".join(semantics["topological_order"]),
+            "- Required specification coverage: complete (FR/NFR/CON/AC)",
             "",
             "## Human task-graph review history",
             "",

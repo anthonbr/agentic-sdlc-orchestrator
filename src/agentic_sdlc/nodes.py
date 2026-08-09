@@ -407,7 +407,8 @@ def normalize_and_validate_task_graph(state: WorkflowState) -> WorkflowState:
         "task_graph_history": [record],
         "workflow_status": "awaiting_approval",
         "trace": [
-            f"[normalize_and_validate_task_graph] {graph.graph_id} passed"
+            f"[normalize_and_validate_task_graph] {graph.graph_id} passed; "
+            "FR/NFR/CON/AC coverage complete"
         ],
     }
 

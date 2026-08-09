@@ -1,64 +1,43 @@
 {
-  "graph_id": "GRAPH-4EF0D953D3E2-V001",
-  "lineage_id": "2c7691f9-a590-51b3-b35d-a567e1f978cd",
+  "graph_id": "GRAPH-142C0AB05BF6-V001",
+  "lineage_id": "45e308b8-2e3d-59ee-bd2c-004bdb9bfef7",
   "version": 1,
-  "requirement_spec_id": "SPEC-67DBB6D9EABE-V001",
+  "requirement_spec_id": "SPEC-BE8F3861784B-V001",
   "requirement_spec_version": 1,
   "supersedes_graph_id": null,
-  "created_at": "2026-08-09T22:35:30.176832+00:00",
-  "content_hash": "4ef0d953d3e2402410f9a619a2ccf556028413d5910722c8745f7b4382790fcc",
+  "created_at": "2026-08-09T23:03:13.606509+00:00",
+  "content_hash": "142c0ab05bf6d594ad1b5ca0db2ac0a891d7b3e4ee95f757f8194638610fa808",
   "tasks": [
     {
       "task_id": "TASK-001",
-      "lineage_id": "f346da2a-dd4d-5e95-adc7-3404ba26f4ab",
-      "source_key": "clarify_service_policy",
-      "title": "Resolve service interface and operational policies",
-      "description": "Resolve or validate the approved ambiguities covering valid URL rules, duplicate-submission behavior, short URL format, persistence and retention, HTTP methods and status codes, error response format, optional controls, scale targets, URL scheme handling, and unreachable destinations. Preserve unresolved items as explicit decisions or documented validation boundaries.",
-      "task_type": "VALIDATION",
+      "lineage_id": "d448d1eb-23c5-5059-82dd-689b74008d81",
+      "source_key": "clarify_service_policies",
+      "title": "Clarify URL, identifier, persistence, and HTTP policies",
+      "description": "Resolve or validate the approved ambiguities concerning accepted URL syntax, short URL format, uniqueness scope, persistence duration, unknown-short-URL errors, redirect behavior, and operational requirements before implementation. Do not silently choose unresolved policies.",
+      "task_type": "DESIGN",
       "depends_on": [],
-      "requirement_refs": [
-        "FR-001",
-        "FR-002",
-        "FR-003",
-        "FR-004",
-        "FR-005",
-        "CON-002"
-      ],
-      "acceptance_criteria_refs": [
-        "AC-005"
-      ],
-      "risk_refs": [
-        "RISK-001",
-        "RISK-003",
-        "RISK-004",
-        "RISK-005",
-        "RISK-006"
-      ],
+      "requirement_refs": [],
+      "acceptance_criteria_refs": [],
+      "risk_refs": [],
       "ambiguity_refs": [
         "AMB-001",
         "AMB-002",
         "AMB-003",
         "AMB-004",
         "AMB-005",
-        "AMB-006",
-        "AMB-007",
-        "AMB-008",
-        "AMB-009",
-        "AMB-010"
+        "AMB-006"
       ],
       "expected_outputs": [
-        "Documented interface and URL-validation policy",
-        "Documented identifier and duplicate-submission policy",
-        "Documented persistence, retention, redirect, and error semantics",
-        "Documented scope decisions or unresolved validation items for optional controls and operational targets"
+        "Documented decisions or explicitly retained open questions for URL validation, short URL format, uniqueness scope, persistence duration, error semantics, redirect semantics, and operational requirements",
+        "Validated service policy inputs for subsequent design and testing"
       ]
     },
     {
       "task_id": "TASK-002",
-      "lineage_id": "54db8798-c460-5b42-908b-62b3ae0f31e1",
-      "source_key": "design_shortening_service",
-      "title": "Design shortening and redirection service",
-      "description": "Produce a service design that accepts long URLs, generates unique identifiers, retains identifier-to-destination mappings, redirects known identifiers, and returns errors for unknown identifiers. The design must incorporate the outcomes or explicit unresolved boundaries from service policy clarification.",
+      "lineage_id": "ef416717-e067-53bd-8767-c378fd925536",
+      "source_key": "design_short_url_service",
+      "title": "Design the shortening and redirect service",
+      "description": "Define the HTTP contract, short-identifier generation and uniqueness approach, persistent mapping model, redirect lookup flow, and unknown-identifier error flow using the outcomes of policy clarification.",
       "task_type": "DESIGN",
       "depends_on": [
         "TASK-001"
@@ -68,49 +47,30 @@
         "FR-002",
         "FR-003",
         "FR-004",
-        "FR-005",
-        "CON-001",
-        "CON-002"
+        "FR-005"
       ],
-      "acceptance_criteria_refs": [
-        "AC-001",
-        "AC-002",
-        "AC-003",
-        "AC-004",
-        "AC-005",
-        "AC-006"
-      ],
-      "risk_refs": [
-        "RISK-001",
-        "RISK-002",
-        "RISK-003",
-        "RISK-004",
-        "RISK-006"
-      ],
+      "acceptance_criteria_refs": [],
+      "risk_refs": [],
       "ambiguity_refs": [
         "AMB-001",
         "AMB-002",
         "AMB-003",
         "AMB-004",
         "AMB-005",
-        "AMB-006",
-        "AMB-008",
-        "AMB-009",
-        "AMB-010"
+        "AMB-006"
       ],
       "expected_outputs": [
-        "Component and request-flow design",
-        "Mapping data model and retention design",
-        "Uniqueness and concurrent-write strategy",
-        "Documented handling for invalid, unknown, and unreachable URLs"
+        "Service interface design for shortening and redirect requests",
+        "Mapping data model and uniqueness strategy",
+        "Documented request, response, redirect, and error behavior aligned with clarified policies"
       ]
     },
     {
       "task_id": "TASK-003",
-      "lineage_id": "25126e1c-17f0-553e-8941-dd746c1b2b8d",
-      "source_key": "implement_mapping_creation",
-      "title": "Implement URL shortening and mapping retention",
-      "description": "Implement the shortening flow according to the approved design: accept a long URL, generate a unique short identifier and short URL, and persist or otherwise retain the mapping without duplicate identifiers or unintended overwrites.",
+      "lineage_id": "51731222-b97e-5dd5-a4cf-4f5cd8f15272",
+      "source_key": "implement_mapping_flows",
+      "title": "Implement URL shortening and mapping persistence",
+      "description": "Implement acceptance of long URLs, generation of unique short identifiers among stored mappings, return of short URLs, and persistence of each identifier-to-original-URL association.",
       "task_type": "IMPLEMENTATION",
       "depends_on": [
         "TASK-002"
@@ -118,89 +78,141 @@
       "requirement_refs": [
         "FR-001",
         "FR-002",
-        "FR-003",
-        "CON-001"
+        "FR-003"
       ],
       "acceptance_criteria_refs": [
         "AC-001",
         "AC-002",
-        "AC-005"
+        "AC-003"
       ],
-      "risk_refs": [
-        "RISK-001",
-        "RISK-002",
-        "RISK-003"
-      ],
+      "risk_refs": [],
       "ambiguity_refs": [
         "AMB-001",
         "AMB-002",
-        "AMB-003",
-        "AMB-004",
-        "AMB-009"
+        "AMB-003"
       ],
       "expected_outputs": [
-        "Shortening interface implementation",
-        "Identifier generation and uniqueness enforcement",
-        "Mapping persistence or retention implementation",
-        "Configured validation behavior based on the approved policy"
+        "Shortening request flow",
+        "Unique short-identifier generation and collision handling",
+        "Persistent mapping write path",
+        "Short URL response behavior"
       ]
     },
     {
       "task_id": "TASK-004",
-      "lineage_id": "645ba572-14d1-5e03-9fb4-be8c961a1243",
-      "source_key": "implement_redirect_errors",
-      "title": "Implement redirection and unknown-identifier handling",
-      "description": "Implement lookup behavior for short URLs so known identifiers redirect to the exact retained destination and unknown identifiers return the approved error response without redirecting to an unrelated destination.",
+      "lineage_id": "79865642-0d55-5ec1-a02e-5ae5cafe6253",
+      "source_key": "implement_redirect_flows",
+      "title": "Implement known and unknown short URL handling",
+      "description": "Implement lookup of stored mappings, redirection to the exact associated original URL for known identifiers, and the specified error response for identifiers without mappings.",
       "task_type": "IMPLEMENTATION",
       "depends_on": [
-        "TASK-002"
+        "TASK-002",
+        "TASK-003"
       ],
       "requirement_refs": [
+        "FR-004",
+        "FR-005"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-004",
+        "AC-005",
+        "AC-006"
+      ],
+      "risk_refs": [],
+      "ambiguity_refs": [
+        "AMB-004",
+        "AMB-005",
+        "AMB-003"
+      ],
+      "expected_outputs": [
+        "Known-short-URL lookup and redirect flow",
+        "Unknown-short-URL error flow",
+        "Handling that supports long original URLs without incorrectly returning an error"
+      ]
+    },
+    {
+      "task_id": "TASK-005",
+      "lineage_id": "0b87e73a-12a9-57ba-b6da-908167fd903d",
+      "source_key": "test_shortening_contract",
+      "title": "Test shortening and mapping guarantees",
+      "description": "Validate the shortening endpoint and stored mapping behavior against the approved acceptance criteria, including valid long URL input, returned short URLs, persistence, and distinct identifiers.",
+      "task_type": "TEST",
+      "depends_on": [
+        "TASK-003"
+      ],
+      "requirement_refs": [
+        "FR-001",
+        "FR-002",
+        "FR-003"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-001",
+        "AC-002",
+        "AC-003"
+      ],
+      "risk_refs": [],
+      "ambiguity_refs": [
+        "AMB-001",
+        "AMB-002",
+        "AMB-003"
+      ],
+      "expected_outputs": [
+        "Automated or reproducible tests for shortening requests",
+        "Coverage of mapping persistence and identifier distinctness",
+        "Test results showing conformance or documented failures"
+      ]
+    },
+    {
+      "task_id": "TASK-006",
+      "lineage_id": "e7a02765-a248-5297-bfb6-8f04a2107d17",
+      "source_key": "test_redirect_contract",
+      "title": "Test redirect and unknown-URL behavior",
+      "description": "Validate known short URL resolution, exact original URL redirection, behavior with long original URLs, and error handling for unknown short URLs using the clarified HTTP policies.",
+      "task_type": "TEST",
+      "depends_on": [
+        "TASK-004"
+      ],
+      "requirement_refs": [
+        "FR-004",
+        "FR-005"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-004",
+        "AC-005",
+        "AC-006"
+      ],
+      "risk_refs": [],
+      "ambiguity_refs": [
+        "AMB-004",
+        "AMB-005",
+        "AMB-003"
+      ],
+      "expected_outputs": [
+        "Tests for known short URL redirects",
+        "Tests for exact destination preservation and long destinations",
+        "Tests for unknown short URL errors",
+        "Test results showing conformance or documented failures"
+      ]
+    },
+    {
+      "task_id": "TASK-007",
+      "lineage_id": "e16c9ba9-e319-5bba-b5bb-7a681e814f59",
+      "source_key": "validate_end_to_end_service",
+      "title": "Validate end-to-end service behavior",
+      "description": "Perform integrated validation across shortening, persistence, identifier uniqueness, redirect lookup, unknown-identifier errors, and the clarified policy decisions.",
+      "task_type": "VALIDATION",
+      "depends_on": [
+        "TASK-005",
+        "TASK-006"
+      ],
+      "requirement_refs": [
+        "FR-001",
+        "FR-002",
         "FR-003",
         "FR-004",
         "FR-005"
       ],
       "acceptance_criteria_refs": [
-        "AC-003",
-        "AC-004",
-        "AC-006"
-      ],
-      "risk_refs": [
-        "RISK-003",
-        "RISK-004"
-      ],
-      "ambiguity_refs": [
-        "AMB-004",
-        "AMB-005",
-        "AMB-006",
-        "AMB-010"
-      ],
-      "expected_outputs": [
-        "Short-URL lookup and redirect implementation",
-        "Unknown-identifier error handling",
-        "Destination-preservation behavior aligned with the approved policy"
-      ]
-    },
-    {
-      "task_id": "TASK-005",
-      "lineage_id": "a067cef5-78d8-5235-934f-eb67575391cc",
-      "source_key": "test_core_url_flows",
-      "title": "Test core shortening and redirection flows",
-      "description": "Create and execute tests for accepted long URLs, generated short URLs, uniqueness among active mappings, retained mappings, exact-destination redirects, unknown-identifier errors, and protection against unrelated redirects.",
-      "task_type": "TEST",
-      "depends_on": [
-        "TASK-003",
-        "TASK-004"
-      ],
-      "requirement_refs": [
-        "FR-001",
-        "FR-002",
-        "FR-003",
-        "FR-004",
-        "FR-005",
-        "CON-001"
-      ],
-      "acceptance_criteria_refs": [
         "AC-001",
         "AC-002",
         "AC-003",
@@ -208,79 +220,19 @@
         "AC-005",
         "AC-006"
       ],
-      "risk_refs": [
-        "RISK-001",
-        "RISK-002",
-        "RISK-003",
-        "RISK-004"
-      ],
-      "ambiguity_refs": [
-        "AMB-001",
-        "AMB-002",
-        "AMB-004",
-        "AMB-005",
-        "AMB-006",
-        "AMB-009",
-        "AMB-010"
-      ],
-      "expected_outputs": [
-        "Automated or repeatable flow test suite",
-        "Concurrency and uniqueness test results",
-        "Retention and unknown-identifier behavior test results",
-        "Evidence that unknown identifiers cannot redirect to unrelated destinations"
-      ]
-    },
-    {
-      "task_id": "TASK-006",
-      "lineage_id": "c67c2eca-16c3-570a-8964-c917fb41ff94",
-      "source_key": "validate_service_against_spec",
-      "title": "Validate completed service against approved specification",
-      "description": "Perform end-to-end validation that the implemented service satisfies the approved functional requirements and acceptance criteria, and record any gaps caused by unresolved policy or operational ambiguities without silently selecting new behavior.",
-      "task_type": "VALIDATION",
-      "depends_on": [
-        "TASK-005"
-      ],
-      "requirement_refs": [
-        "FR-001",
-        "FR-002",
-        "FR-003",
-        "FR-004",
-        "FR-005",
-        "CON-001",
-        "CON-002"
-      ],
-      "acceptance_criteria_refs": [
-        "AC-001",
-        "AC-002",
-        "AC-003",
-        "AC-004",
-        "AC-005",
-        "AC-006"
-      ],
-      "risk_refs": [
-        "RISK-001",
-        "RISK-002",
-        "RISK-003",
-        "RISK-004",
-        "RISK-005",
-        "RISK-006"
-      ],
+      "risk_refs": [],
       "ambiguity_refs": [
         "AMB-001",
         "AMB-002",
         "AMB-003",
         "AMB-004",
         "AMB-005",
-        "AMB-006",
-        "AMB-007",
-        "AMB-008",
-        "AMB-009",
-        "AMB-010"
+        "AMB-006"
       ],
       "expected_outputs": [
-        "Requirement-to-validation evidence",
-        "Recorded policy and ambiguity coverage",
-        "Open-gap report for unresolved requirements or operational targets"
+        "End-to-end validation report",
+        "Traceability from all functional requirements and acceptance criteria to validation evidence",
+        "Confirmation of clarified policies or a list of unresolved policy gaps"
       ]
     }
   ]
