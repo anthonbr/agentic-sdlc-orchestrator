@@ -153,11 +153,13 @@ activemq-data/
 # Environments
 .env
 .envrc
+.env.*
+!.env.example
+env.bak/
 .venv
 env/
 venv/
 ENV/
-env.bak/
 venv.bak/
 
 # Spyder project settings
