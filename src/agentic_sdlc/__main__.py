@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from agentic_sdlc.state import ApprovalResponse, WorkflowState, demo_input
@@ -21,7 +22,7 @@ def write_workflow_diagram(output_path: Path) -> None:
 
 
 def main(arguments: list[str] | None = None) -> int:
-    """Run the one V0.2 command without introducing a CLI dependency."""
+    """Run the one V0.3 command without introducing a CLI dependency."""
 
     args = list(sys.argv[1:] if arguments is None else arguments)
     if args != ["demo"]:
@@ -44,12 +45,24 @@ def main(arguments: list[str] | None = None) -> int:
     artifact_dir = artifacts_dir / "demo-run"
     thread_id = f"demo-{uuid4().hex}"
     state = run_workflow(
-        demo_input(), thread_id=thread_id, artifact_dir=artifact_dir
+        demo_input(),
+        thread_id=thread_id,
+        artifact_dir=artifact_dir,
+        workflow=WORKFLOW,
     )
     while state.get("__interrupt__"):
-        response = _prompt_for_implementation_plan_decision(state)
+        payload = _interrupt_payload(state)
+        if payload.get("stage") == "requirement_analysis_review":
+            response = _prompt_for_requirement_analysis_decision(payload)
+        elif payload.get("stage") == "implementation_plan_review":
+            response = _prompt_for_implementation_plan_decision(payload)
+        else:
+            raise ValueError("The workflow paused at an unknown review stage.")
         state = resume_workflow(
-            thread_id, response, artifact_dir=artifact_dir
+            thread_id,
+            response,
+            artifact_dir=artifact_dir,
+            workflow=WORKFLOW,
         )
 
     for event in state.get("trace", []):
@@ -71,18 +84,58 @@ def main(arguments: list[str] | None = None) -> int:
     return 1
 
 
+def _interrupt_payload(state: WorkflowState) -> dict[str, Any]:
+    interrupt_event = state["__interrupt__"][0]
+    return interrupt_event.value
+
+
+def _prompt_for_requirement_analysis_decision(
+    payload: dict[str, Any],
+) -> ApprovalResponse:
+    """Show the complete analysis boundary before collecting human authority."""
+
+    analysis = payload["requirement_analysis"]
+    print("\nRequirement analysis requires human review.")
+    print(f"Current revision: {payload['revision_number']}")
+    print(f"Normalized problem: {analysis['normalized_problem_statement']}")
+    print(f"Requirement type: {analysis['requirement_type']}")
+    _print_analysis_list("Functional requirements", analysis["functional_requirements"])
+    _print_analysis_list(
+        "Nonfunctional requirements", analysis["nonfunctional_requirements"]
+    )
+    _print_analysis_list("Constraints", analysis["constraints"])
+    _print_analysis_list("Ambiguities", analysis["ambiguities"])
+    _print_analysis_list("Assumptions", analysis["assumptions"])
+    _print_analysis_list("Acceptance criteria", analysis["acceptance_criteria"])
+    _print_analysis_list("Risks", analysis["risks"])
+    print(f"Needs clarification: {analysis['needs_clarification']}")
+    print(f"Confidence: {analysis['confidence']:.2f}")
+    return _prompt_for_decision()
+
+
+def _print_analysis_list(label: str, values: list[str]) -> None:
+    print(f"{label}:")
+    if not values:
+        print("  - None identified.")
+        return
+    for value in values:
+        print(f"  - {value}")
+
+
 def _prompt_for_implementation_plan_decision(
-    state: WorkflowState,
+    payload: dict[str, Any],
 ) -> ApprovalResponse:
     """Collect one valid response for the active approval interrupt."""
 
-    interrupt_event = state["__interrupt__"][0]
-    payload = interrupt_event.value
     print("\nImplementation plan requires approval.")
     print(f"Current revision: {payload['revision_number']}")
     for step in payload["implementation_plan"]:
         print(f"  {step['order']}. {step['action']}")
 
+    return _prompt_for_decision()
+
+
+def _prompt_for_decision() -> ApprovalResponse:
     choices = {"a": "APPROVE", "c": "REQUEST_CHANGES", "r": "REJECT"}
     while True:
         choice = input("[A] Approve  [C] Request changes  [R] Reject: ").strip().lower()
@@ -92,12 +145,26 @@ def _prompt_for_implementation_plan_decision(
 
     feedback = ""
     if choice == "c":
-        while not feedback:
-            feedback = input("Requested changes: ").strip()
-            if not feedback:
-                print("Feedback is required when requesting changes.")
+        feedback = _prompt_for_revision_feedback()
 
     return {"decision": choices[choice], "feedback": feedback}
+
+
+def _prompt_for_revision_feedback() -> str:
+    """Collect one or more feedback lines terminated by a blank line."""
+
+    while True:
+        print("Requested changes (finish with a blank line):")
+        feedback_lines: list[str] = []
+        while True:
+            line = input()
+            if not line.strip():
+                break
+            feedback_lines.append(line.strip())
+
+        if feedback_lines:
+            return "\n".join(feedback_lines)
+        print("Feedback is required when requesting changes.")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,182 @@
+"""Small requirement-analysis LLM boundary and OpenAI implementation."""
+
+from __future__ import annotations
+
+import json
+import os
+from collections import deque
+from collections.abc import Iterable
+from typing import Any, Protocol
+
+from openai import (
+    AuthenticationError,
+    BadRequestError,
+    OpenAI,
+    OpenAIError,
+    PermissionDeniedError,
+)
+from pydantic import ValidationError
+
+from agentic_sdlc.prompts import REQUIREMENT_ANALYSIS_SYSTEM_PROMPT
+from agentic_sdlc.requirement_analysis import RequirementAnalysis
+
+
+DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"
+
+
+class RequirementAnalysisClient(Protocol):
+    """Minimal structured invocation boundary used by the workflow node."""
+
+    model_name: str
+
+    def invoke_structured(
+        self,
+        raw_requirement: str,
+        prior_analysis: RequirementAnalysis | None,
+        human_feedback: str,
+    ) -> object:
+        """Return a candidate that the workflow will validate."""
+
+
+class RequirementAnalysisClientError(RuntimeError):
+    """Safe provider error with deterministic retry guidance."""
+
+    def __init__(self, message: str, *, retryable: bool) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
+
+class MissingOpenAIAPIKeyError(RequirementAnalysisClientError):
+    """Raised when runtime analysis has no usable OpenAI credential."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "OPENAI_API_KEY is not configured; requirement analysis cannot run.",
+            retryable=False,
+        )
+
+
+class OpenAIRequirementAnalysisClient:
+    """Invoke OpenAI Structured Outputs for one requirement-analysis task."""
+
+    def __init__(
+        self,
+        *,
+        model_name: str | None = None,
+        api_key: str | None = None,
+        client: Any | None = None,
+    ) -> None:
+        self.model_name = (
+            model_name or os.getenv("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
+        )
+        self._api_key = api_key
+        self._client = client
+
+    def invoke_structured(
+        self,
+        raw_requirement: str,
+        prior_analysis: RequirementAnalysis | None,
+        human_feedback: str,
+    ) -> object:
+        """Return the SDK-parsed Pydantic result without making routing decisions."""
+
+        client = self._client or self._create_client()
+        try:
+            response = client.responses.parse(
+                model=self.model_name,
+                input=[
+                    {"role": "system", "content": REQUIREMENT_ANALYSIS_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": _requirement_analysis_input(
+                            raw_requirement, prior_analysis, human_feedback
+                        ),
+                    },
+                ],
+                text_format=RequirementAnalysis,
+            )
+        except ValidationError as error:
+            raise RequirementAnalysisClientError(
+                "OpenAI returned a requirement analysis that failed schema parsing.",
+                retryable=True,
+            ) from error
+        except (AuthenticationError, PermissionDeniedError, BadRequestError) as error:
+            raise RequirementAnalysisClientError(
+                f"OpenAI requirement analysis was rejected ({type(error).__name__}).",
+                retryable=False,
+            ) from error
+        except OpenAIError as error:
+            raise RequirementAnalysisClientError(
+                f"OpenAI requirement analysis failed ({type(error).__name__}).",
+                retryable=True,
+            ) from error
+
+        if response.output_parsed is None:
+            raise RequirementAnalysisClientError(
+                "OpenAI returned no structured requirement analysis.",
+                retryable=True,
+            )
+        return response.output_parsed
+
+    def _create_client(self) -> OpenAI:
+        api_key = self._api_key or os.getenv("OPENAI_API_KEY", "")
+        if not api_key.strip() or api_key == "YOUR_KEY_HERE":
+            raise MissingOpenAIAPIKeyError()
+        return OpenAI(api_key=api_key)
+
+
+class FakeRequirementAnalysisClient:
+    """Scripted structured client for deterministic, network-free tests."""
+
+    def __init__(
+        self,
+        responses: Iterable[object | RequirementAnalysisClientError],
+        *,
+        model_name: str = "fake-requirement-analyst",
+    ) -> None:
+        self.model_name = model_name
+        self._responses = deque(responses)
+        self.calls: list[dict[str, object]] = []
+
+    def invoke_structured(
+        self,
+        raw_requirement: str,
+        prior_analysis: RequirementAnalysis | None,
+        human_feedback: str,
+    ) -> object:
+        """Return the next scripted response and record revision context."""
+
+        self.calls.append(
+            {
+                "raw_requirement": raw_requirement,
+                "prior_analysis": prior_analysis,
+                "human_feedback": human_feedback,
+            }
+        )
+        if not self._responses:
+            raise AssertionError("No scripted requirement-analysis response remains.")
+        response = self._responses.popleft()
+        if isinstance(response, RequirementAnalysisClientError):
+            raise response
+        return response
+
+
+def _requirement_analysis_input(
+    raw_requirement: str,
+    prior_analysis: RequirementAnalysis | None,
+    human_feedback: str,
+) -> str:
+    sections = ["Raw requirement:", raw_requirement]
+    if prior_analysis is not None:
+        sections.extend(
+            [
+                "",
+                "Prior validated analysis:",
+                json.dumps(prior_analysis.model_dump(mode="json"), indent=2),
+            ]
+        )
+    if human_feedback:
+        sections.extend(
+            ["", "Authoritative human review feedback:", human_feedback]
+        )
+    return "\n".join(sections)

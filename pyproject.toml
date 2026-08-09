@@ -4,11 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentic-sdlc-orchestrator"
-version = "0.2.0"
+version = "0.3.0"
 description = "Agentic SDLC orchestration system"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["langgraph>=1.2.10,<2"]
+dependencies = [
+    "langgraph>=1.2.10,<2",
+    "openai>=2,<3",
+    "pydantic>=2.12,<3",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.3"]

@@ -1,5 +1,6 @@
 {
   "project_name": "URL Shortener",
+  "raw_requirement": "Build a URL Shortener that:\n1. Accept a long URL.\n2. Generate a unique short URL.\n3. Redirect the short URL to the original URL.\n4. Return an error for unknown short URLs.",
   "submitted_requirements": [
     "Accept a long URL.",
     "Generate a unique short URL.",
