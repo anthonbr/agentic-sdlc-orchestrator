@@ -14,3 +14,5 @@
    - Related work items: WI-001, WI-002, WI-003, WI-004
 7. Prepare API and operating documentation.
    - Related work items: WI-001, WI-002, WI-003, WI-004
+8. Address implementation-plan review feedback (revision 1): Add explicit rate limiting and abuse prevention to the implementation plan.
+   - Related work items: WI-001, WI-002, WI-003, WI-004

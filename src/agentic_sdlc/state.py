@@ -1,4 +1,4 @@
-"""Typed shared state and demonstration input for the V0.1 workflow."""
+"""Typed shared state and demonstration input for the V0.2 workflow."""
 
 from __future__ import annotations
 
@@ -52,11 +52,33 @@ class TestPlanArtifact(TypedDict):
     cases: list[TestCase]
 
 
+ApprovalDecision = Literal["APPROVE", "REQUEST_CHANGES", "REJECT"]
+
+
+class ApprovalResponse(TypedDict):
+    """Human response used to resume the implementation-plan checkpoint."""
+
+    decision: ApprovalDecision
+    feedback: str
+
+
+class ApprovalEvent(TypedDict):
+    """One ordered implementation-plan governance decision."""
+
+    sequence: int
+    checkpoint: str
+    decision: ApprovalDecision
+    feedback: str
+    revision_number: int
+
+
 WorkflowStatus = Literal[
     "pending",
+    "awaiting_approval",
     "entry_gate_failed",
     "synchronization_failed",
     "exit_gate_failed",
+    "safe_stopped",
     "success",
 ]
 
@@ -70,6 +92,11 @@ class WorkflowState(TypedDict, total=False):
     entry_gate_passed: bool
     work_items: list[WorkItem]
     implementation_plan: list[PlanStep]
+    implementation_plan_decision: ApprovalDecision | None
+    approval_feedback: str
+    plan_revision_count: int
+    approval_history: Annotated[list[ApprovalEvent], operator.add]
+    safe_stop_reason: str
     architecture: ArchitectureArtifact
     test_plan: TestPlanArtifact
     synchronization_complete: bool
@@ -78,6 +105,13 @@ class WorkflowState(TypedDict, total=False):
     errors: list[str]
     trace: Annotated[list[str], operator.add]
 
+
+MAX_PLAN_REVISIONS = 3
+PLAN_REJECTED_REASON = "Implementation plan rejected by human."
+MAX_PLAN_REVISIONS_REASON = (
+    f"Maximum implementation plan revisions ({MAX_PLAN_REVISIONS}) reached; "
+    "no further revisions are allowed."
+)
 
 DEMO_REQUIREMENTS = (
     "Accept a long URL.",
