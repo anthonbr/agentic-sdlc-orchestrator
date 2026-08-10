@@ -16,7 +16,11 @@ from agentic_sdlc.requirement_spec import (
     RequirementSpecItem,
 )
 from agentic_sdlc.task_execution import (
+    MAX_TASK_EXECUTION_ATTEMPTS,
     TaskExecutionError,
+    TaskExecutionRecoveryAction,
+    TaskExecutionRecoveryDecision,
+    TaskExecutionRecoveryFailureKind,
     TaskExecutionState,
     TaskExecutionStatus,
     TaskGraphExecutionState,
@@ -100,6 +104,18 @@ class TaskRequirementContext(BaseModel):
         )
 
 
+class TaskExecutionRetryContext(BaseModel):
+    """Application-owned recovery context for the prior unsuccessful attempt."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    prior_attempt_number: int = Field(ge=1)
+    prior_request_id: str
+    prior_attempt_id: str
+    failure_kind: TaskExecutionRecoveryFailureKind
+    feedback: str
+
+
 class TaskExecutionRequest(BaseModel):
     """Application-owned context for one running canonical task attempt."""
 
@@ -114,6 +130,7 @@ class TaskExecutionRequest(BaseModel):
     task: Task
     requirement_context: TaskRequirementContext
     dependency_artifacts: tuple[EngineeringArtifact, ...]
+    retry_context: TaskExecutionRetryContext | None = None
 
 
 class TaskExecutionResult(BaseModel):
@@ -158,6 +175,19 @@ class TaskExecutionContractError(TaskExecutionError):
     """Raised when execution context or artifact correlation is invalid."""
 
 
+class TaskExecutionCorrelationError(TaskExecutionContractError):
+    """Raised when executor-produced correlation differs from its request."""
+
+
+RETRYABLE_VALIDATION_CHECKS = frozenset(
+    {
+        "expected_output_presence",
+        "logical_names",
+        "artifact_contents",
+    }
+)
+
+
 def build_task_execution_request(
     requirement_spec: ApprovedRequirementSpec,
     task_graph: TaskGraph,
@@ -165,6 +195,8 @@ def build_task_execution_request(
     task_id: str,
     accepted_artifacts: tuple[EngineeringArtifact, ...] = (),
     dependency_validations: tuple[TaskExecutionValidationResult, ...] = (),
+    *,
+    prior_recovery_decision: TaskExecutionRecoveryDecision | None = None,
 ) -> TaskExecutionRequest:
     """Build authoritative context for one already-running task attempt."""
 
@@ -205,6 +237,12 @@ def build_task_execution_request(
         task_graph.graph_id, task.task_id, task_state.attempt_count
     )
     request_id = _request_id(requirement_spec.spec_id, attempt_id)
+    retry_context = _derive_retry_context(
+        requirement_spec=requirement_spec,
+        task_graph=task_graph,
+        task_state=task_state,
+        prior_recovery_decision=prior_recovery_decision,
+    )
     return TaskExecutionRequest(
         request_id=request_id,
         attempt_id=attempt_id,
@@ -222,6 +260,7 @@ def build_task_execution_request(
             accepted_artifacts,
             dependency_validations,
         ),
+        retry_context=retry_context,
     )
 
 
@@ -235,7 +274,7 @@ def canonicalize_execution_result(
 
     mismatches = _correlation_mismatches(request, result)
     if mismatches:
-        raise TaskExecutionContractError(
+        raise TaskExecutionCorrelationError(
             "Execution result correlation mismatch: " + ", ".join(mismatches) + "."
         )
     if not created_at.strip():
@@ -407,6 +446,91 @@ def validate_execution_result(
         artifact_ids=tuple(artifact.artifact_id for artifact in artifacts),
         checks=tuple(checks),
         errors=tuple(errors),
+    )
+
+
+def classify_validation_failure(
+    validation: TaskExecutionValidationResult,
+) -> tuple[bool, str]:
+    """Return intrinsic retryability and deterministic safe feedback."""
+
+    if validation.passed:
+        raise TaskExecutionContractError(
+            "A passed validation result cannot be classified as a failure."
+        )
+    failed_checks = tuple(check for check in validation.checks if not check.passed)
+    if not failed_checks:
+        raise TaskExecutionContractError(
+            "A failed validation result must identify at least one failed check."
+        )
+    retryable = all(
+        check.name in RETRYABLE_VALIDATION_CHECKS for check in failed_checks
+    )
+    feedback = " ".join(check.detail for check in failed_checks)
+    return retryable, feedback
+
+
+def _derive_retry_context(
+    *,
+    requirement_spec: ApprovedRequirementSpec,
+    task_graph: TaskGraph,
+    task_state: TaskExecutionState,
+    prior_recovery_decision: TaskExecutionRecoveryDecision | None,
+) -> TaskExecutionRetryContext | None:
+    current_attempt = task_state.attempt_count
+    if current_attempt == 1:
+        if prior_recovery_decision is not None:
+            raise TaskExecutionContractError(
+                "The first task attempt cannot have prior recovery evidence."
+            )
+        return None
+    if prior_recovery_decision is None:
+        raise TaskExecutionContractError(
+            f"Task {task_state.task_id} attempt {current_attempt} requires its "
+            "immediately prior RETRY recovery decision."
+        )
+
+    prior_attempt = current_attempt - 1
+    expected_attempt_id = _attempt_id(
+        task_graph.graph_id, task_state.task_id, prior_attempt
+    )
+    expected_request_id = _request_id(
+        requirement_spec.spec_id, expected_attempt_id
+    )
+    mismatches: list[str] = []
+    if prior_recovery_decision.task_id != task_state.task_id:
+        mismatches.append("task_id")
+    if prior_recovery_decision.attempt_number != prior_attempt:
+        mismatches.append("attempt_number")
+    if prior_recovery_decision.action is not TaskExecutionRecoveryAction.RETRY:
+        mismatches.append("action")
+    if not prior_recovery_decision.retryable:
+        mismatches.append("retryable")
+    if prior_recovery_decision.max_attempts != MAX_TASK_EXECUTION_ATTEMPTS:
+        mismatches.append("max_attempts")
+    if (
+        prior_recovery_decision.failure_kind
+        is TaskExecutionRecoveryFailureKind.REQUEST_BUILD
+    ):
+        mismatches.append("failure_kind")
+    if prior_recovery_decision.attempt_id != expected_attempt_id:
+        mismatches.append("attempt_id")
+    if prior_recovery_decision.request_id != expected_request_id:
+        mismatches.append("request_id")
+    if not prior_recovery_decision.feedback.strip():
+        mismatches.append("feedback")
+    if mismatches:
+        raise TaskExecutionContractError(
+            "Prior recovery decision does not authorize this retry request: "
+            + ", ".join(mismatches)
+            + "."
+        )
+    return TaskExecutionRetryContext(
+        prior_attempt_number=prior_attempt,
+        prior_request_id=expected_request_id,
+        prior_attempt_id=expected_attempt_id,
+        failure_kind=prior_recovery_decision.failure_kind,
+        feedback=prior_recovery_decision.feedback,
     )
 
 

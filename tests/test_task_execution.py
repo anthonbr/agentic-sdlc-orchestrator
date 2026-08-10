@@ -5,14 +5,19 @@ from __future__ import annotations
 from pytest import raises
 
 from agentic_sdlc.task_execution import (
+    MAX_TASK_EXECUTION_ATTEMPTS,
     TaskExecutionError,
+    TaskExecutionRecoveryAction,
+    TaskExecutionRecoveryFailureKind,
     TaskExecutionState,
     TaskExecutionStatus,
     TaskGraphExecutionState,
     TaskGraphExecutionStatus,
+    decide_task_execution_recovery,
     initialize_task_graph_execution,
     mark_task_failed,
     mark_task_succeeded,
+    prepare_task_retry,
     ready_task_ids,
     safe_stop_task_graph_execution,
     start_task,
@@ -415,3 +420,108 @@ def test_runtime_transitions_do_not_mutate_approved_task_graph() -> None:
     assert graph.tasks[1].description == (
         "Deterministic planning data for TASK-002."
     )
+
+
+def test_prepare_retry_returns_running_task_to_ready_without_counting_attempt() -> None:
+    graph = _graph(
+        _task("TASK-001"),
+        _task("TASK-002"),
+        _task("TASK-003", "TASK-001"),
+    )
+    running = start_task(
+        graph, initialize_task_graph_execution(graph), "TASK-001"
+    )
+
+    retry_ready = prepare_task_retry(graph, running, "TASK-001")
+
+    assert retry_ready.status is TaskGraphExecutionStatus.RUNNING
+    assert _status(retry_ready, "TASK-001") is TaskExecutionStatus.READY
+    assert _attempts(retry_ready, "TASK-001") == 1
+    assert _status(retry_ready, "TASK-002") is TaskExecutionStatus.READY
+    assert _status(retry_ready, "TASK-003") is TaskExecutionStatus.BLOCKED
+    assert ready_task_ids(graph, retry_ready) == ("TASK-001", "TASK-002")
+
+    second_attempt = start_task(graph, retry_ready, "TASK-001")
+    assert _status(second_attempt, "TASK-001") is TaskExecutionStatus.RUNNING
+    assert _attempts(second_attempt, "TASK-001") == 2
+
+
+def test_prepare_retry_rejects_invalid_task_and_graph_states_or_exhaustion() -> None:
+    graph = _graph(_task("TASK-001"), _task("TASK-002"))
+    initial = initialize_task_graph_execution(graph)
+    one_running = start_task(graph, initial, "TASK-002")
+    with raises(TaskExecutionError, match="READY"):
+        prepare_task_retry(graph, one_running, "TASK-001")
+
+    blocked_graph = _graph(_task("TASK-001"), _task("TASK-002", "TASK-001"))
+    blocked_initial = initialize_task_graph_execution(blocked_graph)
+    blocked_running = start_task(blocked_graph, blocked_initial, "TASK-001")
+    with raises(TaskExecutionError, match="BLOCKED"):
+        prepare_task_retry(blocked_graph, blocked_running, "TASK-002")
+
+    running = start_task(graph, initial, "TASK-001")
+    exhausted = running.model_copy(
+        update={
+            "task_states": (
+                running.task_states[0].model_copy(
+                    update={"attempt_count": MAX_TASK_EXECUTION_ATTEMPTS}
+                ),
+                running.task_states[1],
+            )
+        }
+    )
+    with raises(TaskExecutionError, match="exhausted"):
+        prepare_task_retry(graph, exhausted, "TASK-001")
+    exhausted_ready = exhausted.model_copy(
+        update={
+            "task_states": (
+                exhausted.task_states[0].model_copy(
+                    update={"status": TaskExecutionStatus.READY}
+                ),
+                exhausted.task_states[1],
+            )
+        }
+    )
+    with raises(TaskExecutionError, match="cannot exceed 3"):
+        start_task(graph, exhausted_ready, "TASK-001")
+
+    failed = mark_task_failed(graph, running, "TASK-001")
+    with raises(TaskExecutionError, match="RUNNING TaskGraph"):
+        prepare_task_retry(graph, failed, "TASK-001")
+
+
+def test_recovery_policy_separates_retryability_from_budget_action() -> None:
+    retry = decide_task_execution_recovery(
+        task_id="TASK-001",
+        attempt_number=1,
+        request_id="request-1",
+        attempt_id="attempt-1",
+        failure_kind=TaskExecutionRecoveryFailureKind.EXECUTOR,
+        retryable=True,
+        feedback="Transient provider failure.",
+    )
+    exhausted = decide_task_execution_recovery(
+        task_id="TASK-001",
+        attempt_number=MAX_TASK_EXECUTION_ATTEMPTS,
+        request_id="request-3",
+        attempt_id="attempt-3",
+        failure_kind=TaskExecutionRecoveryFailureKind.VALIDATION,
+        retryable=True,
+        feedback="Blank artifact content.",
+    )
+    terminal = decide_task_execution_recovery(
+        task_id="TASK-001",
+        attempt_number=1,
+        request_id=None,
+        attempt_id=None,
+        failure_kind=TaskExecutionRecoveryFailureKind.REQUEST_BUILD,
+        retryable=False,
+        feedback="Authoritative request evidence is invalid.",
+    )
+
+    assert retry.action is TaskExecutionRecoveryAction.RETRY
+    assert retry.max_attempts == 3
+    assert exhausted.retryable is True
+    assert exhausted.action is TaskExecutionRecoveryAction.FAIL_TASK
+    assert "exhausted" in exhausted.reason
+    assert terminal.action is TaskExecutionRecoveryAction.FAIL_TASK

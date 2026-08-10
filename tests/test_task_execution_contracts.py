@@ -11,12 +11,16 @@ from agentic_sdlc.requirement_spec import (
     build_approved_requirement_spec,
 )
 from agentic_sdlc.task_execution import (
+    TaskExecutionRecoveryAction,
+    TaskExecutionRecoveryFailureKind,
     TaskExecutionState,
     TaskExecutionStatus,
     TaskGraphExecutionState,
     TaskGraphExecutionStatus,
+    decide_task_execution_recovery,
     initialize_task_graph_execution,
     mark_task_succeeded,
+    prepare_task_retry,
     start_task,
 )
 from agentic_sdlc.task_execution_contracts import (
@@ -24,11 +28,14 @@ from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifact,
     EngineeringArtifactType,
     TaskExecutionContractError,
+    TaskExecutionCorrelationError,
     TaskExecutionRequest,
     TaskExecutionResult,
     TaskExecutionValidationResult,
+    ValidationCheck,
     build_task_execution_request,
     canonicalize_execution_result,
+    classify_validation_failure,
     validate_execution_result,
 )
 from agentic_sdlc.task_graph import (
@@ -615,18 +622,22 @@ def test_new_attempt_changes_identity_but_keeps_slot_lineage() -> None:
     spec = _spec()
     graph = _context_graph(spec)
     first_execution, first_request = _running_request(spec, graph)
-    second_execution = first_execution.model_copy(
-        update={
-            "task_states": (
-                first_execution.task_states[0].model_copy(
-                    update={"attempt_count": 2}
-                ),
-                first_execution.task_states[1],
-            )
-        }
+    recovery = decide_task_execution_recovery(
+        task_id="TASK-001",
+        attempt_number=1,
+        request_id=first_request.request_id,
+        attempt_id=first_request.attempt_id,
+        failure_kind=TaskExecutionRecoveryFailureKind.VALIDATION,
+        retryable=True,
+        feedback="Blank artifact contents at output positions: 1.",
+    )
+    second_execution = start_task(
+        graph,
+        prepare_task_retry(graph, first_execution, "TASK-001"),
+        "TASK-001",
     )
     second_request = build_task_execution_request(
-        spec, graph, second_execution, "TASK-001"
+        spec, graph, second_execution, "TASK-001", prior_recovery_decision=recovery
     )
     first_artifact = canonicalize_execution_result(
         first_request,
@@ -644,6 +655,106 @@ def test_new_attempt_changes_identity_but_keeps_slot_lineage() -> None:
     assert first_artifact.artifact_id != second_artifact.artifact_id
     assert first_artifact.content_hash != second_artifact.content_hash
     assert first_artifact.lineage_id == second_artifact.lineage_id
+    assert first_request.retry_context is None
+    assert second_request.retry_context is not None
+    assert second_request.retry_context.prior_request_id == first_request.request_id
+    assert second_request.retry_context.feedback == recovery.feedback
+
+
+def test_retry_request_requires_exact_authoritative_prior_retry_decision() -> None:
+    spec = _spec()
+    graph = _context_graph(spec)
+    first_execution, first_request = _running_request(spec, graph)
+    second_execution = start_task(
+        graph,
+        prepare_task_retry(graph, first_execution, "TASK-001"),
+        "TASK-001",
+    )
+    valid = decide_task_execution_recovery(
+        task_id="TASK-001",
+        attempt_number=1,
+        request_id=first_request.request_id,
+        attempt_id=first_request.attempt_id,
+        failure_kind=TaskExecutionRecoveryFailureKind.EXECUTOR,
+        retryable=True,
+        feedback="Transient provider failure.",
+    )
+
+    with raises(TaskExecutionContractError, match="first task attempt"):
+        build_task_execution_request(
+            spec,
+            graph,
+            first_execution,
+            "TASK-001",
+            prior_recovery_decision=valid,
+        )
+
+    with raises(TaskExecutionContractError, match="requires its immediately prior"):
+        build_task_execution_request(spec, graph, second_execution, "TASK-001")
+
+    invalid = (
+        valid.model_copy(update={"task_id": "TASK-002"}),
+        valid.model_copy(update={"attempt_number": 2}),
+        valid.model_copy(update={"action": TaskExecutionRecoveryAction.FAIL_TASK}),
+        valid.model_copy(update={"request_id": "wrong-request"}),
+    )
+    for decision in invalid:
+        with raises(TaskExecutionContractError, match="does not authorize"):
+            build_task_execution_request(
+                spec,
+                graph,
+                second_execution,
+                "TASK-001",
+                prior_recovery_decision=decision,
+            )
+
+
+def test_correlation_error_is_typed_and_other_contract_errors_are_not() -> None:
+    spec = _spec()
+    graph = _context_graph(spec)
+    _, request = _running_request(spec, graph)
+    mismatched = _result(request, _output()).model_copy(
+        update={"attempt_id": "wrong-attempt"}
+    )
+
+    with raises(TaskExecutionCorrelationError):
+        canonicalize_execution_result(request, mismatched, created_at=FIXED_TIME)
+    with raises(TaskExecutionContractError) as raised:
+        canonicalize_execution_result(request, _result(request), created_at=" ")
+    assert not isinstance(raised.value, TaskExecutionCorrelationError)
+
+
+def test_validation_retry_allowlist_is_explicit_and_conservative() -> None:
+    spec = _spec()
+    graph = _context_graph(spec)
+    _, request = _running_request(spec, graph)
+    result = _result(request, _output(logical_name=" ", content=""))
+    artifacts = canonicalize_execution_result(
+        request, result, created_at=FIXED_TIME
+    )
+    validation = validate_execution_result(request, result, artifacts)
+
+    retryable, feedback = classify_validation_failure(validation)
+    assert retryable is True
+    assert "Blank artifact logical names" in feedback
+    assert "Blank artifact contents" in feedback
+
+    mixed = validation.model_copy(
+        update={
+            "checks": (
+                *validation.checks,
+                ValidationCheck(
+                    name="future_unknown_check",
+                    passed=False,
+                    detail="Unknown future failure.",
+                ),
+            )
+        }
+    )
+    assert classify_validation_failure(mixed)[0] is False
+
+    count_failure = validate_execution_result(request, result, ())
+    assert classify_validation_failure(count_failure)[0] is False
 
 
 def test_artifact_content_change_changes_hash_but_not_semantic_slot_lineage() -> None:

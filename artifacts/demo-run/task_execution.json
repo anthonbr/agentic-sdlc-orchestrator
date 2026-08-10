@@ -16,7 +16,7 @@
       {
         "task_id": "TASK-003",
         "status": "SUCCEEDED",
-        "attempt_count": 1
+        "attempt_count": 2
       },
       {
         "task_id": "TASK-004",
@@ -101,7 +101,8 @@
         "risks": [],
         "ambiguities": []
       },
-      "dependency_artifacts": []
+      "dependency_artifacts": [],
+      "retry_context": null
     },
     {
       "request_id": "eb9133e8-472b-5ac8-90e3-6de99daa2c25",
@@ -162,7 +163,8 @@
         ],
         "ambiguities": []
       },
-      "dependency_artifacts": []
+      "dependency_artifacts": [],
+      "retry_context": null
     },
     {
       "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
@@ -277,7 +279,7 @@
           ],
           "risk_refs": [],
           "ambiguity_refs": [],
-          "created_at": "2026-08-09T12:00:00+00:00"
+          "created_at": "2026-08-10T12:00:00+00:00"
         },
         {
           "artifact_id": "ARTIFACT-A8B065190894-O001",
@@ -302,9 +304,159 @@
             "RISK-001"
           ],
           "ambiguity_refs": [],
-          "created_at": "2026-08-09T12:00:00+00:00"
+          "created_at": "2026-08-10T12:00:00+00:00"
         }
-      ]
+      ],
+      "retry_context": null
+    },
+    {
+      "request_id": "d8627a0e-5f43-5eff-8da3-2f77cb9ce5a4",
+      "attempt_id": "9329f202-b538-5f6a-b75a-e5072311babf",
+      "graph_id": "GRAPH-091DC71B7451-V001",
+      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "task_id": "TASK-003",
+      "attempt_number": 2,
+      "task": {
+        "task_id": "TASK-003",
+        "lineage_id": "4f47870a-28f7-5c63-9faa-a9d9a6d48512",
+        "source_key": "build_service",
+        "title": "Implement shortening behavior",
+        "description": "Produce the governed implement shortening behavior output.",
+        "task_type": "IMPLEMENTATION",
+        "depends_on": [
+          "TASK-001",
+          "TASK-002"
+        ],
+        "requirement_refs": [
+          "FR-001",
+          "FR-002",
+          "FR-003",
+          "FR-004"
+        ],
+        "acceptance_criteria_refs": [
+          "AC-001",
+          "AC-002"
+        ],
+        "risk_refs": [],
+        "ambiguity_refs": [
+          "AMB-001"
+        ],
+        "expected_outputs": [
+          "build_service.md"
+        ]
+      },
+      "requirement_context": {
+        "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+        "requirement_type": "greenfield",
+        "assumptions": [
+          "The workflow produces semantic artifacts without writing the service."
+        ],
+        "functional_requirements": [
+          {
+            "item_id": "FR-001",
+            "lineage_id": "be48f8a5-272e-53be-99ed-2bc8ad178e19",
+            "text": "Accept a long URL."
+          },
+          {
+            "item_id": "FR-002",
+            "lineage_id": "e9db0fcb-8282-5c3a-a069-d37ca328094b",
+            "text": "Generate a unique short URL."
+          },
+          {
+            "item_id": "FR-003",
+            "lineage_id": "e49700e5-fd91-5507-b77a-04dd39c9e45d",
+            "text": "Redirect the short URL to the original URL."
+          },
+          {
+            "item_id": "FR-004",
+            "lineage_id": "9c629bbf-a432-5855-89d3-4d873651d053",
+            "text": "Return an error for unknown short URLs."
+          }
+        ],
+        "nonfunctional_requirements": [],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "item_id": "AC-001",
+            "lineage_id": "f3673e76-0d6c-5ee2-a196-638739b96b85",
+            "text": "A submitted valid URL receives a unique short URL."
+          },
+          {
+            "item_id": "AC-002",
+            "lineage_id": "e3c6d089-dce4-5ae2-9ed6-b78c2499b062",
+            "text": "An unknown short code returns a defined error."
+          }
+        ],
+        "risks": [],
+        "ambiguities": [
+          {
+            "item_id": "AMB-001",
+            "lineage_id": "514b318e-c096-5f18-a687-a794951ca0b2",
+            "text": "URL expiration behavior is unspecified."
+          }
+        ]
+      },
+      "dependency_artifacts": [
+        {
+          "artifact_id": "ARTIFACT-A697386D80B8-O001",
+          "lineage_id": "a5d71e86-34b3-5e57-ab88-bbd9adb8ef4d",
+          "artifact_type": "DESIGN",
+          "logical_name": "define_api.md",
+          "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0.",
+          "content_hash": "a697386d80b8577994b7ecd6ae47f64604389ee7540e73ca498052eae44f2105",
+          "output_index": 1,
+          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+          "graph_id": "GRAPH-091DC71B7451-V001",
+          "task_id": "TASK-001",
+          "request_id": "e5a97d9f-28e4-56d3-9e1a-0fb7f07dd918",
+          "attempt_id": "5185636e-88df-59fe-a4e6-b282000b1d76",
+          "attempt_number": 1,
+          "requirement_refs": [
+            "FR-001",
+            "FR-003",
+            "FR-004"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002"
+          ],
+          "risk_refs": [],
+          "ambiguity_refs": [],
+          "created_at": "2026-08-10T12:00:00+00:00"
+        },
+        {
+          "artifact_id": "ARTIFACT-A8B065190894-O001",
+          "lineage_id": "179de7c0-af13-57da-9a15-be0746bb9a7a",
+          "artifact_type": "DESIGN",
+          "logical_name": "define_storage.md",
+          "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0.",
+          "content_hash": "a8b065190894e55e97c2c67590a4f02d27d64942af3be47a371827e128e6d8bb",
+          "output_index": 1,
+          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+          "graph_id": "GRAPH-091DC71B7451-V001",
+          "task_id": "TASK-002",
+          "request_id": "eb9133e8-472b-5ac8-90e3-6de99daa2c25",
+          "attempt_id": "b6732d30-e96f-5648-95fc-4b3707276eb0",
+          "attempt_number": 1,
+          "requirement_refs": [
+            "FR-002",
+            "CON-001"
+          ],
+          "acceptance_criteria_refs": [],
+          "risk_refs": [
+            "RISK-001"
+          ],
+          "ambiguity_refs": [],
+          "created_at": "2026-08-10T12:00:00+00:00"
+        }
+      ],
+      "retry_context": {
+        "prior_attempt_number": 1,
+        "prior_request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
+        "prior_attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
+        "failure_kind": "EXECUTOR",
+        "feedback": "EXECUTOR failed: Controlled deterministic demo provider interruption."
+      }
     },
     {
       "request_id": "2df1fd7b-f3f0-5fae-a2cc-d585d2803217",
@@ -376,19 +528,19 @@
       },
       "dependency_artifacts": [
         {
-          "artifact_id": "ARTIFACT-FA3A4FF49BD1-O001",
+          "artifact_id": "ARTIFACT-48FC68267592-O001",
           "lineage_id": "53487900-2321-587d-a56c-4178eb51bd44",
           "artifact_type": "SOURCE",
           "logical_name": "build_service.md",
           "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2.",
-          "content_hash": "fa3a4ff49bd1ba53193461e7987901ae5cc5ff48afd7d506c13201d32ee47228",
+          "content_hash": "48fc6826759206c31d135286806995bebcb48d69fe7629e0c9cd579a085fd2e1",
           "output_index": 1,
           "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
           "graph_id": "GRAPH-091DC71B7451-V001",
           "task_id": "TASK-003",
-          "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
-          "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
-          "attempt_number": 1,
+          "request_id": "d8627a0e-5f43-5eff-8da3-2f77cb9ce5a4",
+          "attempt_id": "9329f202-b538-5f6a-b75a-e5072311babf",
+          "attempt_number": 2,
           "requirement_refs": [
             "FR-001",
             "FR-002",
@@ -403,9 +555,10 @@
           "ambiguity_refs": [
             "AMB-001"
           ],
-          "created_at": "2026-08-09T12:00:00+00:00"
+          "created_at": "2026-08-10T12:00:00+00:00"
         }
-      ]
+      ],
+      "retry_context": null
     },
     {
       "request_id": "9e53493e-d336-588e-af25-3b38b9ba076d",
@@ -479,9 +632,10 @@
             "RISK-001"
           ],
           "ambiguity_refs": [],
-          "created_at": "2026-08-09T12:00:00+00:00"
+          "created_at": "2026-08-10T12:00:00+00:00"
         }
-      ]
+      ],
+      "retry_context": null
     }
   ],
   "results": [
@@ -516,8 +670,8 @@
       "risks": []
     },
     {
-      "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
-      "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
+      "request_id": "d8627a0e-5f43-5eff-8da3-2f77cb9ce5a4",
+      "attempt_id": "9329f202-b538-5f6a-b75a-e5072311babf",
       "task_id": "TASK-003",
       "summary": "Produced governed output for TASK-003.",
       "outputs": [
@@ -667,12 +821,12 @@
       "errors": []
     },
     {
-      "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
-      "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
+      "request_id": "d8627a0e-5f43-5eff-8da3-2f77cb9ce5a4",
+      "attempt_id": "9329f202-b538-5f6a-b75a-e5072311babf",
       "task_id": "TASK-003",
       "passed": true,
       "artifact_ids": [
-        "ARTIFACT-FA3A4FF49BD1-O001"
+        "ARTIFACT-48FC68267592-O001"
       ],
       "checks": [
         {
@@ -823,5 +977,29 @@
       "errors": []
     }
   ],
-  "failures": []
+  "failures": [
+    {
+      "task_id": "TASK-003",
+      "attempt_number": 1,
+      "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
+      "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
+      "phase": "EXECUTOR",
+      "error_type": "TaskExecutorError",
+      "message": "Controlled deterministic demo provider interruption."
+    }
+  ],
+  "recovery_decisions": [
+    {
+      "task_id": "TASK-003",
+      "attempt_number": 1,
+      "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
+      "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
+      "failure_kind": "EXECUTOR",
+      "retryable": true,
+      "max_attempts": 3,
+      "action": "RETRY",
+      "reason": "Retryable EXECUTOR failure may use attempt 2 of 3.",
+      "feedback": "EXECUTOR failed: Controlled deterministic demo provider interruption."
+    }
+  ]
 }

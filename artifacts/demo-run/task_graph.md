@@ -14,6 +14,8 @@
 
 - Type: DESIGN
 - Depends on: ENTRY
+- Runtime status: SUCCEEDED
+- Attempts: 1
 - Requirements: FR-001, FR-003, FR-004
 - Acceptance criteria: AC-001, AC-002
 - Risks: None
@@ -25,6 +27,8 @@
 
 - Type: DESIGN
 - Depends on: ENTRY
+- Runtime status: SUCCEEDED
+- Attempts: 1
 - Requirements: FR-002, CON-001
 - Acceptance criteria: None
 - Risks: RISK-001
@@ -38,6 +42,8 @@
 
 - Type: IMPLEMENTATION
 - Depends on: TASK-001, TASK-002
+- Runtime status: SUCCEEDED
+- Attempts: 2
 - Requirements: FR-001, FR-002, FR-003, FR-004
 - Acceptance criteria: AC-001, AC-002
 - Risks: None
@@ -51,6 +57,8 @@
 
 - Type: TEST
 - Depends on: TASK-003
+- Runtime status: SUCCEEDED
+- Attempts: 1
 - Requirements: NFR-001
 - Acceptance criteria: AC-001, AC-002
 - Risks: RISK-001
@@ -64,6 +72,8 @@
 
 - Type: DOCUMENTATION
 - Depends on: TASK-004
+- Runtime status: SUCCEEDED
+- Attempts: 1
 - Requirements: FR-001
 - Acceptance criteria: None
 - Risks: None

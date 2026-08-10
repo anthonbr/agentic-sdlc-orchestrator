@@ -4,7 +4,7 @@
   "version": 1,
   "supersedes_spec_id": null,
   "source_analysis_revision": 0,
-  "created_at": "2026-08-09T12:00:00+00:00",
+  "created_at": "2026-08-10T12:00:00+00:00",
   "content_hash": "79bdbc13ba00c63412bf45edea272ebe4ea4982a191129f30d1699ca58447d47",
   "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
   "requirement_type": "greenfield",

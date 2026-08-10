@@ -170,6 +170,14 @@ def _requirement_analysis_markdown(state: WorkflowState) -> str:
 def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
     semantics = state["task_graph_semantics"]
     tasks = {task["task_id"]: task for task in graph["tasks"]}
+    runtime_states = {
+        item.task_id: item
+        for item in (
+            state["task_graph_execution"].task_states
+            if state.get("task_graph_execution")
+            else ()
+        )
+    }
     lines = [
         "# Engineering Task Dependency Graph",
         "",
@@ -194,6 +202,7 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
         lines.extend([f"### Layer {layer_number}{parallel}", ""])
         for task_id in task_ids:
             task = tasks[task_id]
+            runtime = runtime_states.get(task_id)
             depends_on = ", ".join(task["depends_on"]) or "ENTRY"
             lines.extend(
                 [
@@ -201,6 +210,14 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
                     "",
                     f"- Type: {task['task_type']}",
                     f"- Depends on: {depends_on}",
+                    "- Runtime status: "
+                    + (
+                        runtime.status.value
+                        if runtime is not None
+                        else "not started"
+                    ),
+                    "- Attempts: "
+                    + (str(runtime.attempt_count) if runtime is not None else "0"),
                     "- Requirements: "
                     + (", ".join(task["requirement_refs"]) or "None"),
                     "- Acceptance criteria: "
@@ -254,6 +271,10 @@ def _execution_evidence(state: WorkflowState) -> dict[str, object]:
             failure.model_dump(mode="json")
             for failure in state.get("task_execution_failures", [])
         ],
+        "recovery_decisions": [
+            decision.model_dump(mode="json")
+            for decision in state.get("task_execution_recovery_decisions", [])
+        ],
     }
 
 
@@ -261,6 +282,17 @@ def _summary_markdown(
     state: WorkflowState, generated_filenames: tuple[str, ...]
 ) -> str:
     safe_stopped = state["workflow_status"] == "safe_stopped"
+    execution = state.get("task_graph_execution")
+    task_attempts = (
+        sum(item.attempt_count for item in execution.task_states)
+        if execution is not None
+        else 0
+    )
+    task_count = len(execution.task_states) if execution is not None else 0
+    retries = sum(
+        decision.action.value == "RETRY"
+        for decision in state.get("task_execution_recovery_decisions", [])
+    )
     lines = [
         "# Workflow Summary",
         "",
@@ -282,6 +314,8 @@ def _summary_markdown(
             if state.get("task_graph_execution")
             else "not reached"
         ),
+        f"- Task attempts: {task_attempts} across {task_count} tasks",
+        f"- Retries performed: {retries}",
         "- Exit gate: "
         + (
             "not reached"

@@ -22,7 +22,7 @@ the software-development lifecycle.
 The current V0.5 slices execute approved engineering tasks as bounded semantic
 LLM calls and settle their runtime status from deterministic application
 validation. They deliberately do **not** write generated outputs into project
-source paths, run commands, perform Git operations, retry failed tasks, or
+source paths, run commands, perform Git operations, use fallback models, or
 implement the URL Shortener demonstration service.
 
 ## Two distinct graphs
@@ -106,7 +106,8 @@ count. Successful completion unlocks a blocked task only after every declared
 dependency has succeeded. A task failure marks the graph execution `FAILED` and
 freezes new dispatch. Already-running peers may settle without unlocking more
 work; failure remains sticky, and `SAFE_STOPPED` requires no task to remain
-`RUNNING`. Retry policy is deferred.
+`RUNNING`. Slice 5 adds a controlled `RUNNING -> READY` recovery transition;
+`start_task()` remains the only operation that starts and counts a new attempt.
 
 Multiple tasks can be ready at once, representing parallel eligibility, while the
 current static control loop intentionally dispatches only the first canonical
@@ -188,6 +189,12 @@ generated Responses objects not be stored for later retrieval through the Respon
 API. This does not disable the orchestrator's own canonical artifacts or audit
 state, and it makes no broader claim about provider-side data handling.
 
+All default governed OpenAI clients for requirement analysis, task planning, and
+task execution explicitly use `max_retries=0`. Each application attempt therefore
+maps to one SDK/provider invocation, keeping every retry decision explicit at the
+orchestrator layer instead of hidden inside the SDK. Injected caller-owned clients
+are used as supplied.
+
 Approved FR/NFR/CON/AC items are authoritative engineering obligations, including
 constraints or acceptance criteria written in imperative form. Approved assumptions
 are authoritative premises; risks are authoritative engineering considerations;
@@ -205,9 +212,11 @@ The returned `TaskExecutionResult` remains a non-authoritative semantic proposal
 The executor cannot declare success or assign canonical artifact identity,
 lineage, hashes, provenance, or runtime state. Application code still performs
 artifact canonicalization and deterministic validation separately. The adapter
-does not retry, write artifacts to the repository, run commands, or settle task or
-graph state. The static LangGraph loop invokes the adapter and, outside it, uses
-the validation judgment to settle runtime state.
+does not retry internally, write artifacts to the repository, run commands, or
+settle task or graph state. One `TaskExecutor.execute()` invocation remains exactly
+one provider attempt. The static LangGraph loop invokes the adapter and, outside
+it, uses the validation judgment and deterministic recovery policy to settle
+runtime state.
 
 ### Governed serialized TaskGraph execution loop
 
@@ -226,15 +235,46 @@ approved TaskGraph
     -> canonicalize and retain EngineeringArtifact records
     -> retain deterministic TaskExecutionValidationResult
     -> PASS: settle SUCCEEDED and loop
-    -> FAIL or executor error: settle FAILED and safe-stop
+    -> retryable failure + budget: return task to READY and loop
+    -> terminal failure: settle FAILED and safe-stop
 ```
 
 LangGraph topology remains static while the approved engineering graph remains
 dynamic per-run data. The control plane selects complete successful validation and
 artifact evidence for each direct dependency, and the request builder independently
 revalidates that evidence. Parallel readiness is preserved, but dispatch is
-serialized. There is no execution retry, fallback model, task cancellation, or
-concurrent provider call in this slice.
+serialized. There is no fallback model, task cancellation, delayed backoff, or
+concurrent provider call.
+
+### Bounded task-attempt recovery
+
+One task is not necessarily one attempt: one `TaskExecutor.execute()` call is
+exactly one attempt, and a task may receive at most three attempts (the original
+attempt plus up to two retries). The application—not the LLM—classifies the failure
+and chooses `RETRY` or `FAIL_TASK`. Request-build and application-invariant failures
+are non-retryable; typed transient provider errors, result-correlation defects, and
+an explicit allowlist of correctable validation checks may retry. Unknown failure
+types default to non-retryable.
+
+Every retry starts through the same deterministic scheduler order with a new
+attempt ID and request ID. The new request carries only application-owned context
+explaining why the immediately prior attempt did not complete successfully. When
+that feedback identifies a correctable semantic-output defect, the next attempt
+corrects it while executing the same approved task. When an executor failure
+produced no usable output, the next attempt re-executes that task without inferring
+new engineering requirements, constraints, or decisions. Retry context does not
+include rejected result or artifact content and cannot change task scope,
+requirements, dependencies, ambiguity authority, or executor capabilities. No
+fallback provider, sleep, backoff, timer, or internal executor retry exists.
+
+Failed requests, semantic results, canonical artifacts, validations, provider
+failure records, and recovery decisions remain append-only audit evidence. Failed
+artifacts never gain an `accepted` flag and never enter downstream context. If a
+task eventually succeeds, only its final successful attempt and exact passed
+validation artifact set may feed dependents. Exhausting attempt three records a
+terminal decision, marks the task and graph failed, and uses the existing safe-stop
+transition. Parallel readiness is still understood while actual dispatch remains
+serialized.
 
 The prior V0.4 `architecture_task`, `test_plan_task`, and `synchronize` demo
 branches and their obsolete state were removed: they generated canned examples and
@@ -331,9 +371,8 @@ derived execution layers, parallelism, joins, and ENTRY/EXIT semantics. It then
 pauses for separate TaskGraph approval. REQUEST_CHANGES feedback at either stage
 may span multiple lines and ends with a blank line.
 
-Missing credentials never trigger a fake fallback. A missing key at any governed
-LLM stage records a clear failure and safely stops; task execution itself does not
-retry in this slice.
+Missing credentials never trigger a fake fallback. A missing task-executor key is
+classified non-retryable, records a clear failure, and safely stops.
 
 Successful artifacts are written under `artifacts/demo-run/`:
 
@@ -351,11 +390,14 @@ summary.md
 `task_graph.json` is the canonical graph. `task_graph.md` is a human-readable view
 that includes derived layers, execution status, and governance history.
 `task_execution.json` retains runtime snapshots plus correlated requests, results,
-validations, and failures; `engineering_artifacts.json` contains immutable
+validations, failures, retry contexts, and recovery decisions;
+`engineering_artifacts.json` contains immutable
 application-canonicalized outputs, including failed-validation output for audit.
 The checked-in `artifacts/demo-run/` snapshot is generated network-free through the
 actual governed workflow using scripted requirement analysis, task planning, and a
-deterministic task executor with a fixed demonstration timestamp.
+deterministic task executor with a fixed demonstration timestamp. It includes one
+controlled retryable local executor failure followed by a successful second
+attempt, without a provider call.
 The generated
 `artifacts/workflow_diagram.png` documents the static LangGraph control plane, not
 the per-run engineering TaskGraph.
@@ -376,15 +418,16 @@ runtime transitions. Execution-contract tests additionally
 cover approved-context filtering, direct dependency artifact flow, canonical
 identity/provenance, executor trust boundaries, and separate validation.
 Bounded-executor tests inject a fake Responses client and cover deterministic
-input, one-call structured parsing, and invocation-failure handling without a
-network connection. Static-loop tests cover serialized fan-out/fan-in dispatch,
-validated direct-dependency artifact propagation, graph completion, validation
-failure, executor failure, and quiescent safe stop through actual LangGraph routing.
+input, one-call structured parsing, typed retryability, and invocation-failure
+handling without a network connection. Static-loop tests cover serialized
+fan-out/fan-in dispatch, bounded recovery and exhaustion, validated
+direct-dependency artifact propagation, graph completion, validation failure,
+executor failure, and quiescent safe stop through actual LangGraph routing.
 
 ## Deliberately deferred
 
-The current V0.5 slice does not include concurrent execution, retry/recovery
-policy, code-generation or repository-writing agents, dynamically generated
-LangGraph nodes, full dynamic
-replanning, completed-task reconciliation, brownfield impact analysis, rollback,
-a database/audit store, distributed scheduling, deployment, or a web UI.
+The current V0.5 slice does not include concurrent execution, fallback models,
+delayed retry/backoff policy, cancellation, code-generation or repository-writing
+agents, dynamically generated LangGraph nodes, full dynamic replanning,
+completed-task reconciliation, brownfield impact analysis, rollback, a
+database/audit store, distributed scheduling, deployment, or a web UI.

@@ -433,6 +433,22 @@ def test_missing_requirement_api_key_safe_stops_without_network(
     )
 
 
+def test_created_requirement_openai_client_disables_sdk_retries(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_openai(**kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr("agentic_sdlc.llm.OpenAI", fake_openai)
+
+    OpenAIRequirementAnalysisClient(api_key="test-key")._create_client()
+
+    assert captured == {"api_key": "test-key", "max_retries": 0}
+
+
 def test_openai_requirement_client_uses_structured_parse_without_network() -> None:
     calls: list[dict[str, Any]] = []
 
@@ -614,6 +630,22 @@ def test_missing_api_key_at_task_planning_safe_stops_without_fake_fallback(
         "OPENAI_API_KEY is not configured; task planning cannot run."
     )
     assert "approved_task_graph" not in result
+
+
+def test_created_task_planning_openai_client_disables_sdk_retries(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_openai(**kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr("agentic_sdlc.llm.OpenAI", fake_openai)
+
+    OpenAITaskPlanningClient(api_key="test-key")._create_client()
+
+    assert captured == {"api_key": "test-key", "max_retries": 0}
 
 
 def test_task_graph_approval_runs_the_authoritative_task_graph_to_completion() -> None:

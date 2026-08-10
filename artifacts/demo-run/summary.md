@@ -9,6 +9,8 @@
 - Task planning: validated
 - Task-graph review: APPROVE
 - TaskGraph execution: SUCCEEDED
+- Task attempts: 6 across 5 tasks
+- Retries performed: 1
 - Exit gate: passed
 
 The governed V0.5 workflow executed the human-approved TaskGraph in deterministic scheduler order, canonicalized each semantic result, and allowed only application validation to settle tasks.

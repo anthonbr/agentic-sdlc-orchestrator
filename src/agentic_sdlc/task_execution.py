@@ -9,6 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentic_sdlc.task_graph import TaskGraph
 
 
+MAX_TASK_EXECUTION_ATTEMPTS = 3
+
+
 class TaskExecutionStatus(StrEnum):
     """Runtime status of one canonical engineering task."""
 
@@ -75,6 +78,39 @@ class TaskExecutionFailure(BaseModel):
     message: str
 
 
+class TaskExecutionRecoveryFailureKind(StrEnum):
+    """Failure categories considered by deterministic recovery policy."""
+
+    REQUEST_BUILD = "REQUEST_BUILD"
+    EXECUTOR = "EXECUTOR"
+    CANONICALIZATION = "CANONICALIZATION"
+    VALIDATION = "VALIDATION"
+
+
+class TaskExecutionRecoveryAction(StrEnum):
+    """Application-owned settlement choice after one failed attempt."""
+
+    RETRY = "RETRY"
+    FAIL_TASK = "FAIL_TASK"
+
+
+class TaskExecutionRecoveryDecision(BaseModel):
+    """Immutable policy evidence for recovery after one failed task attempt."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    task_id: str
+    attempt_number: int = Field(ge=1)
+    request_id: str | None
+    attempt_id: str | None
+    failure_kind: TaskExecutionRecoveryFailureKind
+    retryable: bool
+    max_attempts: int = Field(ge=1)
+    action: TaskExecutionRecoveryAction
+    reason: str
+    feedback: str
+
+
 def initialize_task_graph_execution(graph: TaskGraph) -> TaskGraphExecutionState:
     """Create a side-effect-free runtime snapshot from canonical dependencies."""
 
@@ -128,6 +164,11 @@ def start_task(
     if current.status is not TaskExecutionStatus.READY:
         raise TaskExecutionError(
             f"Task {task_id} cannot start from {current.status.value}."
+        )
+    if current.attempt_count >= MAX_TASK_EXECUTION_ATTEMPTS:
+        raise TaskExecutionError(
+            f"Task {task_id} cannot exceed {MAX_TASK_EXECUTION_ATTEMPTS} "
+            "execution attempts."
         )
     updated = TaskExecutionState(
         task_id=task_id,
@@ -210,6 +251,89 @@ def mark_task_failed(
         index,
         failed,
         graph_status=TaskGraphExecutionStatus.FAILED,
+    )
+
+
+def prepare_task_retry(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    task_id: str,
+) -> TaskGraphExecutionState:
+    """Return one running task to READY without beginning another attempt."""
+
+    _validate_execution_matches_graph(graph, execution)
+    if execution.status is not TaskGraphExecutionStatus.RUNNING:
+        raise TaskExecutionError(
+            "Only a RUNNING TaskGraph execution can prepare a task retry; "
+            f"found {execution.status.value}."
+        )
+    index = _task_state_index(execution, task_id)
+    current = execution.task_states[index]
+    if current.status is not TaskExecutionStatus.RUNNING:
+        raise TaskExecutionError(
+            f"Task {task_id} cannot prepare retry from {current.status.value}."
+        )
+    if current.attempt_count >= MAX_TASK_EXECUTION_ATTEMPTS:
+        raise TaskExecutionError(
+            f"Task {task_id} has exhausted its {MAX_TASK_EXECUTION_ATTEMPTS} "
+            "execution attempts."
+        )
+    ready = TaskExecutionState(
+        task_id=task_id,
+        status=TaskExecutionStatus.READY,
+        attempt_count=current.attempt_count,
+    )
+    return _replace_task_state(
+        execution,
+        index,
+        ready,
+        graph_status=TaskGraphExecutionStatus.RUNNING,
+    )
+
+
+def decide_task_execution_recovery(
+    *,
+    task_id: str,
+    attempt_number: int,
+    request_id: str | None,
+    attempt_id: str | None,
+    failure_kind: TaskExecutionRecoveryFailureKind,
+    retryable: bool,
+    feedback: str,
+) -> TaskExecutionRecoveryDecision:
+    """Choose RETRY or FAIL_TASK from intrinsic eligibility and fixed budget."""
+
+    if attempt_number < 1:
+        raise TaskExecutionError("Recovery requires a positive attempt number.")
+    if not feedback.strip():
+        raise TaskExecutionError("Recovery feedback must be non-empty.")
+
+    if not retryable:
+        action = TaskExecutionRecoveryAction.FAIL_TASK
+        reason = f"{failure_kind.value} failure is non-retryable."
+    elif attempt_number >= MAX_TASK_EXECUTION_ATTEMPTS:
+        action = TaskExecutionRecoveryAction.FAIL_TASK
+        reason = (
+            f"Retryable {failure_kind.value} failure exhausted the maximum "
+            f"task execution attempts ({MAX_TASK_EXECUTION_ATTEMPTS})."
+        )
+    else:
+        action = TaskExecutionRecoveryAction.RETRY
+        reason = (
+            f"Retryable {failure_kind.value} failure may use attempt "
+            f"{attempt_number + 1} of {MAX_TASK_EXECUTION_ATTEMPTS}."
+        )
+    return TaskExecutionRecoveryDecision(
+        task_id=task_id,
+        attempt_number=attempt_number,
+        request_id=request_id,
+        attempt_id=attempt_id,
+        failure_kind=failure_kind,
+        retryable=retryable,
+        max_attempts=MAX_TASK_EXECUTION_ATTEMPTS,
+        action=action,
+        reason=reason,
+        feedback=feedback,
     )
 
 

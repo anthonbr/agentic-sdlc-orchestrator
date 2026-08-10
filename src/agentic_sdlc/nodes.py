@@ -54,12 +54,17 @@ from agentic_sdlc.task_execution import (
     TaskExecutionError,
     TaskExecutionFailure,
     TaskExecutionFailurePhase,
+    TaskExecutionRecoveryAction,
+    TaskExecutionRecoveryDecision,
+    TaskExecutionRecoveryFailureKind,
     TaskExecutionStatus,
     TaskGraphExecutionState,
     TaskGraphExecutionStatus,
+    decide_task_execution_recovery,
     initialize_task_graph_execution,
     mark_task_failed,
     mark_task_succeeded,
+    prepare_task_retry,
     ready_task_ids,
     safe_stop_task_graph_execution,
     start_task,
@@ -67,11 +72,13 @@ from agentic_sdlc.task_execution import (
 from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifact,
     TaskExecutionContractError,
+    TaskExecutionCorrelationError,
     TaskExecutionRequest,
     TaskExecutionResult,
     TaskExecutionValidationResult,
     build_task_execution_request,
     canonicalize_execution_result,
+    classify_validation_failure,
     validate_execution_result,
 )
 from agentic_sdlc.task_executor import TaskExecutor, TaskExecutorError
@@ -555,6 +562,9 @@ def execute_task_graph_step(
     result: TaskExecutionResult | None = None
     try:
         artifacts, validations = _dependency_evidence(state, graph, started, task_id)
+        prior_recovery = _prior_recovery_decision(
+            state, task_id, task_state.attempt_count
+        )
         request = build_task_execution_request(
             spec,
             graph,
@@ -562,28 +572,33 @@ def execute_task_graph_step(
             task_id,
             artifacts,
             validations,
+            prior_recovery_decision=prior_recovery,
         )
     except TaskExecutionContractError as error:
-        return _failed_execution_step(
+        return _recover_non_validation_failure(
             state,
             graph,
             started,
             task_id=task_id,
             attempt_number=task_state.attempt_count,
             phase=TaskExecutionFailurePhase.REQUEST_BUILD,
+            failure_kind=TaskExecutionRecoveryFailureKind.REQUEST_BUILD,
+            retryable=False,
             error=error,
         )
 
     try:
         result = executor.execute(request)
     except TaskExecutorError as error:
-        return _failed_execution_step(
+        return _recover_non_validation_failure(
             state,
             graph,
             started,
             task_id=task_id,
             attempt_number=request.attempt_number,
             phase=TaskExecutionFailurePhase.EXECUTOR,
+            failure_kind=TaskExecutionRecoveryFailureKind.EXECUTOR,
+            retryable=error.retryable,
             error=error,
             request=request,
         )
@@ -595,13 +610,15 @@ def execute_task_graph_step(
             created_at=datetime.now(UTC).isoformat(),
         )
     except TaskExecutionContractError as error:
-        return _failed_execution_step(
+        return _recover_non_validation_failure(
             state,
             graph,
             started,
             task_id=task_id,
             attempt_number=request.attempt_number,
             phase=TaskExecutionFailurePhase.CANONICALIZATION,
+            failure_kind=TaskExecutionRecoveryFailureKind.CANONICALIZATION,
+            retryable=isinstance(error, TaskExecutionCorrelationError),
             error=error,
             request=request,
             result=result,
@@ -612,19 +629,29 @@ def execute_task_graph_step(
         settled = mark_task_succeeded(graph, started, task_id)
         outcome = "succeeded"
         stop_reason = ""
+        recovery_decisions: list[TaskExecutionRecoveryDecision] = []
     else:
-        settled = mark_task_failed(graph, started, task_id)
-        outcome = "failed validation"
-        stop_reason = (
-            f"Task {task_id} failed deterministic execution validation: "
-            + "; ".join(validation.errors)
+        retryable, feedback = classify_validation_failure(validation)
+        decision = decide_task_execution_recovery(
+            task_id=task_id,
+            attempt_number=request.attempt_number,
+            request_id=request.request_id,
+            attempt_id=request.attempt_id,
+            failure_kind=TaskExecutionRecoveryFailureKind.VALIDATION,
+            retryable=retryable,
+            feedback=feedback,
         )
+        settled, outcome, stop_reason = _settle_recovery_decision(
+            graph, started, decision
+        )
+        recovery_decisions = [decision]
     update: WorkflowState = {
         "task_graph_execution": settled,
         "task_execution_requests": [request],
         "task_execution_results": [result],
         "engineering_artifacts": list(produced_artifacts),
         "task_execution_validations": [validation],
+        "task_execution_recovery_decisions": recovery_decisions,
         "trace": [f"[execute_task_graph_step] {task_id} {outcome}"],
     }
     if stop_reason:
@@ -679,7 +706,30 @@ def _dependency_evidence(
     return tuple(selected_artifacts), tuple(selected_validations)
 
 
-def _failed_execution_step(
+def _prior_recovery_decision(
+    state: WorkflowState,
+    task_id: str,
+    attempt_number: int,
+) -> TaskExecutionRecoveryDecision | None:
+    """Select exactly the immediately prior application-owned retry decision."""
+
+    if attempt_number == 1:
+        return None
+    matching = [
+        decision
+        for decision in state.get("task_execution_recovery_decisions", [])
+        if decision.task_id == task_id
+        and decision.attempt_number == attempt_number - 1
+    ]
+    if len(matching) != 1:
+        raise TaskExecutionContractError(
+            f"Task {task_id} attempt {attempt_number} requires exactly one "
+            "immediately prior recovery decision."
+        )
+    return matching[0]
+
+
+def _recover_non_validation_failure(
     state: WorkflowState,
     graph: TaskGraph,
     execution: TaskGraphExecutionState,
@@ -687,13 +737,27 @@ def _failed_execution_step(
     task_id: str,
     attempt_number: int,
     phase: TaskExecutionFailurePhase,
+    failure_kind: TaskExecutionRecoveryFailureKind,
+    retryable: bool,
     error: Exception,
     request: TaskExecutionRequest | None = None,
     result: TaskExecutionResult | None = None,
 ) -> WorkflowState:
-    """Record a non-validation failure and deterministically fail the task."""
+    """Retain non-validation failure evidence and apply deterministic recovery."""
 
-    failed = mark_task_failed(graph, execution, task_id)
+    feedback = _safe_recovery_feedback(failure_kind, error)
+    decision = decide_task_execution_recovery(
+        task_id=task_id,
+        attempt_number=attempt_number,
+        request_id=request.request_id if request is not None else None,
+        attempt_id=request.attempt_id if request is not None else None,
+        failure_kind=failure_kind,
+        retryable=retryable,
+        feedback=feedback,
+    )
+    settled, outcome, stop_reason = _settle_recovery_decision(
+        graph, execution, decision
+    )
     failure = TaskExecutionFailure(
         task_id=task_id,
         attempt_number=attempt_number,
@@ -703,18 +767,48 @@ def _failed_execution_step(
         error_type=type(error).__name__,
         message=str(error),
     )
-    reason = f"Task {task_id} failed during {phase.value}: {error}"
     update: WorkflowState = {
-        "task_graph_execution": failed,
+        "task_graph_execution": settled,
         "task_execution_failures": [failure],
-        "safe_stop_reason": reason,
-        "trace": [f"[execute_task_graph_step] {task_id} {phase.value.lower()} failed"],
+        "task_execution_recovery_decisions": [decision],
+        "trace": [f"[execute_task_graph_step] {task_id} {outcome}"],
     }
+    if stop_reason:
+        update["safe_stop_reason"] = stop_reason
     if request is not None:
         update["task_execution_requests"] = [request]
     if result is not None:
         update["task_execution_results"] = [result]
     return update
+
+
+def _safe_recovery_feedback(
+    failure_kind: TaskExecutionRecoveryFailureKind,
+    error: Exception,
+) -> str:
+    """Create concise feedback without stack traces or provider internals."""
+
+    return f"{failure_kind.value} failed: {error}"
+
+
+def _settle_recovery_decision(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    decision: TaskExecutionRecoveryDecision,
+) -> tuple[TaskGraphExecutionState, str, str]:
+    if decision.action is TaskExecutionRecoveryAction.RETRY:
+        return (
+            prepare_task_retry(graph, execution, decision.task_id),
+            f"scheduled retry after {decision.failure_kind.value.lower()}",
+            "",
+        )
+    failed = mark_task_failed(graph, execution, decision.task_id)
+    stop_reason = (
+        f"Task {decision.task_id} terminally failed after "
+        f"{decision.failure_kind.value}: {decision.reason} "
+        f"Feedback: {decision.feedback}"
+    )
+    return failed, "terminally failed", stop_reason
 
 
 def safe_stop(state: WorkflowState) -> WorkflowState:
@@ -766,7 +860,6 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
     """Validate governed planning and deterministic TaskGraph execution outputs."""
 
     execution = state.get("task_graph_execution")
-    graph_task_count = len(state.get("approved_task_graph", {}).get("tasks", []))
 
     validations = {
         "processed requirements": bool(
@@ -796,14 +889,7 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
             is TaskGraphExecutionStatus.SUCCEEDED
         ),
         "complete execution evidence": bool(
-            graph_task_count
-            and len(state.get("task_execution_requests", [])) == graph_task_count
-            and len(state.get("task_execution_results", [])) == graph_task_count
-            and len(state.get("task_execution_validations", [])) == graph_task_count
-            and all(
-                validation.passed
-                for validation in state.get("task_execution_validations", [])
-            )
+            _has_complete_final_execution_evidence(state)
         ),
     }
     missing = [label for label, passed in validations.items() if not passed]
@@ -820,6 +906,75 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
         "workflow_status": "success",
         "trace": ["[exit_gate] passed"],
     }
+
+
+def _has_complete_final_execution_evidence(state: WorkflowState) -> bool:
+    """Require one exact successful evidence chain for every final task attempt."""
+
+    graph_data = state.get("approved_task_graph")
+    execution_value = state.get("task_graph_execution")
+    if not graph_data or execution_value is None:
+        return False
+    graph = _task_graph_from_data(graph_data)
+    execution = _execution_from_state(execution_value)
+    runtime_states = {item.task_id: item for item in execution.task_states}
+    requests = state.get("task_execution_requests", [])
+    results = state.get("task_execution_results", [])
+    validations = state.get("task_execution_validations", [])
+    artifacts = state.get("engineering_artifacts", [])
+
+    for task in graph.tasks:
+        runtime = runtime_states.get(task.task_id)
+        if (
+            runtime is None
+            or runtime.status is not TaskExecutionStatus.SUCCEEDED
+            or runtime.attempt_count < 1
+        ):
+            return False
+        final_requests = [
+            request
+            for request in requests
+            if request.task_id == task.task_id
+            and request.attempt_number == runtime.attempt_count
+        ]
+        if len(final_requests) != 1:
+            return False
+        request = final_requests[0]
+        final_results = [
+            result
+            for result in results
+            if result.task_id == task.task_id
+            and result.request_id == request.request_id
+            and result.attempt_id == request.attempt_id
+        ]
+        if len(final_results) != 1:
+            return False
+        final_validations = [
+            validation
+            for validation in validations
+            if validation.task_id == task.task_id
+            and validation.request_id == request.request_id
+            and validation.attempt_id == request.attempt_id
+            and validation.passed
+        ]
+        if len(final_validations) != 1:
+            return False
+        final_artifacts = sorted(
+            (
+                artifact
+                for artifact in artifacts
+                if artifact.task_id == task.task_id
+                and artifact.request_id == request.request_id
+                and artifact.attempt_id == request.attempt_id
+                and artifact.attempt_number == runtime.attempt_count
+            ),
+            key=lambda artifact: (artifact.output_index, artifact.artifact_id),
+        )
+        if tuple(artifact.artifact_id for artifact in final_artifacts) != (
+            final_validations[0].artifact_ids
+        ):
+            return False
+    return True
 
 
 def _validated_approval_response(

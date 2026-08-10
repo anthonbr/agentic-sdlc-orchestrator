@@ -7,11 +7,19 @@ import os
 from typing import Any, Protocol
 
 from openai import (
+    APIConnectionError,
+    APIResponseValidationError,
+    APITimeoutError,
     AuthenticationError,
     BadRequestError,
+    ConflictError,
+    InternalServerError,
+    NotFoundError,
     OpenAI,
     OpenAIError,
     PermissionDeniedError,
+    RateLimitError,
+    UnprocessableEntityError,
 )
 from pydantic import ValidationError
 
@@ -34,6 +42,10 @@ class TaskExecutor(Protocol):
 
 class TaskExecutorError(RuntimeError):
     """Raised when no usable structured executor result is available."""
+
+    def __init__(self, message: str, *, retryable: bool) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 class OpenAITaskExecutor:
@@ -71,21 +83,49 @@ class OpenAITaskExecutor:
             )
         except ValidationError as error:
             raise TaskExecutorError(
-                "OpenAI returned a task execution result that failed schema parsing."
+                "OpenAI returned a task execution result that failed schema parsing.",
+                retryable=True,
             ) from error
-        except (AuthenticationError, PermissionDeniedError, BadRequestError) as error:
+        except APIResponseValidationError as error:
             raise TaskExecutorError(
-                f"OpenAI task execution was rejected ({type(error).__name__})."
+                "OpenAI returned a task execution response that failed SDK "
+                "validation.",
+                retryable=True,
+            ) from error
+        except (
+            AuthenticationError,
+            PermissionDeniedError,
+            BadRequestError,
+            NotFoundError,
+            UnprocessableEntityError,
+        ) as error:
+            raise TaskExecutorError(
+                f"OpenAI task execution was rejected ({type(error).__name__}).",
+                retryable=False,
+            ) from error
+        except (
+            RateLimitError,
+            APIConnectionError,
+            APITimeoutError,
+            ConflictError,
+            InternalServerError,
+        ) as error:
+            raise TaskExecutorError(
+                f"OpenAI task execution failed transiently "
+                f"({type(error).__name__}).",
+                retryable=True,
             ) from error
         except OpenAIError as error:
             raise TaskExecutorError(
-                f"OpenAI task execution failed ({type(error).__name__})."
+                f"OpenAI task execution failed ({type(error).__name__}).",
+                retryable=False,
             ) from error
 
         parsed = getattr(response, "output_parsed", None)
         if parsed is None:
             raise TaskExecutorError(
-                "OpenAI returned no structured task execution result."
+                "OpenAI returned no structured task execution result.",
+                retryable=True,
             )
         if isinstance(parsed, TaskExecutionResult):
             return parsed
@@ -93,16 +133,18 @@ class OpenAITaskExecutor:
             return TaskExecutionResult.model_validate(parsed)
         except ValidationError as error:
             raise TaskExecutorError(
-                "OpenAI returned an unexpected structured task execution result."
+                "OpenAI returned an unexpected structured task execution result.",
+                retryable=True,
             ) from error
 
     def _create_client(self) -> OpenAI:
         api_key = self._api_key or os.getenv("OPENAI_API_KEY", "")
         if not api_key.strip() or api_key == "YOUR_KEY_HERE":
             raise TaskExecutorError(
-                "OPENAI_API_KEY is not configured; task execution cannot run."
+                "OPENAI_API_KEY is not configured; task execution cannot run.",
+                retryable=False,
             )
-        return OpenAI(api_key=api_key)
+        return OpenAI(api_key=api_key, max_retries=0)
 
 
 def build_task_execution_input(request: TaskExecutionRequest) -> str:
@@ -125,5 +167,10 @@ def build_task_execution_input(request: TaskExecutionRequest) -> str:
             artifact.model_dump(mode="json")
             for artifact in request.dependency_artifacts
         ],
+        "application_retry_context": (
+            request.retry_context.model_dump(mode="json")
+            if request.retry_context is not None
+            else None
+        ),
     }
     return json.dumps(payload, sort_keys=True, indent=2, ensure_ascii=False)

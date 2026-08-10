@@ -24,7 +24,7 @@
     ],
     "risk_refs": [],
     "ambiguity_refs": [],
-    "created_at": "2026-08-09T12:00:00+00:00"
+    "created_at": "2026-08-10T12:00:00+00:00"
   },
   {
     "artifact_id": "ARTIFACT-A8B065190894-O001",
@@ -49,22 +49,22 @@
       "RISK-001"
     ],
     "ambiguity_refs": [],
-    "created_at": "2026-08-09T12:00:00+00:00"
+    "created_at": "2026-08-10T12:00:00+00:00"
   },
   {
-    "artifact_id": "ARTIFACT-FA3A4FF49BD1-O001",
+    "artifact_id": "ARTIFACT-48FC68267592-O001",
     "lineage_id": "53487900-2321-587d-a56c-4178eb51bd44",
     "artifact_type": "SOURCE",
     "logical_name": "build_service.md",
     "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2.",
-    "content_hash": "fa3a4ff49bd1ba53193461e7987901ae5cc5ff48afd7d506c13201d32ee47228",
+    "content_hash": "48fc6826759206c31d135286806995bebcb48d69fe7629e0c9cd579a085fd2e1",
     "output_index": 1,
     "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
     "graph_id": "GRAPH-091DC71B7451-V001",
     "task_id": "TASK-003",
-    "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
-    "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
-    "attempt_number": 1,
+    "request_id": "d8627a0e-5f43-5eff-8da3-2f77cb9ce5a4",
+    "attempt_id": "9329f202-b538-5f6a-b75a-e5072311babf",
+    "attempt_number": 2,
     "requirement_refs": [
       "FR-001",
       "FR-002",
@@ -79,7 +79,7 @@
     "ambiguity_refs": [
       "AMB-001"
     ],
-    "created_at": "2026-08-09T12:00:00+00:00"
+    "created_at": "2026-08-10T12:00:00+00:00"
   },
   {
     "artifact_id": "ARTIFACT-C67E63DA1971-O001",
@@ -106,7 +106,7 @@
       "RISK-001"
     ],
     "ambiguity_refs": [],
-    "created_at": "2026-08-09T12:00:00+00:00"
+    "created_at": "2026-08-10T12:00:00+00:00"
   },
   {
     "artifact_id": "ARTIFACT-26703B7A50D9-O001",
@@ -128,6 +128,6 @@
     "acceptance_criteria_refs": [],
     "risk_refs": [],
     "ambiguity_refs": [],
-    "created_at": "2026-08-09T12:00:00+00:00"
+    "created_at": "2026-08-10T12:00:00+00:00"
   }
 ]

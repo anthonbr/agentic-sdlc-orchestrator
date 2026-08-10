@@ -6,9 +6,23 @@ import json
 from types import SimpleNamespace
 from typing import Any
 
-from openai import OpenAIError
+import httpx
+from openai import (
+    APIConnectionError,
+    APIResponseValidationError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    ConflictError,
+    InternalServerError,
+    NotFoundError,
+    OpenAIError,
+    PermissionDeniedError,
+    RateLimitError,
+    UnprocessableEntityError,
+)
 from pydantic import ValidationError
-from pytest import MonkeyPatch, raises
+from pytest import MonkeyPatch, mark, raises
 
 from agentic_sdlc.prompts import (
     TASK_EXECUTION_PROMPT_VERSION,
@@ -17,6 +31,7 @@ from agentic_sdlc.prompts import (
 from agentic_sdlc.requirement_analysis import RequirementAnalysis
 from agentic_sdlc.requirement_spec import build_approved_requirement_spec
 from agentic_sdlc.task_execution import (
+    TaskExecutionRecoveryFailureKind,
     TaskExecutionStatus,
     TaskGraphExecutionState,
     initialize_task_graph_execution,
@@ -30,6 +45,7 @@ from agentic_sdlc.task_execution_contracts import (
     TaskExecutionContractError,
     TaskExecutionRequest,
     TaskExecutionResult,
+    TaskExecutionRetryContext,
     build_task_execution_request,
     canonicalize_execution_result,
     validate_execution_result,
@@ -172,7 +188,7 @@ def _result(request: TaskExecutionRequest) -> TaskExecutionResult:
 def test_execution_prompt_preserves_authority_boundary() -> None:
     prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
 
-    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1"
+    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.2"
     assert "exactly one approved software-engineering task" in prompt
     assert "declare success" in prompt
     assert "change the approved task" in prompt
@@ -180,6 +196,17 @@ def test_execution_prompt_preserves_authority_boundary() -> None:
     assert "write repository files" in prompt
     assert "execute commands" in prompt
     assert "perform git operations" in prompt
+    assert "application retry context" in prompt
+    assert (
+        "explaining why the immediately prior attempt did not complete successfully"
+        in prompt
+    )
+    assert "correctable semantic-output defect" in prompt
+    assert "failed before producing usable semantic output" in prompt
+    assert "re-execute the same canonical task" in prompt
+    assert "do not infer new engineering requirements" in prompt
+    assert "cannot change task scope or dependencies" in prompt
+    assert "never makes rejected artifact content authoritative" in prompt
 
 
 def test_engineering_obligations_and_meta_instructions_have_distinct_authority() -> None:
@@ -294,6 +321,79 @@ def test_execution_input_contains_only_bounded_authoritative_context() -> None:
     assert "RAW USER CONVERSATION" not in first
     assert "REJECTED REQUIREMENT REVISION" not in first
     assert "PLANNING FAILURE HISTORY" not in first
+    assert payload["application_retry_context"] is None
+
+
+def test_execution_input_serializes_only_bounded_application_retry_context() -> None:
+    _, _, request, dependency_artifact = _request_fixture()
+    retry_request = request.model_copy(
+        update={
+            "retry_context": TaskExecutionRetryContext(
+                prior_attempt_number=1,
+                prior_request_id="prior-request",
+                prior_attempt_id="prior-attempt",
+                failure_kind=TaskExecutionRecoveryFailureKind.VALIDATION,
+                feedback="Blank artifact contents at output positions: 1.",
+            )
+        }
+    )
+
+    first = build_task_execution_input(retry_request)
+    second = build_task_execution_input(retry_request)
+    payload = json.loads(first)
+
+    assert first == second
+    assert payload["application_retry_context"] == {
+        "prior_attempt_number": 1,
+        "prior_request_id": "prior-request",
+        "prior_attempt_id": "prior-attempt",
+        "failure_kind": "VALIDATION",
+        "feedback": "Blank artifact contents at output positions: 1.",
+    }
+    assert dependency_artifact.content in first
+    assert "prior rejected artifact content" not in first
+
+
+def test_executor_failure_retry_context_reexecutes_same_bounded_task() -> None:
+    _, _, request, dependency_artifact = _request_fixture()
+    feedback = (
+        "Transient provider interruption prevented the prior attempt from "
+        "completing."
+    )
+    retry_request = request.model_copy(
+        update={
+            "retry_context": TaskExecutionRetryContext(
+                prior_attempt_number=1,
+                prior_request_id="prior-request",
+                prior_attempt_id="prior-attempt",
+                failure_kind=TaskExecutionRecoveryFailureKind.EXECUTOR,
+                feedback=feedback,
+            )
+        }
+    )
+
+    serialized = build_task_execution_input(retry_request)
+    payload = json.loads(serialized)
+    prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
+
+    assert payload["application_retry_context"] == {
+        "prior_attempt_number": 1,
+        "prior_request_id": "prior-request",
+        "prior_attempt_id": "prior-attempt",
+        "failure_kind": "EXECUTOR",
+        "feedback": feedback,
+    }
+    assert payload["canonical_task"] == request.task.model_dump(mode="json")
+    assert payload["approved_requirement_context"] == (
+        request.requirement_context.model_dump(mode="json")
+    )
+    assert payload["accepted_direct_dependency_artifacts"] == [
+        dependency_artifact.model_dump(mode="json")
+    ]
+    assert "prior rejected artifact content" not in serialized
+    assert "failed before producing usable semantic output" in prompt
+    assert "re-execute the same canonical task" in prompt
+    assert "do not infer new engineering requirements" in prompt
 
 
 def test_openai_executor_uses_one_structured_parse_and_returns_result() -> None:
@@ -362,6 +462,7 @@ def test_executor_wraps_provider_failure_once_and_preserves_cause() -> None:
         executor.execute(request)
 
     assert responses.calls == 1
+    assert raised.value.retryable is False
     assert isinstance(raised.value.__cause__, OpenAIError)
 
 
@@ -374,8 +475,9 @@ def test_executor_rejects_missing_or_malformed_parsed_result() -> None:
                 return SimpleNamespace(output_parsed=parsed)
 
         executor = OpenAITaskExecutor(client=SimpleNamespace(responses=StubResponses()))
-        with raises(TaskExecutorError):
+        with raises(TaskExecutorError) as raised:
             executor.execute(request)
+        assert raised.value.retryable is True
 
 
 def test_executor_wraps_sdk_schema_validation_failure() -> None:
@@ -394,6 +496,7 @@ def test_executor_wraps_sdk_schema_validation_failure() -> None:
     with raises(TaskExecutorError, match="schema parsing") as raised:
         executor.execute(request)
 
+    assert raised.value.retryable is True
     assert raised.value.__cause__ is schema_error
 
 
@@ -403,5 +506,110 @@ def test_executor_requires_api_key_without_using_fake_fallback(
     _, _, request, _ = _request_fixture()
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    with raises(TaskExecutorError, match="OPENAI_API_KEY is not configured"):
+    with raises(TaskExecutorError, match="OPENAI_API_KEY is not configured") as raised:
         OpenAITaskExecutor(api_key="").execute(request)
+    assert raised.value.retryable is False
+
+
+def _status_error(error_type: type[OpenAIError], status_code: int) -> OpenAIError:
+    request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    response = httpx.Response(status_code, request=request)
+    return error_type("governed test error", response=response, body={})
+
+
+@mark.parametrize(
+    "provider_error",
+    [
+        APIConnectionError(
+            request=httpx.Request(
+                "POST", "https://api.openai.com/v1/responses"
+            )
+        ),
+        APITimeoutError(
+            httpx.Request("POST", "https://api.openai.com/v1/responses")
+        ),
+        _status_error(RateLimitError, 429),
+        _status_error(ConflictError, 409),
+        _status_error(InternalServerError, 500),
+    ],
+)
+def test_typed_transient_provider_errors_are_retryable(
+    provider_error: OpenAIError,
+) -> None:
+    _, _, request, _ = _request_fixture()
+
+    class StubResponses:
+        def parse(self, **kwargs: Any) -> SimpleNamespace:
+            raise provider_error
+
+    with raises(TaskExecutorError) as raised:
+        OpenAITaskExecutor(
+            client=SimpleNamespace(responses=StubResponses())
+        ).execute(request)
+
+    assert raised.value.retryable is True
+
+
+@mark.parametrize(
+    "provider_error",
+    [
+        _status_error(AuthenticationError, 401),
+        _status_error(PermissionDeniedError, 403),
+        _status_error(BadRequestError, 400),
+        _status_error(NotFoundError, 404),
+        _status_error(UnprocessableEntityError, 422),
+    ],
+)
+def test_typed_configuration_and_request_errors_are_non_retryable(
+    provider_error: OpenAIError,
+) -> None:
+    _, _, request, _ = _request_fixture()
+
+    class StubResponses:
+        def parse(self, **kwargs: Any) -> SimpleNamespace:
+            raise provider_error
+
+    with raises(TaskExecutorError) as raised:
+        OpenAITaskExecutor(
+            client=SimpleNamespace(responses=StubResponses())
+        ).execute(request)
+
+    assert raised.value.retryable is False
+
+
+def test_sdk_response_validation_error_is_retryable() -> None:
+    _, _, request, _ = _request_fixture()
+    http_request = httpx.Request(
+        "POST", "https://api.openai.com/v1/responses"
+    )
+    provider_error = APIResponseValidationError(
+        httpx.Response(200, request=http_request),
+        body={"unexpected": "shape"},
+    )
+
+    class StubResponses:
+        def parse(self, **kwargs: Any) -> SimpleNamespace:
+            raise provider_error
+
+    with raises(TaskExecutorError) as raised:
+        OpenAITaskExecutor(
+            client=SimpleNamespace(responses=StubResponses())
+        ).execute(request)
+
+    assert raised.value.retryable is True
+
+
+def test_created_openai_client_disables_sdk_retries(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_openai(**kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr("agentic_sdlc.task_executor.OpenAI", fake_openai)
+
+    OpenAITaskExecutor(api_key="test-key")._create_client()
+
+    assert captured == {"api_key": "test-key", "max_retries": 0}
