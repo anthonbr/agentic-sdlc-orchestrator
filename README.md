@@ -169,6 +169,40 @@ does not claim semantic one-to-one matching. A `SOURCE` artifact remains data on
 it is not written to the repository. No filesystem or shell execution exists in
 this slice.
 
+### Target-workspace desired-state contracts
+
+The orchestrator control plane is conceptually separate from the target engineering
+repository and any future disposable run workspace. Immutable, in-memory
+`WorkspaceSnapshot` records bind proposals to an explicit `workspace_id`, base
+snapshot identity, and canonically ordered repository-relative file hashes. A
+snapshot may describe an empty greenfield repository or an existing brownfield
+repository; constructing one performs no filesystem reads.
+
+For a validated canonical `SOURCE` artifact, `logical_name` is interpreted as a
+candidate repository-relative POSIX path and `content` as the complete desired file
+contents. Trusted application code validates the path and derives `CREATE`,
+`MODIFY`, or `NO_CHANGE` by comparing the desired-content SHA-256 with the bound
+snapshot. The executor cannot choose an operation, preimage, workspace identity, or
+change-set identity. An immutable `WorkspaceChangeSet` preserves task-attempt and
+artifact provenance, and a separate `WorkspaceChangeSetValidationResult` checks
+lineage, policy, hashes, operation derivation, ordering, and optimistic preimages.
+`TaskExecutionValidationResult` retains its distinct executor/artifact-validation
+responsibility.
+
+The initial path policy rejects absolute and drive-qualified paths, backslashes,
+NULs, empty/dot/traversal segments, duplicate destinations, `.git`, exact `.env`,
+`.venv`, and `venv`; `.env.example` remains legal. Logical validation cannot prove
+runtime symlink containment. The future filesystem backend must enforce containment
+against the real workspace immediately before mutation.
+
+Parallel change sets remain isolated desired-state records. Same-path proposals are
+sorted and reported deterministically: two `NO_CHANGE` observations are compatible,
+while any overlap containing `CREATE` or `MODIFY` fails closed, even for identical
+desired contents or mutation plus `NO_CHANGE`. No AI merge or completion-order
+selection occurs. This slice performs no writes, deletes, copying, Git operations,
+shell execution, or task-settlement integration; transactional mutation and
+postimage verification remain deferred.
+
 ### Bounded LLM task-executor adapter
 
 The first provider adapter preserves the contract boundary:
@@ -441,13 +475,17 @@ handling without a network connection. Static-loop tests use barriers and
 thread-safe fakes to prove true two-task overlap, the concurrency cap, canonical
 evidence ordering despite reversed completion, fan-out/fan-in dependency flow,
 bounded recovery, terminal-peer settlement, and quiescent safe stop through actual
-LangGraph routing.
+LangGraph routing. Workspace-contract tests cover deterministic logical snapshots,
+SOURCE desired-state interpretation, conservative path policy, derived operations,
+tamper detection, optimistic preimages, and order-independent parallel conflict
+evidence without filesystem I/O.
 
 ## Deliberately deferred
 
 The current V0.5 slice does not include cancellation, production task/wave timeout
 policy, work-conserving streaming dispatch, fallback models or providers, delayed
-retry/backoff policy, distributed workers, code-generation or repository-writing
-agents, dynamically generated LangGraph nodes, full dynamic replanning,
-completed-task reconciliation, brownfield impact analysis, rollback, skill
-loading, a persistent execution store, deployment, or a web UI.
+retry/backoff policy, distributed workers, transactional workspace mutation,
+repository copying or Git worktrees, DELETE support, generated-code execution,
+repository-writing agents, dynamically generated LangGraph nodes, full dynamic
+replanning, completed-task reconciliation, brownfield impact analysis, rollback,
+skill loading, a persistent execution store, deployment, or a web UI.
