@@ -53,6 +53,28 @@ class TaskExecutionError(ValueError):
     """Raised when runtime state or a requested transition is invalid."""
 
 
+class TaskExecutionFailurePhase(StrEnum):
+    """Restrained phases for application-owned execution failure evidence."""
+
+    REQUEST_BUILD = "REQUEST_BUILD"
+    EXECUTOR = "EXECUTOR"
+    CANONICALIZATION = "CANONICALIZATION"
+
+
+class TaskExecutionFailure(BaseModel):
+    """Immutable evidence for a task attempt that produced no validation record."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    task_id: str
+    attempt_number: int = Field(ge=1)
+    request_id: str | None
+    attempt_id: str | None
+    phase: TaskExecutionFailurePhase
+    error_type: str
+    message: str
+
+
 def initialize_task_graph_execution(graph: TaskGraph) -> TaskGraphExecutionState:
     """Create a side-effect-free runtime snapshot from canonical dependencies."""
 

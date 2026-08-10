@@ -1,4 +1,4 @@
-"""Behavior tests for governed V0.4 orchestration and both LLM boundaries."""
+"""Behavior tests for the governed orchestration workflow."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from agentic_sdlc.llm import (
     RequirementAnalysisClientError,
     TaskPlanningClientError,
 )
-from agentic_sdlc.nodes import exit_gate, synchronize
+from agentic_sdlc.nodes import exit_gate
 from agentic_sdlc.prompts import (
     REQUIREMENT_ANALYSIS_PROMPT_VERSION,
     REQUIREMENT_ANALYSIS_SYSTEM_PROMPT,
@@ -38,9 +38,15 @@ from agentic_sdlc.state import (
     MAX_TASK_GRAPH_REVISIONS_REASON,
     REQUIREMENT_ANALYSIS_REJECTED_REASON,
     TASK_GRAPH_REJECTED_REASON,
-    ArchitectureArtifact,
     WorkflowState,
     demo_input,
+)
+from agentic_sdlc.task_execution import TaskGraphExecutionStatus
+from agentic_sdlc.task_execution_contracts import (
+    ArtifactOutput,
+    EngineeringArtifactType,
+    TaskExecutionRequest,
+    TaskExecutionResult,
 )
 from agentic_sdlc.task_graph import (
     ProposedTask,
@@ -49,6 +55,44 @@ from agentic_sdlc.task_graph import (
     TaskType,
 )
 from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
+
+
+class RecordingTaskExecutor:
+    """Deterministic network-free executor for complete workflow tests."""
+
+    model_name = "recording-task-executor"
+
+    def __init__(self) -> None:
+        self.calls: list[TaskExecutionRequest] = []
+
+    def execute(self, request: TaskExecutionRequest) -> TaskExecutionResult:
+        self.calls.append(request)
+        artifact_types = {
+            TaskType.DESIGN: EngineeringArtifactType.DESIGN,
+            TaskType.IMPLEMENTATION: EngineeringArtifactType.SOURCE,
+            TaskType.TEST: EngineeringArtifactType.TEST,
+            TaskType.DOCUMENTATION: EngineeringArtifactType.DOCUMENTATION,
+            TaskType.VALIDATION: EngineeringArtifactType.VALIDATION,
+            TaskType.RELEASE: EngineeringArtifactType.OTHER,
+        }
+        return TaskExecutionResult(
+            request_id=request.request_id,
+            attempt_id=request.attempt_id,
+            task_id=request.task_id,
+            summary=f"Produced governed output for {request.task_id}.",
+            outputs=(
+                ArtifactOutput(
+                    artifact_type=artifact_types[request.task.task_type],
+                    logical_name=request.task.expected_outputs[0],
+                    content=(
+                        f"Canonical proposal for {request.task.title}. "
+                        f"Dependency artifacts: {len(request.dependency_artifacts)}."
+                    ),
+                ),
+            ),
+            assumptions=(),
+            risks=(),
+        )
 
 
 def _analysis(version: str = "v1") -> RequirementAnalysis:
@@ -66,7 +110,9 @@ def _analysis(version: str = "v1") -> RequirementAnalysis:
         nonfunctional_requirements=["Short-code lookup should be reliable."],
         constraints=["The persistence technology is not yet selected."],
         ambiguities=["URL expiration behavior is unspecified."],
-        assumptions=["The workflow plans but does not implement the service."],
+        assumptions=[
+            "The workflow produces semantic artifacts without writing the service."
+        ],
         acceptance_criteria=[
             "A submitted valid URL receives a unique short URL.",
             "An unknown short code returns a defined error.",
@@ -155,10 +201,13 @@ def _start_demo(
     *,
     analyst: FakeRequirementAnalysisClient | None = None,
     planner: FakeTaskPlanningClient | None = None,
+    executor: RecordingTaskExecutor | None = None,
 ) -> tuple[Any, str, WorkflowState, FakeRequirementAnalysisClient, FakeTaskPlanningClient]:
     active_analyst = analyst or FakeRequirementAnalysisClient([_analysis()])
     active_planner = planner or FakeTaskPlanningClient([_proposal()])
-    workflow = build_workflow(active_analyst, active_planner)
+    workflow = build_workflow(
+        active_analyst, active_planner, executor or RecordingTaskExecutor()
+    )
     thread_id = uuid4().hex
     state = run_workflow(
         demo_input(),
@@ -567,7 +616,7 @@ def test_missing_api_key_at_task_planning_safe_stops_without_fake_fallback(
     assert "approved_task_graph" not in result
 
 
-def test_task_graph_approval_runs_existing_parallel_artifact_branches() -> None:
+def test_task_graph_approval_runs_the_authoritative_task_graph_to_completion() -> None:
     workflow, thread_id, _, _, _ = _start_demo()
     paused = _approve_requirements(workflow, thread_id)
 
@@ -582,9 +631,23 @@ def test_task_graph_approval_runs_existing_parallel_artifact_branches() -> None:
     )
 
     assert result["approved_task_graph"] == result["candidate_task_graph"]
-    assert result["architecture"]["components"]
-    assert result["test_plan"]["cases"]
-    assert result["synchronization_complete"] is True
+    assert result["task_graph_execution"].status is (
+        TaskGraphExecutionStatus.SUCCEEDED
+    )
+    assert [request.task_id for request in result["task_execution_requests"]] == [
+        "TASK-001",
+        "TASK-002",
+        "TASK-003",
+        "TASK-004",
+        "TASK-005",
+    ]
+    assert len(result["engineering_artifacts"]) == 5
+    assert all(
+        validation.passed
+        for validation in result["task_execution_validations"]
+    )
+    assert "architecture" not in result
+    assert "test_plan" not in result
     assert result["exit_gate_passed"] is True
     assert result["workflow_status"] == "success"
     assert result["task_graph_review_history"] == [
@@ -712,19 +775,7 @@ def test_entry_gate_failure_stops_before_any_llm(tmp_path: Path) -> None:
     assert not artifact_dir.exists()
 
 
-def test_synchronization_requires_both_static_branch_outputs() -> None:
-    architecture: ArchitectureArtifact = {
-        "summary": "Present",
-        "components": ["API"],
-        "design_notes": [],
-    }
-    result = synchronize({"architecture": architecture, "errors": []})
-
-    assert result["synchronization_complete"] is False
-    assert "test plan" in result["errors"][0]
-
-
-def test_exit_gate_rejects_incomplete_v04_state() -> None:
+def test_exit_gate_rejects_incomplete_governed_state() -> None:
     incomplete: WorkflowState = {
         "entry_gate_passed": True,
         "normalized_requirements": [{"id": "REQ-001", "text": "Requirement"}],
@@ -740,26 +791,46 @@ def test_exit_gate_rejects_incomplete_v04_state() -> None:
 
 def test_successful_run_writes_canonical_artifact_set(tmp_path: Path) -> None:
     artifact_dir = tmp_path / "demo-run"
+    artifact_dir.mkdir()
+    (artifact_dir / "architecture.md").write_text("legacy architecture")
+    (artifact_dir / "test_plan.md").write_text("legacy test plan")
 
     result = _approve_demo(artifact_dir)
 
     assert result["workflow_status"] == "success"
     assert {path.name for path in artifact_dir.iterdir()} == set(ARTIFACT_FILENAMES)
+    assert not (artifact_dir / "architecture.md").exists()
+    assert not (artifact_dir / "test_plan.md").exists()
     spec = json.loads(
         (artifact_dir / "approved_requirement_spec.json").read_text()
     )
     graph = json.loads((artifact_dir / "task_graph.json").read_text())
+    execution = json.loads((artifact_dir / "task_execution.json").read_text())
+    engineering_artifacts = json.loads(
+        (artifact_dir / "engineering_artifacts.json").read_text()
+    )
     graph_markdown = (artifact_dir / "task_graph.md").read_text()
     summary = (artifact_dir / "summary.md").read_text()
     assert spec["functional_requirements"][0]["item_id"] == "FR-001"
     assert graph["tasks"][0]["task_id"] == "TASK-001"
     assert "Layer 1 — parallel" in graph_markdown
-    assert "Execution status: not executed" in graph_markdown
+    assert "Execution status: SUCCEEDED" in graph_markdown
+    assert execution["task_graph_execution"]["status"] == "SUCCEEDED"
+    assert [request["task_id"] for request in execution["requests"]] == [
+        "TASK-001",
+        "TASK-002",
+        "TASK-003",
+        "TASK-004",
+        "TASK-005",
+    ]
+    assert len(engineering_artifacts) == 5
     assert "Required specification coverage: complete (FR/NFR/CON/AC)" in (
         graph_markdown
     )
     assert "Requirement Analysis" in summary
     assert "Engineering Task Graph" in summary
+    assert "TaskGraph execution: SUCCEEDED" in summary
+    assert "governed V0.5 workflow executed" in summary
     assert "No engineering task was executed" not in summary
 
 
@@ -798,7 +869,11 @@ def test_cli_preserves_multiline_requirement_feedback_and_reaches_graph_review(
         output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "WORKFLOW", build_workflow(analyst, planner))
+    monkeypatch.setattr(
+        cli,
+        "WORKFLOW",
+        build_workflow(analyst, planner, RecordingTaskExecutor()),
+    )
     monkeypatch.setattr(cli, "write_workflow_diagram", write_stub_diagram)
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
 
@@ -847,6 +922,7 @@ def test_diagram_failure_does_not_fail_demo(
         build_workflow(
             FakeRequirementAnalysisClient([_analysis()]),
             FakeTaskPlanningClient([_proposal()]),
+            RecordingTaskExecutor(),
         ),
     )
     monkeypatch.setattr(cli, "write_workflow_diagram", fail_to_render)

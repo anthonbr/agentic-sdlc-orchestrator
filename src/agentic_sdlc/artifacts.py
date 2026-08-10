@@ -1,4 +1,4 @@
-"""Write compact, reviewable artifacts after a terminal V0.4 workflow run."""
+"""Write compact, reviewable artifacts after a terminal governed workflow run."""
 
 from __future__ import annotations
 
@@ -14,11 +14,16 @@ ARTIFACT_FILENAMES = (
     "approved_requirement_spec.json",
     "task_graph.json",
     "task_graph.md",
-    "architecture.md",
-    "test_plan.md",
+    "task_execution.json",
+    "engineering_artifacts.json",
     "summary.md",
 )
-LEGACY_ARTIFACT_FILENAMES = ("decomposition.json", "implementation_plan.md")
+LEGACY_ARTIFACT_FILENAMES = (
+    "architecture.md",
+    "test_plan.md",
+    "decomposition.json",
+    "implementation_plan.md",
+)
 
 
 def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
@@ -65,12 +70,14 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
         paths["task_graph.md"].write_text(
             _task_graph_markdown(state, graph), encoding="utf-8"
         )
-    if is_success:
-        paths["architecture.md"].write_text(
-            _architecture_markdown(state), encoding="utf-8"
-        )
-        paths["test_plan.md"].write_text(
-            _test_plan_markdown(state), encoding="utf-8"
+    if "task_execution.json" in generated:
+        _write_json(paths["task_execution.json"], _execution_evidence(state))
+        _write_json(
+            paths["engineering_artifacts.json"],
+            [
+                artifact.model_dump(mode="json")
+                for artifact in state.get("engineering_artifacts", [])
+            ],
         )
     paths["summary.md"].write_text(
         _summary_markdown(state, generated), encoding="utf-8"
@@ -86,6 +93,8 @@ def _safe_stop_filenames(state: WorkflowState) -> tuple[str, ...]:
         filenames.append("approved_requirement_spec.json")
     if state.get("candidate_task_graph"):
         filenames.extend(["task_graph.json", "task_graph.md"])
+    if state.get("task_graph_execution"):
+        filenames.extend(["task_execution.json", "engineering_artifacts.json"])
     filenames.append("summary.md")
     return tuple(filenames)
 
@@ -168,7 +177,12 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
         f"- Version: {graph['version']}",
         f"- Requirement specification: {graph['requirement_spec_id']}",
         f"- Content hash: `{graph['content_hash']}`",
-        "- Execution status: not executed (planning only)",
+        "- Execution status: "
+        + (
+            state["task_graph_execution"].status.value
+            if state.get("task_graph_execution")
+            else "not started"
+        ),
         "",
         "## Derived execution layers",
         "",
@@ -220,31 +234,27 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _architecture_markdown(state: WorkflowState) -> str:
-    architecture = state["architecture"]
-    return "\n".join(
-        [
-            "# Architecture",
-            "",
-            architecture["summary"],
-            "",
-            "## Conceptual components",
-            "",
-            *(f"- {component}" for component in architecture["components"]),
-            "",
-            "## Design notes",
-            "",
-            *(f"- {note}" for note in architecture["design_notes"]),
-        ]
-    ) + "\n"
-
-
-def _test_plan_markdown(state: WorkflowState) -> str:
-    test_plan = state["test_plan"]
-    lines = ["# Test Plan", "", test_plan["strategy"], "", "## Cases", ""]
-    for test_case in test_plan["cases"]:
-        lines.append(f"- **{test_case['name']}** — {test_case['purpose']}")
-    return "\n".join(lines) + "\n"
+def _execution_evidence(state: WorkflowState) -> dict[str, object]:
+    execution = state["task_graph_execution"]
+    return {
+        "task_graph_execution": execution.model_dump(mode="json"),
+        "requests": [
+            request.model_dump(mode="json")
+            for request in state.get("task_execution_requests", [])
+        ],
+        "results": [
+            result.model_dump(mode="json")
+            for result in state.get("task_execution_results", [])
+        ],
+        "validations": [
+            validation.model_dump(mode="json")
+            for validation in state.get("task_execution_validations", [])
+        ],
+        "failures": [
+            failure.model_dump(mode="json")
+            for failure in state.get("task_execution_failures", [])
+        ],
+    }
 
 
 def _summary_markdown(
@@ -266,11 +276,11 @@ def _summary_markdown(
         "- Task planning: " + state.get("task_planning_status", "not reached"),
         "- Task-graph review: "
         + (state.get("task_graph_decision") or "not reached"),
-        "- Synchronization: "
+        "- TaskGraph execution: "
         + (
-            "not reached"
-            if safe_stopped
-            else ("complete" if state["synchronization_complete"] else "failed")
+            state["task_graph_execution"].status.value
+            if state.get("task_graph_execution")
+            else "not reached"
         ),
         "- Exit gate: "
         + (
@@ -284,17 +294,20 @@ def _summary_markdown(
         lines.extend(
             [
                 f"Execution stopped safely: {state['safe_stop_reason']}",
-                "No engineering task was executed.",
+                (
+                    "Execution evidence was retained for every attempted task."
+                    if state.get("task_graph_execution")
+                    else "No engineering task was executed."
+                ),
                 "",
             ]
         )
     else:
         lines.extend(
             [
-                "The governed V0.4 workflow converted the approved analysis into an "
-                "immutable requirement specification, validated and approved an "
-                "LLM-proposed engineering dependency graph, and completed the "
-                "existing deterministic artifact branches without executing tasks.",
+                "The governed V0.5 workflow executed the human-approved TaskGraph "
+                "in deterministic scheduler order, canonicalized each semantic "
+                "result, and allowed only application validation to settle tasks.",
                 "",
             ]
         )

@@ -22,7 +22,7 @@ def write_workflow_diagram(output_path: Path) -> None:
 
 
 def main(arguments: list[str] | None = None) -> int:
-    """Run the one V0.4 command without introducing a CLI dependency."""
+    """Run the governed demonstration without introducing a CLI dependency."""
 
     args = list(sys.argv[1:] if arguments is None else arguments)
     if args != ["demo"]:

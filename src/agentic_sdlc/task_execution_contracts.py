@@ -38,7 +38,7 @@ class EngineeringArtifactType(StrEnum):
 
 
 class ArtifactOutput(BaseModel):
-    """Non-authoritative semantic output proposed by a future executor."""
+    """Non-authoritative semantic output proposed by a bounded executor."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -117,7 +117,7 @@ class TaskExecutionRequest(BaseModel):
 
 
 class TaskExecutionResult(BaseModel):
-    """Non-authoritative semantic proposal returned by a future executor."""
+    """Non-authoritative semantic proposal returned by a bounded executor."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 

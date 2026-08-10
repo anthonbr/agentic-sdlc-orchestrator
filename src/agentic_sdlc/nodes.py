@@ -1,8 +1,9 @@
-"""Governed workflow nodes for the V0.4 orchestration prototype."""
+"""Governed planning and execution nodes for the static control plane."""
 
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import cast
 
 from langgraph.types import interrupt
@@ -34,7 +35,6 @@ from agentic_sdlc.state import (
     ApprovalEvent,
     ApprovalResponse,
     ApprovedRequirementSpecData,
-    ArchitectureArtifact,
     RequirementAnalysisData,
     RequirementAnalysisFailure,
     RequirementAnalysisRecord,
@@ -42,7 +42,6 @@ from agentic_sdlc.state import (
     TaskGraphRecord,
     TaskGraphSemanticsData,
     TaskPlanningFailure,
-    TestPlanArtifact,
     WorkflowState,
 )
 from agentic_sdlc.task_graph import (
@@ -51,10 +50,35 @@ from agentic_sdlc.task_graph import (
     TaskGraphValidationError,
     normalize_and_validate_task_graph as normalize_task_graph,
 )
+from agentic_sdlc.task_execution import (
+    TaskExecutionError,
+    TaskExecutionFailure,
+    TaskExecutionFailurePhase,
+    TaskExecutionStatus,
+    TaskGraphExecutionState,
+    TaskGraphExecutionStatus,
+    initialize_task_graph_execution,
+    mark_task_failed,
+    mark_task_succeeded,
+    ready_task_ids,
+    safe_stop_task_graph_execution,
+    start_task,
+)
+from agentic_sdlc.task_execution_contracts import (
+    EngineeringArtifact,
+    TaskExecutionContractError,
+    TaskExecutionRequest,
+    TaskExecutionResult,
+    TaskExecutionValidationResult,
+    build_task_execution_request,
+    canonicalize_execution_result,
+    validate_execution_result,
+)
+from agentic_sdlc.task_executor import TaskExecutor, TaskExecutorError
 
 
 def requirements_intake(state: WorkflowState) -> WorkflowState:
-    """Preserve submitted requirements and initialize governed V0.4 state."""
+    """Preserve submitted requirements and initialize governed workflow state."""
 
     original_requirements = list(state.get("requirements", []))
     normalized_texts = [
@@ -101,7 +125,6 @@ def requirements_intake(state: WorkflowState) -> WorkflowState:
         "task_graph_feedback": "",
         "task_graph_review_history": [],
         "safe_stop_reason": "",
-        "synchronization_complete": False,
         "exit_gate_passed": False,
         "workflow_status": "pending",
         "errors": [],
@@ -491,10 +514,225 @@ def approve_task_graph(state: WorkflowState) -> WorkflowState:
     }
 
 
-def safe_stop(state: WorkflowState) -> WorkflowState:
-    """Terminate governed execution without approving or executing task work."""
+def initialize_task_graph_execution_node(state: WorkflowState) -> WorkflowState:
+    """Initialize runtime state only for the human-approved canonical graph."""
 
-    if state.get("requirement_analysis_status") == "failed":
+    if state.get("task_graph_decision") != "APPROVE" or not state.get(
+        "approved_task_graph"
+    ):
+        raise ValueError("TaskGraph execution requires an approved TaskGraph.")
+    graph = _task_graph_from_data(state["approved_task_graph"])
+    execution = initialize_task_graph_execution(graph)
+    return {
+        "task_graph_execution": execution,
+        "workflow_status": "pending",
+        "trace": [f"[initialize_task_graph_execution] {graph.graph_id} pending"],
+    }
+
+
+def execute_task_graph_step(
+    state: WorkflowState,
+    *,
+    executor: TaskExecutor,
+) -> WorkflowState:
+    """Execute and settle exactly one deterministically selected ready task."""
+
+    spec = _spec_from_state(state)
+    graph = _task_graph_from_data(state["approved_task_graph"])
+    execution = _execution_from_state(state["task_graph_execution"])
+    ready = ready_task_ids(graph, execution)
+    if not ready:
+        raise TaskExecutionError(
+            "A nonterminal TaskGraph execution has no READY task to dispatch."
+        )
+
+    task_id = ready[0]
+    started = start_task(graph, execution, task_id)
+    task_state = next(
+        item for item in started.task_states if item.task_id == task_id
+    )
+    request: TaskExecutionRequest | None = None
+    result: TaskExecutionResult | None = None
+    try:
+        artifacts, validations = _dependency_evidence(state, graph, started, task_id)
+        request = build_task_execution_request(
+            spec,
+            graph,
+            started,
+            task_id,
+            artifacts,
+            validations,
+        )
+    except TaskExecutionContractError as error:
+        return _failed_execution_step(
+            state,
+            graph,
+            started,
+            task_id=task_id,
+            attempt_number=task_state.attempt_count,
+            phase=TaskExecutionFailurePhase.REQUEST_BUILD,
+            error=error,
+        )
+
+    try:
+        result = executor.execute(request)
+    except TaskExecutorError as error:
+        return _failed_execution_step(
+            state,
+            graph,
+            started,
+            task_id=task_id,
+            attempt_number=request.attempt_number,
+            phase=TaskExecutionFailurePhase.EXECUTOR,
+            error=error,
+            request=request,
+        )
+
+    try:
+        produced_artifacts = canonicalize_execution_result(
+            request,
+            result,
+            created_at=datetime.now(UTC).isoformat(),
+        )
+    except TaskExecutionContractError as error:
+        return _failed_execution_step(
+            state,
+            graph,
+            started,
+            task_id=task_id,
+            attempt_number=request.attempt_number,
+            phase=TaskExecutionFailurePhase.CANONICALIZATION,
+            error=error,
+            request=request,
+            result=result,
+        )
+
+    validation = validate_execution_result(request, result, produced_artifacts)
+    if validation.passed:
+        settled = mark_task_succeeded(graph, started, task_id)
+        outcome = "succeeded"
+        stop_reason = ""
+    else:
+        settled = mark_task_failed(graph, started, task_id)
+        outcome = "failed validation"
+        stop_reason = (
+            f"Task {task_id} failed deterministic execution validation: "
+            + "; ".join(validation.errors)
+        )
+    update: WorkflowState = {
+        "task_graph_execution": settled,
+        "task_execution_requests": [request],
+        "task_execution_results": [result],
+        "engineering_artifacts": list(produced_artifacts),
+        "task_execution_validations": [validation],
+        "trace": [f"[execute_task_graph_step] {task_id} {outcome}"],
+    }
+    if stop_reason:
+        update["safe_stop_reason"] = stop_reason
+    return update
+
+
+def _dependency_evidence(
+    state: WorkflowState,
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    task_id: str,
+) -> tuple[tuple[EngineeringArtifact, ...], tuple[TaskExecutionValidationResult, ...]]:
+    """Select current direct-dependency evidence in canonical dependency order."""
+
+    task = next(task for task in graph.tasks if task.task_id == task_id)
+    states = {item.task_id: item for item in execution.task_states}
+    requests = state.get("task_execution_requests", [])
+    all_artifacts = state.get("engineering_artifacts", [])
+    all_validations = state.get("task_execution_validations", [])
+    artifacts_by_id = {
+        artifact.artifact_id: artifact for artifact in all_artifacts
+    }
+    selected_artifacts: list[EngineeringArtifact] = []
+    selected_validations: list[TaskExecutionValidationResult] = []
+    for dependency_id in task.depends_on:
+        attempt_number = states[dependency_id].attempt_count
+        source_requests = [
+            candidate
+            for candidate in requests
+            if candidate.task_id == dependency_id
+            and candidate.attempt_number == attempt_number
+        ]
+        if len(source_requests) != 1:
+            continue
+        source_request = source_requests[0]
+        matching_validations = [
+            candidate
+            for candidate in all_validations
+            if candidate.task_id == dependency_id
+            and candidate.request_id == source_request.request_id
+            and candidate.attempt_id == source_request.attempt_id
+            and candidate.passed
+        ]
+        selected_validations.extend(matching_validations)
+        for validation in matching_validations:
+            selected_artifacts.extend(
+                artifacts_by_id[artifact_id]
+                for artifact_id in validation.artifact_ids
+                if artifact_id in artifacts_by_id
+            )
+    return tuple(selected_artifacts), tuple(selected_validations)
+
+
+def _failed_execution_step(
+    state: WorkflowState,
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    *,
+    task_id: str,
+    attempt_number: int,
+    phase: TaskExecutionFailurePhase,
+    error: Exception,
+    request: TaskExecutionRequest | None = None,
+    result: TaskExecutionResult | None = None,
+) -> WorkflowState:
+    """Record a non-validation failure and deterministically fail the task."""
+
+    failed = mark_task_failed(graph, execution, task_id)
+    failure = TaskExecutionFailure(
+        task_id=task_id,
+        attempt_number=attempt_number,
+        request_id=request.request_id if request is not None else None,
+        attempt_id=request.attempt_id if request is not None else None,
+        phase=phase,
+        error_type=type(error).__name__,
+        message=str(error),
+    )
+    reason = f"Task {task_id} failed during {phase.value}: {error}"
+    update: WorkflowState = {
+        "task_graph_execution": failed,
+        "task_execution_failures": [failure],
+        "safe_stop_reason": reason,
+        "trace": [f"[execute_task_graph_step] {task_id} {phase.value.lower()} failed"],
+    }
+    if request is not None:
+        update["task_execution_requests"] = [request]
+    if result is not None:
+        update["task_execution_results"] = [result]
+    return update
+
+
+def safe_stop(state: WorkflowState) -> WorkflowState:
+    """Terminate governed planning or a failed quiescent graph execution."""
+
+    execution_value = state.get("task_graph_execution")
+    stopped_execution: TaskGraphExecutionState | None = None
+    if execution_value is not None and _execution_from_state(
+        execution_value
+    ).status is TaskGraphExecutionStatus.FAILED:
+        stopped_execution = safe_stop_task_graph_execution(
+            _task_graph_from_data(state["approved_task_graph"]),
+            _execution_from_state(execution_value),
+        )
+        reason = state.get("safe_stop_reason") or (
+            "TaskGraph execution failed and was stopped safely."
+        )
+    elif state.get("requirement_analysis_status") == "failed":
         reason = state.get("requirement_analysis_error") or (
             REQUIREMENT_ANALYSIS_ATTEMPTS_REASON
         )
@@ -512,94 +750,23 @@ def safe_stop(state: WorkflowState) -> WorkflowState:
         reason = TASK_GRAPH_REJECTED_REASON
     else:
         reason = MAX_TASK_GRAPH_REVISIONS_REASON
-    return {
+    update: WorkflowState = {
         "safe_stop_reason": reason,
-        "synchronization_complete": False,
         "exit_gate_passed": False,
         "workflow_status": "safe_stopped",
         "errors": [*state.get("errors", []), reason],
         "trace": ["[safe_stop] complete"],
     }
-
-
-def architecture_task(state: WorkflowState) -> WorkflowState:
-    """Preserve the deterministic architecture artifact after graph approval."""
-
-    task_count = len(state["approved_task_graph"]["tasks"])
-    architecture: ArchitectureArtifact = {
-        "summary": (
-            f"A small conceptual service design supporting {task_count} approved "
-            "engineering tasks; the tasks are not executed in V0.4."
-        ),
-        "components": [
-            "API layer — accepts long URLs and exposes short-link redirects.",
-            "URL shortening service — creates unique short codes.",
-            "Persistence abstraction — maps short codes to original URLs.",
-            "Redirect handler — resolves known codes and reports unknown ones.",
-        ],
-        "design_notes": [
-            "Keep transport, shortening logic, and storage concerns separate.",
-            "Define the storage boundary now; choose a concrete database later.",
-            "Treat approved ambiguities as unresolved until their linked tasks decide them.",
-        ],
-    }
-    return {"architecture": architecture, "trace": ["[architecture_task] complete"]}
-
-
-def test_plan_task(state: WorkflowState) -> WorkflowState:
-    """Preserve a deterministic test artifact after graph approval."""
-
-    test_plan: TestPlanArtifact = {
-        "strategy": (
-            "Verify each approved requirement at the service boundary; V0.4 plans "
-            "the work but does not execute these tests."
-        ),
-        "cases": [
-            {
-                "name": "Valid URL shortening",
-                "purpose": "A valid long URL produces a usable short URL.",
-            },
-            {
-                "name": "Unique short-code creation",
-                "purpose": "Distinct stored URLs do not receive colliding codes.",
-            },
-            {
-                "name": "Redirect correctness",
-                "purpose": "A known short code redirects to its original URL.",
-            },
-            {
-                "name": "Unknown short code",
-                "purpose": "An unknown code returns the defined error response.",
-            },
-        ],
-    }
-    return {"test_plan": test_plan, "trace": ["[test_plan_task] complete"]}
-
-
-def synchronize(state: WorkflowState) -> WorkflowState:
-    """Confirm that both deterministic demonstration branches reached the join."""
-
-    missing: list[str] = []
-    if not state.get("architecture", {}).get("components"):
-        missing.append("architecture")
-    if not state.get("test_plan", {}).get("cases"):
-        missing.append("test plan")
-    if missing:
-        reason = "Synchronization failed; missing output: " + ", ".join(missing)
-        return {
-            "synchronization_complete": False,
-            "workflow_status": "synchronization_failed",
-            "errors": [*state.get("errors", []), reason],
-            "trace": ["[synchronize] failed"],
-        }
-    return {
-        "synchronization_complete": True,
-        "trace": ["[synchronize] complete"],
-    }
+    if stopped_execution is not None:
+        update["task_graph_execution"] = stopped_execution
+    return update
 
 
 def exit_gate(state: WorkflowState) -> WorkflowState:
-    """Validate all required V0.4 outputs without executing engineering tasks."""
+    """Validate governed planning and deterministic TaskGraph execution outputs."""
+
+    execution = state.get("task_graph_execution")
+    graph_task_count = len(state.get("approved_task_graph", {}).get("tasks", []))
 
     validations = {
         "processed requirements": bool(
@@ -623,19 +790,28 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
             and state.get("approved_task_graph")
             and state.get("task_graph_review_history")
         ),
-        "successful synchronization": bool(state.get("synchronization_complete")),
+        "successful TaskGraph execution": bool(
+            execution is not None
+            and _execution_from_state(execution).status
+            is TaskGraphExecutionStatus.SUCCEEDED
+        ),
+        "complete execution evidence": bool(
+            graph_task_count
+            and len(state.get("task_execution_requests", [])) == graph_task_count
+            and len(state.get("task_execution_results", [])) == graph_task_count
+            and len(state.get("task_execution_validations", [])) == graph_task_count
+            and all(
+                validation.passed
+                for validation in state.get("task_execution_validations", [])
+            )
+        ),
     }
     missing = [label for label, passed in validations.items() if not passed]
     if missing:
         reason = "Exit gate failed; incomplete output: " + ", ".join(missing)
-        status = (
-            "synchronization_failed"
-            if not state.get("synchronization_complete")
-            else "exit_gate_failed"
-        )
         return {
             "exit_gate_passed": False,
-            "workflow_status": status,
+            "workflow_status": "exit_gate_failed",
             "errors": [*state.get("errors", []), reason],
             "trace": ["[exit_gate] failed"],
         }
@@ -723,3 +899,9 @@ def _spec_from_state(state: WorkflowState) -> ApprovedRequirementSpec:
 
 def _task_graph_from_data(data: TaskGraphData) -> TaskGraph:
     return TaskGraph.model_validate_json(json.dumps(data))
+
+
+def _execution_from_state(data: object) -> TaskGraphExecutionState:
+    if isinstance(data, TaskGraphExecutionState):
+        return data
+    return TaskGraphExecutionState.model_validate(data)

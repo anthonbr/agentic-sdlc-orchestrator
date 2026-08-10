@@ -14,14 +14,16 @@ the software-development lifecycle.
 - **V0.4 — Governed LLM task planning:** a human-approved requirement
   specification, LLM-proposed engineering task dependencies, deterministic graph
   normalization/validation, and human TaskGraph approval.
-- **V0.5 runtime foundation (current slices):** separate execution state, a
-  deterministic interpreter for readiness and transitions, and application-owned
-  execution contracts, artifact canonicalization, structural validation, and a
-  bounded OpenAI task-executor adapter.
+- **V0.5 — Governed TaskGraph execution runtime (current slices):** separate
+  execution state, deterministic readiness and transitions, application-owned
+  contracts and artifacts, a bounded OpenAI executor, and a static governed loop
+  that serially interprets the approved engineering TaskGraph.
 
-The current V0.5 slices can request one semantic engineering result from an LLM,
-but deliberately do **not execute that work**, write application code, settle
-scheduler state, or implement the URL Shortener demonstration service.
+The current V0.5 slices execute approved engineering tasks as bounded semantic
+LLM calls and settle their runtime status from deterministic application
+validation. They deliberately do **not** write generated outputs into project
+source paths, run commands, perform Git operations, retry failed tasks, or
+implement the URL Shortener demonstration service.
 
 ## Two distinct graphs
 
@@ -30,9 +32,9 @@ V0.4 intentionally keeps two graph concepts separate.
 ### Orchestration / control graph
 
 The static application workflow is implemented with LangGraph. It owns routing,
-bounded retries and revisions, human interrupts, safe-stop behavior, checkpointed
-state, the existing parallel artifact branches, synchronization, and the exit
-gate. The LLM never creates or changes LangGraph nodes or routes.
+bounded planning retries and revisions, human interrupts, safe-stop behavior,
+checkpointed state, execution-loop iteration, and the exit gate. The LLM never
+creates or changes LangGraph nodes or routes.
 
 ```mermaid
 flowchart TD
@@ -61,11 +63,11 @@ flowchart TD
     graphRevision --> planner
     graphReview -->|reject/revision limit| safe
     graphReview -->|approve| approved[approve_task_graph]
-    approved --> architecture[architecture_task]
-    approved --> tests[test_plan_task]
-    architecture --> sync[synchronize]
-    tests --> sync
-    sync --> exit[exit_gate]
+    approved --> initExecution[initialize_task_graph_execution]
+    initExecution --> execute[execute_task_graph_step]
+    execute -->|RUNNING| execute
+    execute -->|SUCCEEDED| exit[exit_gate]
+    execute -->|FAILED| safe
     safe --> END
     exit --> END
 ```
@@ -79,7 +81,8 @@ Interrupted state survives within the current process, not across process restar
 The `TaskGraph` is a dynamic per-run domain artifact. The LLM proposes semantic
 tasks and dependencies using temporary keys. Application code assigns authoritative
 identity, validates references and the DAG, derives graph semantics, and a human
-approves the result. A future executor may interpret this graph; V0.4 does not.
+approves the result. V0.5 interprets it as dynamic data through a fixed LangGraph
+execution loop; TASK-### records do not become LangGraph nodes.
 
 Connectivity is represented once through `Task.depends_on`. Topological order,
 execution layers, naturally parallel tasks, ENTRY-ready tasks, EXIT predecessors,
@@ -105,21 +108,21 @@ freezes new dispatch. Already-running peers may settle without unlocking more
 work; failure remains sticky, and `SAFE_STOPPED` requires no task to remain
 `RUNNING`. Retry policy is deferred.
 
-This module is not wired into the LangGraph workflow yet. Multiple tasks can be
-ready at once, representing future parallel execution, but this slice adds no
-concurrency, repository mutation, or dynamic LangGraph nodes.
+Multiple tasks can be ready at once, representing parallel eligibility, while the
+current static control loop intentionally dispatches only the first canonical
+READY task per iteration. True concurrent dispatch remains deferred.
 
 ### Execution contract and artifact boundary
 
-The deterministic contract layer stops before scheduler settlement:
+The deterministic contract layer itself stops before scheduler settlement:
 
 ```text
 TaskExecutionRequest
-    -> future executor
+    -> TaskExecutor
     -> TaskExecutionResult
     -> EngineeringArtifact(s)
     -> TaskExecutionValidationResult
-    -> no automatic scheduler transition yet
+    -> judgment returned to the control plane
 ```
 
 `TaskExecutionRequest` is application-owned context for one already-running task
@@ -203,7 +206,41 @@ The executor cannot declare success or assign canonical artifact identity,
 lineage, hashes, provenance, or runtime state. Application code still performs
 artifact canonicalization and deterministic validation separately. The adapter
 does not retry, write artifacts to the repository, run commands, or settle task or
-graph state, and it is not wired into the scheduler or LangGraph workflow yet.
+graph state. The static LangGraph loop invokes the adapter and, outside it, uses
+the validation judgment to settle runtime state.
+
+### Governed serialized TaskGraph execution loop
+
+Human TaskGraph approval grants bounded semantic execution authority because the
+executor still has no repository, shell, Git, deployment, or external-system side
+effects. Approval enters this fixed lifecycle:
+
+```text
+approved TaskGraph
+    -> initialize immutable runtime state
+    -> select the first READY task in canonical order
+    -> start one attempt
+    -> build the authoritative TaskExecutionRequest
+    -> invoke TaskExecutor once
+    -> retain the semantic TaskExecutionResult
+    -> canonicalize and retain EngineeringArtifact records
+    -> retain deterministic TaskExecutionValidationResult
+    -> PASS: settle SUCCEEDED and loop
+    -> FAIL or executor error: settle FAILED and safe-stop
+```
+
+LangGraph topology remains static while the approved engineering graph remains
+dynamic per-run data. The control plane selects complete successful validation and
+artifact evidence for each direct dependency, and the request builder independently
+revalidates that evidence. Parallel readiness is preserved, but dispatch is
+serialized. There is no execution retry, fallback model, task cancellation, or
+concurrent provider call in this slice.
+
+The prior V0.4 `architecture_task`, `test_plan_task`, and `synchronize` demo
+branches and their obsolete state were removed: they generated canned examples and
+would compete with the approved TaskGraph once real semantic task execution begins.
+Architecture, source, test, and documentation proposals now originate only from
+approved TASK-### execution and remain canonical data rather than repository writes.
 
 ## Governed planning and lineage
 
@@ -294,8 +331,9 @@ derived execution layers, parallelism, joins, and ENTRY/EXIT semantics. It then
 pauses for separate TaskGraph approval. REQUEST_CHANGES feedback at either stage
 may span multiple lines and ends with a blank line.
 
-Missing credentials never trigger a fake fallback. A missing key at either LLM
-stage records a clear non-retryable failure and safely stops.
+Missing credentials never trigger a fake fallback. A missing key at any governed
+LLM stage records a clear failure and safely stops; task execution itself does not
+retry in this slice.
 
 Successful artifacts are written under `artifacts/demo-run/`:
 
@@ -305,13 +343,20 @@ requirement_analysis.md
 approved_requirement_spec.json
 task_graph.json
 task_graph.md
-architecture.md
-test_plan.md
+task_execution.json
+engineering_artifacts.json
 summary.md
 ```
 
 `task_graph.json` is the canonical graph. `task_graph.md` is a human-readable view
-that includes derived layers and governance history. The generated
+that includes derived layers, execution status, and governance history.
+`task_execution.json` retains runtime snapshots plus correlated requests, results,
+validations, and failures; `engineering_artifacts.json` contains immutable
+application-canonicalized outputs, including failed-validation output for audit.
+The checked-in `artifacts/demo-run/` snapshot is generated network-free through the
+actual governed workflow using scripted requirement analysis, task planning, and a
+deterministic task executor with a fixed demonstration timestamp.
+The generated
 `artifacts/workflow_diagram.png` documents the static LangGraph control plane, not
 the per-run engineering TaskGraph.
 
@@ -322,21 +367,24 @@ the per-run engineering TaskGraph.
 ```
 
 Tests inject scripted `FakeRequirementAnalysisClient` and
-`FakeTaskPlanningClient` instances. They require no API key or network access and
+`FakeTaskPlanningClient` instances plus deterministic task executors. They require
+no API key or network access and
 cover structured parsing, retries, safe stops, identity assignment, lineage,
 reference integrity, DAG validation, derived parallel/join semantics, both human
-approval loops, artifacts, the preserved static parallel branches, and isolated
-deterministic TaskGraph runtime transitions. Execution-contract tests additionally
+approval loops, execution audit artifacts, and isolated deterministic TaskGraph
+runtime transitions. Execution-contract tests additionally
 cover approved-context filtering, direct dependency artifact flow, canonical
 identity/provenance, executor trust boundaries, and separate validation.
 Bounded-executor tests inject a fake Responses client and cover deterministic
 input, one-call structured parsing, and invocation-failure handling without a
-network connection.
+network connection. Static-loop tests cover serialized fan-out/fan-in dispatch,
+validated direct-dependency artifact propagation, graph completion, validation
+failure, executor failure, and quiescent safe stop through actual LangGraph routing.
 
 ## Deliberately deferred
 
-The current V0.5 slice does not include scheduler-integrated engineering-task
-execution, concurrent execution, retry/recovery policy, code-generation or
-repository-writing agents, dynamically generated LangGraph nodes, full dynamic
+The current V0.5 slice does not include concurrent execution, retry/recovery
+policy, code-generation or repository-writing agents, dynamically generated
+LangGraph nodes, full dynamic
 replanning, completed-task reconciliation, brownfield impact analysis, rollback,
 a database/audit store, distributed scheduling, deployment, or a web UI.

@@ -5,13 +5,13 @@
 - Entry gate: passed
 - Requirement analysis: validated
 - Requirement review: APPROVE
-- Approved requirement spec: SPEC-BE8F3861784B-V001
+- Approved requirement spec: SPEC-79BDBC13BA00-V001
 - Task planning: validated
 - Task-graph review: APPROVE
-- Synchronization: complete
+- TaskGraph execution: SUCCEEDED
 - Exit gate: passed
 
-The governed V0.4 workflow converted the approved analysis into an immutable requirement specification, validated and approved an LLM-proposed engineering dependency graph, and completed the existing deterministic artifact branches without executing tasks.
+The governed V0.5 workflow executed the human-approved TaskGraph in deterministic scheduler order, canonicalized each semantic result, and allowed only application validation to settle tasks.
 
 ## Human Approval History
 
@@ -32,6 +32,6 @@ The governed V0.4 workflow converted the approved analysis into an immutable req
 - `approved_requirement_spec.json`
 - `task_graph.json`
 - `task_graph.md`
-- `architecture.md`
-- `test_plan.md`
+- `task_execution.json`
+- `engineering_artifacts.json`
 - `summary.md`

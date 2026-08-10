@@ -1,9 +1,20 @@
-"""Typed shared state and demonstration input for the V0.4 workflow."""
+"""Typed shared state and demonstration input for the governed workflow."""
 
 from __future__ import annotations
 
 import operator
 from typing import Annotated, Literal, TypedDict
+
+from agentic_sdlc.task_execution import (
+    TaskExecutionFailure,
+    TaskGraphExecutionState,
+)
+from agentic_sdlc.task_execution_contracts import (
+    EngineeringArtifact,
+    TaskExecutionRequest,
+    TaskExecutionResult,
+    TaskExecutionValidationResult,
+)
 
 
 class NormalizedRequirement(TypedDict):
@@ -11,28 +22,6 @@ class NormalizedRequirement(TypedDict):
 
     id: str
     text: str
-
-
-class ArchitectureArtifact(TypedDict):
-    """Small architecture output produced by one parallel branch."""
-
-    summary: str
-    components: list[str]
-    design_notes: list[str]
-
-
-class TestCase(TypedDict):
-    """One planned verification case."""
-
-    name: str
-    purpose: str
-
-
-class TestPlanArtifact(TypedDict):
-    """Small test-plan output produced by one parallel branch."""
-
-    strategy: str
-    cases: list[TestCase]
 
 
 ApprovalDecision = Literal["APPROVE", "REQUEST_CHANGES", "REJECT"]
@@ -198,7 +187,6 @@ WorkflowStatus = Literal[
     "pending",
     "awaiting_approval",
     "entry_gate_failed",
-    "synchronization_failed",
     "exit_gate_failed",
     "safe_stopped",
     "success",
@@ -246,10 +234,15 @@ class WorkflowState(TypedDict, total=False):
     task_graph_decision: ApprovalDecision | None
     task_graph_feedback: str
     task_graph_review_history: Annotated[list[ApprovalEvent], operator.add]
+    task_graph_execution: TaskGraphExecutionState
+    task_execution_requests: Annotated[list[TaskExecutionRequest], operator.add]
+    task_execution_results: Annotated[list[TaskExecutionResult], operator.add]
+    engineering_artifacts: Annotated[list[EngineeringArtifact], operator.add]
+    task_execution_validations: Annotated[
+        list[TaskExecutionValidationResult], operator.add
+    ]
+    task_execution_failures: Annotated[list[TaskExecutionFailure], operator.add]
     safe_stop_reason: str
-    architecture: ArchitectureArtifact
-    test_plan: TestPlanArtifact
-    synchronization_complete: bool
     exit_gate_passed: bool
     workflow_status: WorkflowStatus
     errors: list[str]

@@ -1,0 +1,827 @@
+{
+  "task_graph_execution": {
+    "graph_id": "GRAPH-091DC71B7451-V001",
+    "status": "SUCCEEDED",
+    "task_states": [
+      {
+        "task_id": "TASK-001",
+        "status": "SUCCEEDED",
+        "attempt_count": 1
+      },
+      {
+        "task_id": "TASK-002",
+        "status": "SUCCEEDED",
+        "attempt_count": 1
+      },
+      {
+        "task_id": "TASK-003",
+        "status": "SUCCEEDED",
+        "attempt_count": 1
+      },
+      {
+        "task_id": "TASK-004",
+        "status": "SUCCEEDED",
+        "attempt_count": 1
+      },
+      {
+        "task_id": "TASK-005",
+        "status": "SUCCEEDED",
+        "attempt_count": 1
+      }
+    ]
+  },
+  "requests": [
+    {
+      "request_id": "e5a97d9f-28e4-56d3-9e1a-0fb7f07dd918",
+      "attempt_id": "5185636e-88df-59fe-a4e6-b282000b1d76",
+      "graph_id": "GRAPH-091DC71B7451-V001",
+      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "task_id": "TASK-001",
+      "attempt_number": 1,
+      "task": {
+        "task_id": "TASK-001",
+        "lineage_id": "3a021295-d3a3-5900-8ce5-29265cf1abf6",
+        "source_key": "define_api",
+        "title": "Define API contract v1",
+        "description": "Produce the governed define api contract v1 output.",
+        "task_type": "DESIGN",
+        "depends_on": [],
+        "requirement_refs": [
+          "FR-001",
+          "FR-003",
+          "FR-004"
+        ],
+        "acceptance_criteria_refs": [
+          "AC-001",
+          "AC-002"
+        ],
+        "risk_refs": [],
+        "ambiguity_refs": [],
+        "expected_outputs": [
+          "define_api.md"
+        ]
+      },
+      "requirement_context": {
+        "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+        "requirement_type": "greenfield",
+        "assumptions": [
+          "The workflow produces semantic artifacts without writing the service."
+        ],
+        "functional_requirements": [
+          {
+            "item_id": "FR-001",
+            "lineage_id": "be48f8a5-272e-53be-99ed-2bc8ad178e19",
+            "text": "Accept a long URL."
+          },
+          {
+            "item_id": "FR-003",
+            "lineage_id": "e49700e5-fd91-5507-b77a-04dd39c9e45d",
+            "text": "Redirect the short URL to the original URL."
+          },
+          {
+            "item_id": "FR-004",
+            "lineage_id": "9c629bbf-a432-5855-89d3-4d873651d053",
+            "text": "Return an error for unknown short URLs."
+          }
+        ],
+        "nonfunctional_requirements": [],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "item_id": "AC-001",
+            "lineage_id": "f3673e76-0d6c-5ee2-a196-638739b96b85",
+            "text": "A submitted valid URL receives a unique short URL."
+          },
+          {
+            "item_id": "AC-002",
+            "lineage_id": "e3c6d089-dce4-5ae2-9ed6-b78c2499b062",
+            "text": "An unknown short code returns a defined error."
+          }
+        ],
+        "risks": [],
+        "ambiguities": []
+      },
+      "dependency_artifacts": []
+    },
+    {
+      "request_id": "eb9133e8-472b-5ac8-90e3-6de99daa2c25",
+      "attempt_id": "b6732d30-e96f-5648-95fc-4b3707276eb0",
+      "graph_id": "GRAPH-091DC71B7451-V001",
+      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "task_id": "TASK-002",
+      "attempt_number": 1,
+      "task": {
+        "task_id": "TASK-002",
+        "lineage_id": "e7a0bc06-86cf-5289-9406-802c4ff3c950",
+        "source_key": "define_storage",
+        "title": "Define persistence model",
+        "description": "Produce the governed define persistence model output.",
+        "task_type": "DESIGN",
+        "depends_on": [],
+        "requirement_refs": [
+          "FR-002",
+          "CON-001"
+        ],
+        "acceptance_criteria_refs": [],
+        "risk_refs": [
+          "RISK-001"
+        ],
+        "ambiguity_refs": [],
+        "expected_outputs": [
+          "define_storage.md"
+        ]
+      },
+      "requirement_context": {
+        "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+        "requirement_type": "greenfield",
+        "assumptions": [
+          "The workflow produces semantic artifacts without writing the service."
+        ],
+        "functional_requirements": [
+          {
+            "item_id": "FR-002",
+            "lineage_id": "e9db0fcb-8282-5c3a-a069-d37ca328094b",
+            "text": "Generate a unique short URL."
+          }
+        ],
+        "nonfunctional_requirements": [],
+        "constraints": [
+          {
+            "item_id": "CON-001",
+            "lineage_id": "72f86821-b829-52bc-8125-7fc04e7ad4c5",
+            "text": "The persistence technology is not yet selected."
+          }
+        ],
+        "acceptance_criteria": [],
+        "risks": [
+          {
+            "item_id": "RISK-001",
+            "lineage_id": "4cb8fa83-79d9-5a90-a1eb-233986c00c37",
+            "text": "Short-code collisions could produce incorrect redirects."
+          }
+        ],
+        "ambiguities": []
+      },
+      "dependency_artifacts": []
+    },
+    {
+      "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
+      "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
+      "graph_id": "GRAPH-091DC71B7451-V001",
+      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "task_id": "TASK-003",
+      "attempt_number": 1,
+      "task": {
+        "task_id": "TASK-003",
+        "lineage_id": "4f47870a-28f7-5c63-9faa-a9d9a6d48512",
+        "source_key": "build_service",
+        "title": "Implement shortening behavior",
+        "description": "Produce the governed implement shortening behavior output.",
+        "task_type": "IMPLEMENTATION",
+        "depends_on": [
+          "TASK-001",
+          "TASK-002"
+        ],
+        "requirement_refs": [
+          "FR-001",
+          "FR-002",
+          "FR-003",
+          "FR-004"
+        ],
+        "acceptance_criteria_refs": [
+          "AC-001",
+          "AC-002"
+        ],
+        "risk_refs": [],
+        "ambiguity_refs": [
+          "AMB-001"
+        ],
+        "expected_outputs": [
+          "build_service.md"
+        ]
+      },
+      "requirement_context": {
+        "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+        "requirement_type": "greenfield",
+        "assumptions": [
+          "The workflow produces semantic artifacts without writing the service."
+        ],
+        "functional_requirements": [
+          {
+            "item_id": "FR-001",
+            "lineage_id": "be48f8a5-272e-53be-99ed-2bc8ad178e19",
+            "text": "Accept a long URL."
+          },
+          {
+            "item_id": "FR-002",
+            "lineage_id": "e9db0fcb-8282-5c3a-a069-d37ca328094b",
+            "text": "Generate a unique short URL."
+          },
+          {
+            "item_id": "FR-003",
+            "lineage_id": "e49700e5-fd91-5507-b77a-04dd39c9e45d",
+            "text": "Redirect the short URL to the original URL."
+          },
+          {
+            "item_id": "FR-004",
+            "lineage_id": "9c629bbf-a432-5855-89d3-4d873651d053",
+            "text": "Return an error for unknown short URLs."
+          }
+        ],
+        "nonfunctional_requirements": [],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "item_id": "AC-001",
+            "lineage_id": "f3673e76-0d6c-5ee2-a196-638739b96b85",
+            "text": "A submitted valid URL receives a unique short URL."
+          },
+          {
+            "item_id": "AC-002",
+            "lineage_id": "e3c6d089-dce4-5ae2-9ed6-b78c2499b062",
+            "text": "An unknown short code returns a defined error."
+          }
+        ],
+        "risks": [],
+        "ambiguities": [
+          {
+            "item_id": "AMB-001",
+            "lineage_id": "514b318e-c096-5f18-a687-a794951ca0b2",
+            "text": "URL expiration behavior is unspecified."
+          }
+        ]
+      },
+      "dependency_artifacts": [
+        {
+          "artifact_id": "ARTIFACT-A697386D80B8-O001",
+          "lineage_id": "a5d71e86-34b3-5e57-ab88-bbd9adb8ef4d",
+          "artifact_type": "DESIGN",
+          "logical_name": "define_api.md",
+          "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0.",
+          "content_hash": "a697386d80b8577994b7ecd6ae47f64604389ee7540e73ca498052eae44f2105",
+          "output_index": 1,
+          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+          "graph_id": "GRAPH-091DC71B7451-V001",
+          "task_id": "TASK-001",
+          "request_id": "e5a97d9f-28e4-56d3-9e1a-0fb7f07dd918",
+          "attempt_id": "5185636e-88df-59fe-a4e6-b282000b1d76",
+          "attempt_number": 1,
+          "requirement_refs": [
+            "FR-001",
+            "FR-003",
+            "FR-004"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002"
+          ],
+          "risk_refs": [],
+          "ambiguity_refs": [],
+          "created_at": "2026-08-09T12:00:00+00:00"
+        },
+        {
+          "artifact_id": "ARTIFACT-A8B065190894-O001",
+          "lineage_id": "179de7c0-af13-57da-9a15-be0746bb9a7a",
+          "artifact_type": "DESIGN",
+          "logical_name": "define_storage.md",
+          "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0.",
+          "content_hash": "a8b065190894e55e97c2c67590a4f02d27d64942af3be47a371827e128e6d8bb",
+          "output_index": 1,
+          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+          "graph_id": "GRAPH-091DC71B7451-V001",
+          "task_id": "TASK-002",
+          "request_id": "eb9133e8-472b-5ac8-90e3-6de99daa2c25",
+          "attempt_id": "b6732d30-e96f-5648-95fc-4b3707276eb0",
+          "attempt_number": 1,
+          "requirement_refs": [
+            "FR-002",
+            "CON-001"
+          ],
+          "acceptance_criteria_refs": [],
+          "risk_refs": [
+            "RISK-001"
+          ],
+          "ambiguity_refs": [],
+          "created_at": "2026-08-09T12:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "request_id": "2df1fd7b-f3f0-5fae-a2cc-d585d2803217",
+      "attempt_id": "69085427-c3a3-5db6-a4d4-4fd3aa7f31a6",
+      "graph_id": "GRAPH-091DC71B7451-V001",
+      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "task_id": "TASK-004",
+      "attempt_number": 1,
+      "task": {
+        "task_id": "TASK-004",
+        "lineage_id": "04e74a1e-3c22-5e37-acf1-046873ebaf30",
+        "source_key": "verify_service",
+        "title": "Verify approved behavior",
+        "description": "Produce the governed verify approved behavior output.",
+        "task_type": "TEST",
+        "depends_on": [
+          "TASK-003"
+        ],
+        "requirement_refs": [
+          "NFR-001"
+        ],
+        "acceptance_criteria_refs": [
+          "AC-001",
+          "AC-002"
+        ],
+        "risk_refs": [
+          "RISK-001"
+        ],
+        "ambiguity_refs": [],
+        "expected_outputs": [
+          "verify_service.md"
+        ]
+      },
+      "requirement_context": {
+        "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+        "requirement_type": "greenfield",
+        "assumptions": [
+          "The workflow produces semantic artifacts without writing the service."
+        ],
+        "functional_requirements": [],
+        "nonfunctional_requirements": [
+          {
+            "item_id": "NFR-001",
+            "lineage_id": "ce0289af-85a1-5191-a7b4-11ddb6c6736b",
+            "text": "Short-code lookup should be reliable."
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "item_id": "AC-001",
+            "lineage_id": "f3673e76-0d6c-5ee2-a196-638739b96b85",
+            "text": "A submitted valid URL receives a unique short URL."
+          },
+          {
+            "item_id": "AC-002",
+            "lineage_id": "e3c6d089-dce4-5ae2-9ed6-b78c2499b062",
+            "text": "An unknown short code returns a defined error."
+          }
+        ],
+        "risks": [
+          {
+            "item_id": "RISK-001",
+            "lineage_id": "4cb8fa83-79d9-5a90-a1eb-233986c00c37",
+            "text": "Short-code collisions could produce incorrect redirects."
+          }
+        ],
+        "ambiguities": []
+      },
+      "dependency_artifacts": [
+        {
+          "artifact_id": "ARTIFACT-FA3A4FF49BD1-O001",
+          "lineage_id": "53487900-2321-587d-a56c-4178eb51bd44",
+          "artifact_type": "SOURCE",
+          "logical_name": "build_service.md",
+          "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2.",
+          "content_hash": "fa3a4ff49bd1ba53193461e7987901ae5cc5ff48afd7d506c13201d32ee47228",
+          "output_index": 1,
+          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+          "graph_id": "GRAPH-091DC71B7451-V001",
+          "task_id": "TASK-003",
+          "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
+          "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
+          "attempt_number": 1,
+          "requirement_refs": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002"
+          ],
+          "risk_refs": [],
+          "ambiguity_refs": [
+            "AMB-001"
+          ],
+          "created_at": "2026-08-09T12:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "request_id": "9e53493e-d336-588e-af25-3b38b9ba076d",
+      "attempt_id": "0a01d2ca-a050-5479-93d7-c232cbf3641b",
+      "graph_id": "GRAPH-091DC71B7451-V001",
+      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "task_id": "TASK-005",
+      "attempt_number": 1,
+      "task": {
+        "task_id": "TASK-005",
+        "lineage_id": "06306036-be6b-5beb-be09-c78a5967e867",
+        "source_key": "document_service",
+        "title": "Document service contract",
+        "description": "Produce the governed document service contract output.",
+        "task_type": "DOCUMENTATION",
+        "depends_on": [
+          "TASK-004"
+        ],
+        "requirement_refs": [
+          "FR-001"
+        ],
+        "acceptance_criteria_refs": [],
+        "risk_refs": [],
+        "ambiguity_refs": [],
+        "expected_outputs": [
+          "document_service.md"
+        ]
+      },
+      "requirement_context": {
+        "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+        "requirement_type": "greenfield",
+        "assumptions": [
+          "The workflow produces semantic artifacts without writing the service."
+        ],
+        "functional_requirements": [
+          {
+            "item_id": "FR-001",
+            "lineage_id": "be48f8a5-272e-53be-99ed-2bc8ad178e19",
+            "text": "Accept a long URL."
+          }
+        ],
+        "nonfunctional_requirements": [],
+        "constraints": [],
+        "acceptance_criteria": [],
+        "risks": [],
+        "ambiguities": []
+      },
+      "dependency_artifacts": [
+        {
+          "artifact_id": "ARTIFACT-C67E63DA1971-O001",
+          "lineage_id": "59ac3d28-0d4b-5e16-aa0b-048363a52c4d",
+          "artifact_type": "TEST",
+          "logical_name": "verify_service.md",
+          "content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1.",
+          "content_hash": "c67e63da1971da2c4705e7871e2cc078d3bd815f2c16ef7be46f0a605058d869",
+          "output_index": 1,
+          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+          "graph_id": "GRAPH-091DC71B7451-V001",
+          "task_id": "TASK-004",
+          "request_id": "2df1fd7b-f3f0-5fae-a2cc-d585d2803217",
+          "attempt_id": "69085427-c3a3-5db6-a4d4-4fd3aa7f31a6",
+          "attempt_number": 1,
+          "requirement_refs": [
+            "NFR-001"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002"
+          ],
+          "risk_refs": [
+            "RISK-001"
+          ],
+          "ambiguity_refs": [],
+          "created_at": "2026-08-09T12:00:00+00:00"
+        }
+      ]
+    }
+  ],
+  "results": [
+    {
+      "request_id": "e5a97d9f-28e4-56d3-9e1a-0fb7f07dd918",
+      "attempt_id": "5185636e-88df-59fe-a4e6-b282000b1d76",
+      "task_id": "TASK-001",
+      "summary": "Produced governed output for TASK-001.",
+      "outputs": [
+        {
+          "artifact_type": "DESIGN",
+          "logical_name": "define_api.md",
+          "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0."
+        }
+      ],
+      "assumptions": [],
+      "risks": []
+    },
+    {
+      "request_id": "eb9133e8-472b-5ac8-90e3-6de99daa2c25",
+      "attempt_id": "b6732d30-e96f-5648-95fc-4b3707276eb0",
+      "task_id": "TASK-002",
+      "summary": "Produced governed output for TASK-002.",
+      "outputs": [
+        {
+          "artifact_type": "DESIGN",
+          "logical_name": "define_storage.md",
+          "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0."
+        }
+      ],
+      "assumptions": [],
+      "risks": []
+    },
+    {
+      "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
+      "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
+      "task_id": "TASK-003",
+      "summary": "Produced governed output for TASK-003.",
+      "outputs": [
+        {
+          "artifact_type": "SOURCE",
+          "logical_name": "build_service.md",
+          "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2."
+        }
+      ],
+      "assumptions": [],
+      "risks": []
+    },
+    {
+      "request_id": "2df1fd7b-f3f0-5fae-a2cc-d585d2803217",
+      "attempt_id": "69085427-c3a3-5db6-a4d4-4fd3aa7f31a6",
+      "task_id": "TASK-004",
+      "summary": "Produced governed output for TASK-004.",
+      "outputs": [
+        {
+          "artifact_type": "TEST",
+          "logical_name": "verify_service.md",
+          "content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1."
+        }
+      ],
+      "assumptions": [],
+      "risks": []
+    },
+    {
+      "request_id": "9e53493e-d336-588e-af25-3b38b9ba076d",
+      "attempt_id": "0a01d2ca-a050-5479-93d7-c232cbf3641b",
+      "task_id": "TASK-005",
+      "summary": "Produced governed output for TASK-005.",
+      "outputs": [
+        {
+          "artifact_type": "DOCUMENTATION",
+          "logical_name": "document_service.md",
+          "content": "Canonical proposal for Document service contract. Dependency artifacts: 1."
+        }
+      ],
+      "assumptions": [],
+      "risks": []
+    }
+  ],
+  "validations": [
+    {
+      "request_id": "e5a97d9f-28e4-56d3-9e1a-0fb7f07dd918",
+      "attempt_id": "5185636e-88df-59fe-a4e6-b282000b1d76",
+      "task_id": "TASK-001",
+      "passed": true,
+      "artifact_ids": [
+        "ARTIFACT-A697386D80B8-O001"
+      ],
+      "checks": [
+        {
+          "name": "request_correlation",
+          "passed": true,
+          "detail": "Execution result correlation matches the request."
+        },
+        {
+          "name": "expected_output_presence",
+          "passed": true,
+          "detail": "Required executor output is present."
+        },
+        {
+          "name": "logical_names",
+          "passed": true,
+          "detail": "Artifact logical names are non-empty."
+        },
+        {
+          "name": "artifact_contents",
+          "passed": true,
+          "detail": "Artifact contents are non-empty."
+        },
+        {
+          "name": "artifact_count",
+          "passed": true,
+          "detail": "Executor output count matches canonical artifact count."
+        },
+        {
+          "name": "artifact_provenance",
+          "passed": true,
+          "detail": "Canonical artifact provenance matches the execution request."
+        },
+        {
+          "name": "artifact_identity",
+          "passed": true,
+          "detail": "Canonical artifact identities and hashes are valid."
+        },
+        {
+          "name": "output_correspondence",
+          "passed": true,
+          "detail": "Canonical artifacts preserve executor output order and content."
+        }
+      ],
+      "errors": []
+    },
+    {
+      "request_id": "eb9133e8-472b-5ac8-90e3-6de99daa2c25",
+      "attempt_id": "b6732d30-e96f-5648-95fc-4b3707276eb0",
+      "task_id": "TASK-002",
+      "passed": true,
+      "artifact_ids": [
+        "ARTIFACT-A8B065190894-O001"
+      ],
+      "checks": [
+        {
+          "name": "request_correlation",
+          "passed": true,
+          "detail": "Execution result correlation matches the request."
+        },
+        {
+          "name": "expected_output_presence",
+          "passed": true,
+          "detail": "Required executor output is present."
+        },
+        {
+          "name": "logical_names",
+          "passed": true,
+          "detail": "Artifact logical names are non-empty."
+        },
+        {
+          "name": "artifact_contents",
+          "passed": true,
+          "detail": "Artifact contents are non-empty."
+        },
+        {
+          "name": "artifact_count",
+          "passed": true,
+          "detail": "Executor output count matches canonical artifact count."
+        },
+        {
+          "name": "artifact_provenance",
+          "passed": true,
+          "detail": "Canonical artifact provenance matches the execution request."
+        },
+        {
+          "name": "artifact_identity",
+          "passed": true,
+          "detail": "Canonical artifact identities and hashes are valid."
+        },
+        {
+          "name": "output_correspondence",
+          "passed": true,
+          "detail": "Canonical artifacts preserve executor output order and content."
+        }
+      ],
+      "errors": []
+    },
+    {
+      "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
+      "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
+      "task_id": "TASK-003",
+      "passed": true,
+      "artifact_ids": [
+        "ARTIFACT-FA3A4FF49BD1-O001"
+      ],
+      "checks": [
+        {
+          "name": "request_correlation",
+          "passed": true,
+          "detail": "Execution result correlation matches the request."
+        },
+        {
+          "name": "expected_output_presence",
+          "passed": true,
+          "detail": "Required executor output is present."
+        },
+        {
+          "name": "logical_names",
+          "passed": true,
+          "detail": "Artifact logical names are non-empty."
+        },
+        {
+          "name": "artifact_contents",
+          "passed": true,
+          "detail": "Artifact contents are non-empty."
+        },
+        {
+          "name": "artifact_count",
+          "passed": true,
+          "detail": "Executor output count matches canonical artifact count."
+        },
+        {
+          "name": "artifact_provenance",
+          "passed": true,
+          "detail": "Canonical artifact provenance matches the execution request."
+        },
+        {
+          "name": "artifact_identity",
+          "passed": true,
+          "detail": "Canonical artifact identities and hashes are valid."
+        },
+        {
+          "name": "output_correspondence",
+          "passed": true,
+          "detail": "Canonical artifacts preserve executor output order and content."
+        }
+      ],
+      "errors": []
+    },
+    {
+      "request_id": "2df1fd7b-f3f0-5fae-a2cc-d585d2803217",
+      "attempt_id": "69085427-c3a3-5db6-a4d4-4fd3aa7f31a6",
+      "task_id": "TASK-004",
+      "passed": true,
+      "artifact_ids": [
+        "ARTIFACT-C67E63DA1971-O001"
+      ],
+      "checks": [
+        {
+          "name": "request_correlation",
+          "passed": true,
+          "detail": "Execution result correlation matches the request."
+        },
+        {
+          "name": "expected_output_presence",
+          "passed": true,
+          "detail": "Required executor output is present."
+        },
+        {
+          "name": "logical_names",
+          "passed": true,
+          "detail": "Artifact logical names are non-empty."
+        },
+        {
+          "name": "artifact_contents",
+          "passed": true,
+          "detail": "Artifact contents are non-empty."
+        },
+        {
+          "name": "artifact_count",
+          "passed": true,
+          "detail": "Executor output count matches canonical artifact count."
+        },
+        {
+          "name": "artifact_provenance",
+          "passed": true,
+          "detail": "Canonical artifact provenance matches the execution request."
+        },
+        {
+          "name": "artifact_identity",
+          "passed": true,
+          "detail": "Canonical artifact identities and hashes are valid."
+        },
+        {
+          "name": "output_correspondence",
+          "passed": true,
+          "detail": "Canonical artifacts preserve executor output order and content."
+        }
+      ],
+      "errors": []
+    },
+    {
+      "request_id": "9e53493e-d336-588e-af25-3b38b9ba076d",
+      "attempt_id": "0a01d2ca-a050-5479-93d7-c232cbf3641b",
+      "task_id": "TASK-005",
+      "passed": true,
+      "artifact_ids": [
+        "ARTIFACT-26703B7A50D9-O001"
+      ],
+      "checks": [
+        {
+          "name": "request_correlation",
+          "passed": true,
+          "detail": "Execution result correlation matches the request."
+        },
+        {
+          "name": "expected_output_presence",
+          "passed": true,
+          "detail": "Required executor output is present."
+        },
+        {
+          "name": "logical_names",
+          "passed": true,
+          "detail": "Artifact logical names are non-empty."
+        },
+        {
+          "name": "artifact_contents",
+          "passed": true,
+          "detail": "Artifact contents are non-empty."
+        },
+        {
+          "name": "artifact_count",
+          "passed": true,
+          "detail": "Executor output count matches canonical artifact count."
+        },
+        {
+          "name": "artifact_provenance",
+          "passed": true,
+          "detail": "Canonical artifact provenance matches the execution request."
+        },
+        {
+          "name": "artifact_identity",
+          "passed": true,
+          "detail": "Canonical artifact identities and hashes are valid."
+        },
+        {
+          "name": "output_correspondence",
+          "passed": true,
+          "detail": "Canonical artifacts preserve executor output order and content."
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "failures": []
+}

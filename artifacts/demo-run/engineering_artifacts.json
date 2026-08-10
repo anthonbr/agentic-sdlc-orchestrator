@@ -1,0 +1,133 @@
+[
+  {
+    "artifact_id": "ARTIFACT-A697386D80B8-O001",
+    "lineage_id": "a5d71e86-34b3-5e57-ab88-bbd9adb8ef4d",
+    "artifact_type": "DESIGN",
+    "logical_name": "define_api.md",
+    "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0.",
+    "content_hash": "a697386d80b8577994b7ecd6ae47f64604389ee7540e73ca498052eae44f2105",
+    "output_index": 1,
+    "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+    "graph_id": "GRAPH-091DC71B7451-V001",
+    "task_id": "TASK-001",
+    "request_id": "e5a97d9f-28e4-56d3-9e1a-0fb7f07dd918",
+    "attempt_id": "5185636e-88df-59fe-a4e6-b282000b1d76",
+    "attempt_number": 1,
+    "requirement_refs": [
+      "FR-001",
+      "FR-003",
+      "FR-004"
+    ],
+    "acceptance_criteria_refs": [
+      "AC-001",
+      "AC-002"
+    ],
+    "risk_refs": [],
+    "ambiguity_refs": [],
+    "created_at": "2026-08-09T12:00:00+00:00"
+  },
+  {
+    "artifact_id": "ARTIFACT-A8B065190894-O001",
+    "lineage_id": "179de7c0-af13-57da-9a15-be0746bb9a7a",
+    "artifact_type": "DESIGN",
+    "logical_name": "define_storage.md",
+    "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0.",
+    "content_hash": "a8b065190894e55e97c2c67590a4f02d27d64942af3be47a371827e128e6d8bb",
+    "output_index": 1,
+    "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+    "graph_id": "GRAPH-091DC71B7451-V001",
+    "task_id": "TASK-002",
+    "request_id": "eb9133e8-472b-5ac8-90e3-6de99daa2c25",
+    "attempt_id": "b6732d30-e96f-5648-95fc-4b3707276eb0",
+    "attempt_number": 1,
+    "requirement_refs": [
+      "FR-002",
+      "CON-001"
+    ],
+    "acceptance_criteria_refs": [],
+    "risk_refs": [
+      "RISK-001"
+    ],
+    "ambiguity_refs": [],
+    "created_at": "2026-08-09T12:00:00+00:00"
+  },
+  {
+    "artifact_id": "ARTIFACT-FA3A4FF49BD1-O001",
+    "lineage_id": "53487900-2321-587d-a56c-4178eb51bd44",
+    "artifact_type": "SOURCE",
+    "logical_name": "build_service.md",
+    "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2.",
+    "content_hash": "fa3a4ff49bd1ba53193461e7987901ae5cc5ff48afd7d506c13201d32ee47228",
+    "output_index": 1,
+    "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+    "graph_id": "GRAPH-091DC71B7451-V001",
+    "task_id": "TASK-003",
+    "request_id": "75480ddb-9197-550e-92c0-9dc2cac1a08e",
+    "attempt_id": "149fee04-0b16-5889-af85-72e967b87648",
+    "attempt_number": 1,
+    "requirement_refs": [
+      "FR-001",
+      "FR-002",
+      "FR-003",
+      "FR-004"
+    ],
+    "acceptance_criteria_refs": [
+      "AC-001",
+      "AC-002"
+    ],
+    "risk_refs": [],
+    "ambiguity_refs": [
+      "AMB-001"
+    ],
+    "created_at": "2026-08-09T12:00:00+00:00"
+  },
+  {
+    "artifact_id": "ARTIFACT-C67E63DA1971-O001",
+    "lineage_id": "59ac3d28-0d4b-5e16-aa0b-048363a52c4d",
+    "artifact_type": "TEST",
+    "logical_name": "verify_service.md",
+    "content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1.",
+    "content_hash": "c67e63da1971da2c4705e7871e2cc078d3bd815f2c16ef7be46f0a605058d869",
+    "output_index": 1,
+    "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+    "graph_id": "GRAPH-091DC71B7451-V001",
+    "task_id": "TASK-004",
+    "request_id": "2df1fd7b-f3f0-5fae-a2cc-d585d2803217",
+    "attempt_id": "69085427-c3a3-5db6-a4d4-4fd3aa7f31a6",
+    "attempt_number": 1,
+    "requirement_refs": [
+      "NFR-001"
+    ],
+    "acceptance_criteria_refs": [
+      "AC-001",
+      "AC-002"
+    ],
+    "risk_refs": [
+      "RISK-001"
+    ],
+    "ambiguity_refs": [],
+    "created_at": "2026-08-09T12:00:00+00:00"
+  },
+  {
+    "artifact_id": "ARTIFACT-26703B7A50D9-O001",
+    "lineage_id": "262ea5f4-871b-5011-80e7-38110e83f64c",
+    "artifact_type": "DOCUMENTATION",
+    "logical_name": "document_service.md",
+    "content": "Canonical proposal for Document service contract. Dependency artifacts: 1.",
+    "content_hash": "26703b7a50d9d269fe69d4bd7e3f8c35be380e9eaf5792112e6854e35c53f26f",
+    "output_index": 1,
+    "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+    "graph_id": "GRAPH-091DC71B7451-V001",
+    "task_id": "TASK-005",
+    "request_id": "9e53493e-d336-588e-af25-3b38b9ba076d",
+    "attempt_id": "0a01d2ca-a050-5479-93d7-c232cbf3641b",
+    "attempt_number": 1,
+    "requirement_refs": [
+      "FR-001"
+    ],
+    "acceptance_criteria_refs": [],
+    "risk_refs": [],
+    "ambiguity_refs": [],
+    "created_at": "2026-08-09T12:00:00+00:00"
+  }
+]
