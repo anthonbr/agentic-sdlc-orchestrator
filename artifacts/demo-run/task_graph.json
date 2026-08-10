@@ -1,16 +1,16 @@
 {
-  "graph_id": "GRAPH-518F10826DAD-V001",
-  "lineage_id": "03342283-0862-5a2e-9749-2aa5c72b3f66",
+  "graph_id": "GRAPH-34C2DB80991E-V001",
+  "lineage_id": "3c1db4be-1595-54c1-bb7f-7b02998fafb5",
   "version": 1,
-  "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+  "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
   "requirement_spec_version": 1,
   "supersedes_graph_id": null,
   "created_at": "2026-08-10T12:00:00+00:00",
-  "content_hash": "518f10826dadbc5516026a805809a184945f6d479cc27913a1fc3da9f5fcc3af",
+  "content_hash": "34c2db80991e64027a3d4187dd24d207237151c9f3cf4f05b35b8de8eabcd301",
   "tasks": [
     {
       "task_id": "TASK-001",
-      "lineage_id": "3a021295-d3a3-5900-8ce5-29265cf1abf6",
+      "lineage_id": "26853caa-900d-5cd7-b975-0859f6fc2f81",
       "source_key": "define_api",
       "title": "Define API contract v1",
       "description": "Produce the governed define api contract v1 output.",
@@ -34,7 +34,7 @@
     },
     {
       "task_id": "TASK-002",
-      "lineage_id": "e7a0bc06-86cf-5289-9406-802c4ff3c950",
+      "lineage_id": "b598b8c1-5367-5c82-92f7-480119ca2bf0",
       "source_key": "define_storage",
       "title": "Define persistence model",
       "description": "Produce the governed define persistence model output.",
@@ -56,12 +56,12 @@
     },
     {
       "task_id": "TASK-003",
-      "lineage_id": "4f47870a-28f7-5c63-9faa-a9d9a6d48512",
+      "lineage_id": "495ecb1f-fc8d-5f2c-912f-5c2e1888a0ca",
       "source_key": "build_service",
       "title": "Implement shortening behavior",
       "description": "Produce the governed implement shortening behavior output.",
       "task_type": "IMPLEMENTATION",
-      "materialization_policy": "FORBIDDEN",
+      "materialization_policy": "REQUIRED",
       "depends_on": [
         "TASK-001",
         "TASK-002"
@@ -86,12 +86,12 @@
     },
     {
       "task_id": "TASK-004",
-      "lineage_id": "04e74a1e-3c22-5e37-acf1-046873ebaf30",
+      "lineage_id": "58cd7f25-dec2-5366-805a-425d7a822a2a",
       "source_key": "verify_service",
       "title": "Verify approved behavior",
       "description": "Produce the governed verify approved behavior output.",
       "task_type": "TEST",
-      "materialization_policy": "FORBIDDEN",
+      "materialization_policy": "REQUIRED",
       "depends_on": [
         "TASK-003"
       ],
@@ -112,12 +112,12 @@
     },
     {
       "task_id": "TASK-005",
-      "lineage_id": "06306036-be6b-5beb-be09-c78a5967e867",
+      "lineage_id": "29c3c4fd-cfdf-5c68-9c7c-d4dcb96733b1",
       "source_key": "document_service",
       "title": "Document service contract",
       "description": "Produce the governed document service contract output.",
       "task_type": "DOCUMENTATION",
-      "materialization_policy": "FORBIDDEN",
+      "materialization_policy": "REQUIRED",
       "depends_on": [
         "TASK-004"
       ],

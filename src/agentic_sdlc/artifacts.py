@@ -15,6 +15,7 @@ ARTIFACT_FILENAMES = (
     "task_graph.json",
     "task_graph.md",
     "task_execution.json",
+    "workspace_execution.json",
     "engineering_artifacts.json",
     "summary.md",
 )
@@ -79,6 +80,11 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
                 for artifact in state.get("engineering_artifacts", [])
             ],
         )
+    if "workspace_execution.json" in generated:
+        _write_json(
+            paths["workspace_execution.json"],
+            _workspace_execution_evidence(state),
+        )
     paths["summary.md"].write_text(
         _summary_markdown(state, generated), encoding="utf-8"
     )
@@ -94,7 +100,13 @@ def _safe_stop_filenames(state: WorkflowState) -> tuple[str, ...]:
     if state.get("candidate_task_graph"):
         filenames.extend(["task_graph.json", "task_graph.md"])
     if state.get("task_graph_execution"):
-        filenames.extend(["task_execution.json", "engineering_artifacts.json"])
+        filenames.extend(
+            [
+                "task_execution.json",
+                "workspace_execution.json",
+                "engineering_artifacts.json",
+            ]
+        )
     filenames.append("summary.md")
     return tuple(filenames)
 
@@ -291,6 +303,53 @@ def _execution_evidence(state: WorkflowState) -> dict[str, object]:
     }
 
 
+def _workspace_execution_evidence(state: WorkflowState) -> dict[str, object]:
+    session = state.get("governed_workspace_session")
+    return {
+        "session": session.model_dump(mode="json") if session is not None else None,
+        "snapshots": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_snapshots", [])
+        ],
+        "waves": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_execution_waves", [])
+        ],
+        "bound_requests": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_bound_task_execution_requests", [])
+        ],
+        "materialization_intents": [
+            item.model_dump(mode="json")
+            for item in state.get("artifact_materialization_intents", [])
+        ],
+        "materialization_validations": [
+            item.model_dump(mode="json")
+            for item in state.get("artifact_materialization_validations", [])
+        ],
+        "change_sets": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_change_sets", [])
+        ],
+        "change_set_validations": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_change_set_validations", [])
+        ],
+        "conflicts": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_conflict_evidence", [])
+        ],
+        "mutations": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_mutation_results", [])
+        ],
+        "task_attempt_exit_decisions": [
+            item.model_dump(mode="json")
+            for item in state.get("task_attempt_exit_decisions", [])
+        ],
+    }
+
+
 def _summary_markdown(
     state: WorkflowState, generated_filenames: tuple[str, ...]
 ) -> str:
@@ -309,6 +368,27 @@ def _summary_markdown(
     waves = state.get("task_execution_waves", [])
     maximum_wave_width = max(
         (len(wave.task_attempts) for wave in waves), default=0
+    )
+    session = state.get("governed_workspace_session")
+    mutations = state.get("workspace_mutation_results", [])
+    materialized_changes = tuple(
+        f"{change.path} ({change.operation.value})"
+        for change_set in state.get("workspace_change_sets", [])
+        if any(
+            result.change_set_id == change_set.change_set_id
+            and result.status.value == "APPLIED"
+            for result in mutations
+        )
+        for change in change_set.file_changes
+    )
+    mutation_outcomes = tuple(result.status.value for result in mutations)
+    conflict_count = sum(
+        item.analysis.has_conflicts
+        for item in state.get("workspace_conflict_evidence", [])
+    )
+    rollback_count = sum(
+        outcome in {"ROLLED_BACK", "ROLLBACK_FAILED"}
+        for outcome in mutation_outcomes
     )
     lines = [
         "# Workflow Summary",
@@ -335,6 +415,22 @@ def _summary_markdown(
         f"- Retries performed: {retries}",
         f"- Execution waves: {len(waves)}",
         f"- Maximum parallel wave width: {maximum_wave_width}",
+        "- Workspace integrity: "
+        + (session.integrity_status.value if session is not None else "not reached"),
+        "- Final authoritative workspace snapshot: "
+        + (
+            session.authoritative_snapshot_id
+            if session is not None
+            else "not reached"
+        ),
+        f"- Workspace mutations: {len(mutations)}",
+        "- Workspace mutation outcomes: "
+        + (", ".join(mutation_outcomes) or "None"),
+        f"- Conflicting wave reconciliations: {conflict_count}",
+        f"- Rollback outcomes: {rollback_count}",
+        "- Materialized desired paths: "
+        + (", ".join(sorted(set(materialized_changes))) or "None"),
+        "- Generated code/tests executed: no",
         "- Exit gate: "
         + (
             "not reached"
@@ -360,8 +456,9 @@ def _summary_markdown(
             [
                 "The governed V0.5 workflow executed bounded READY waves from the "
                 "human-approved TaskGraph, joined concurrent executor calls, "
-                "canonicalized results in deterministic scheduler order, and "
-                "allowed only application validation to settle tasks.",
+                "canonicalized and reconciled results in deterministic scheduler "
+                "order, applied eligible isolated-workspace mutations serially, "
+                "and allowed only the complete governed exit gate to settle tasks.",
                 "",
             ]
         )

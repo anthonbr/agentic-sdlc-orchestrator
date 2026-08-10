@@ -17,6 +17,21 @@ from agentic_sdlc.task_execution_contracts import (
     TaskExecutionResult,
     TaskExecutionValidationResult,
 )
+from agentic_sdlc.workspace_contracts import (
+    ArtifactMaterializationIntent,
+    ArtifactMaterializationValidationResult,
+    WorkspaceChangeSet,
+    WorkspaceChangeSetValidationResult,
+    WorkspaceSnapshot,
+)
+from agentic_sdlc.workspace_integration_contracts import (
+    GovernedWorkspaceSession,
+    TaskAttemptExitDecision,
+    WorkspaceBoundTaskExecutionRequest,
+    WorkspaceExecutionWave,
+    WorkspaceWaveConflictEvidence,
+)
+from agentic_sdlc.workspace_mutation import WorkspaceMutationResult
 
 
 class NormalizedRequirement(TypedDict):
@@ -201,6 +216,7 @@ class WorkflowState(TypedDict, total=False):
     """Shared JSON-safe state updated by the static LangGraph control plane."""
 
     project_name: str
+    run_id: str
     requirements: list[str]
     raw_requirement: str
     normalized_requirements: list[NormalizedRequirement]
@@ -250,6 +266,32 @@ class WorkflowState(TypedDict, total=False):
         list[TaskExecutionRecoveryDecision], operator.add
     ]
     task_execution_waves: Annotated[list[TaskExecutionWave], operator.add]
+    governed_workspace_session: GovernedWorkspaceSession
+    workspace_snapshots: Annotated[list[WorkspaceSnapshot], operator.add]
+    workspace_execution_waves: Annotated[list[WorkspaceExecutionWave], operator.add]
+    workspace_bound_task_execution_requests: Annotated[
+        list[WorkspaceBoundTaskExecutionRequest], operator.add
+    ]
+    artifact_materialization_intents: Annotated[
+        list[ArtifactMaterializationIntent], operator.add
+    ]
+    artifact_materialization_validations: Annotated[
+        list[ArtifactMaterializationValidationResult], operator.add
+    ]
+    workspace_change_sets: Annotated[list[WorkspaceChangeSet], operator.add]
+    workspace_change_set_validations: Annotated[
+        list[WorkspaceChangeSetValidationResult], operator.add
+    ]
+    workspace_conflict_evidence: Annotated[
+        list[WorkspaceWaveConflictEvidence], operator.add
+    ]
+    workspace_mutation_results: Annotated[
+        list[WorkspaceMutationResult], operator.add
+    ]
+    task_attempt_exit_decisions: Annotated[
+        list[TaskAttemptExitDecision], operator.add
+    ]
+    serialized_conflict_retry_task_ids: list[str]
     safe_stop_reason: str
     exit_gate_passed: bool
     workflow_status: WorkflowStatus

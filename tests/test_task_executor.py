@@ -63,6 +63,12 @@ from agentic_sdlc.task_graph import (
     TaskType,
     normalize_and_validate_task_graph,
 )
+from agentic_sdlc.workspace_integration_contracts import (
+    WorkspaceBinding,
+    WorkspaceBoundTaskExecutionRequest,
+    build_repository_context,
+    build_workspace_bound_task_execution_request,
+)
 
 
 FIXED_TIME = "2026-08-09T12:00:00+00:00"
@@ -188,10 +194,22 @@ def _result(request: TaskExecutionRequest) -> TaskExecutionResult:
     )
 
 
+def _bound(request: TaskExecutionRequest) -> WorkspaceBoundTaskExecutionRequest:
+    binding = WorkspaceBinding(
+        workspace_id="WORKSPACE-TEST",
+        snapshot_id="WORKSPACE-SNAPSHOT-TEST",
+    )
+    return build_workspace_bound_task_execution_request(
+        request,
+        binding,
+        build_repository_context(binding),
+    )
+
+
 def test_execution_prompt_preserves_authority_boundary() -> None:
     prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
 
-    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.2"
+    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.4"
     assert "exactly one approved software-engineering task" in prompt
     assert "declare success" in prompt
     assert "change the approved task" in prompt
@@ -199,6 +217,14 @@ def test_execution_prompt_preserves_authority_boundary() -> None:
     assert "write repository files" in prompt
     assert "execute commands" in prompt
     assert "perform git operations" in prompt
+    assert "repository context is authoritative read-only evidence" in prompt
+    assert "desired file state only" in prompt
+    assert "forbidden tasks must return no materialization proposals" in prompt
+    assert "required tasks should propose at least one" in prompt
+    assert "allowed tasks may propose zero or more" in prompt
+    assert prompt.count("forbidden tasks must return no materialization proposals") == 1
+    assert prompt.count("your role or authority") == 1
+    assert "return concise success" not in prompt
     assert "application retry context" in prompt
     assert (
         "explaining why the immediately prior attempt did not complete successfully"
@@ -238,7 +264,7 @@ def test_engineering_obligations_and_meta_instructions_have_distinct_authority()
         }
     )
 
-    serialized = build_task_execution_input(contextual_request)
+    serialized = build_task_execution_input(_bound(contextual_request))
     prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
 
     assert engineering_constraint in serialized
@@ -275,8 +301,8 @@ def test_engineering_obligations_and_meta_instructions_have_distinct_authority()
 def test_execution_input_contains_only_bounded_authoritative_context() -> None:
     _, _, request, dependency_artifact = _request_fixture()
 
-    first = build_task_execution_input(request)
-    second = build_task_execution_input(request)
+    first = build_task_execution_input(_bound(request))
+    second = build_task_execution_input(_bound(request))
     payload = json.loads(first)
 
     assert first == second
@@ -326,6 +352,13 @@ def test_execution_input_contains_only_bounded_authoritative_context() -> None:
     assert "REJECTED REQUIREMENT REVISION" not in first
     assert "PLANNING FAILURE HISTORY" not in first
     assert payload["application_retry_context"] is None
+    assert payload["workspace_binding"] == {
+        "workspace_id": "WORKSPACE-TEST",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-TEST",
+    }
+    assert payload["repository_context"]["observations"] == []
+    assert "root" not in payload["workspace_binding"]
+    assert "filesystem" not in json.dumps(payload["repository_context"])
 
 
 def test_execution_input_serializes_only_bounded_application_retry_context() -> None:
@@ -342,8 +375,8 @@ def test_execution_input_serializes_only_bounded_application_retry_context() -> 
         }
     )
 
-    first = build_task_execution_input(retry_request)
-    second = build_task_execution_input(retry_request)
+    first = build_task_execution_input(_bound(retry_request))
+    second = build_task_execution_input(_bound(retry_request))
     payload = json.loads(first)
 
     assert first == second
@@ -376,7 +409,7 @@ def test_executor_failure_retry_context_reexecutes_same_bounded_task() -> None:
         }
     )
 
-    serialized = build_task_execution_input(retry_request)
+    serialized = build_task_execution_input(_bound(retry_request))
     payload = json.loads(serialized)
     prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
 
@@ -415,7 +448,7 @@ def test_openai_executor_uses_one_structured_parse_and_returns_result() -> None:
         client=SimpleNamespace(responses=StubResponses()),
     )
 
-    result = executor.execute(request)
+    result = executor.execute(_bound(request))
 
     assert result is expected
     assert len(calls) == 1
@@ -423,7 +456,9 @@ def test_openai_executor_uses_one_structured_parse_and_returns_result() -> None:
     assert calls[0]["text_format"] is TaskExecutionResult
     assert calls[0]["store"] is False
     assert calls[0]["input"][0]["content"] == TASK_EXECUTION_SYSTEM_PROMPT
-    assert calls[0]["input"][1]["content"] == build_task_execution_input(request)
+    assert calls[0]["input"][1]["content"] == build_task_execution_input(
+        _bound(request)
+    )
     target_state = next(
         state for state in execution.task_states if state.task_id == request.task_id
     )
@@ -442,7 +477,7 @@ def test_executor_correlation_is_rejected_by_existing_authoritative_boundary() -
 
     result = OpenAITaskExecutor(
         client=SimpleNamespace(responses=StubResponses())
-    ).execute(request)
+    ).execute(_bound(request))
 
     assert result is mismatched
     with raises(TaskExecutionContractError, match="request_id"):
@@ -463,7 +498,7 @@ def test_executor_wraps_provider_failure_once_and_preserves_cause() -> None:
     executor = OpenAITaskExecutor(client=SimpleNamespace(responses=responses))
 
     with raises(TaskExecutorError, match="OpenAIError") as raised:
-        executor.execute(request)
+        executor.execute(_bound(request))
 
     assert responses.calls == 1
     assert raised.value.retryable is False
@@ -480,7 +515,7 @@ def test_executor_rejects_missing_or_malformed_parsed_result() -> None:
 
         executor = OpenAITaskExecutor(client=SimpleNamespace(responses=StubResponses()))
         with raises(TaskExecutorError) as raised:
-            executor.execute(request)
+            executor.execute(_bound(request))
         assert raised.value.retryable is True
 
 
@@ -498,7 +533,7 @@ def test_executor_wraps_sdk_schema_validation_failure() -> None:
     executor = OpenAITaskExecutor(client=SimpleNamespace(responses=StubResponses()))
 
     with raises(TaskExecutorError, match="schema parsing") as raised:
-        executor.execute(request)
+        executor.execute(_bound(request))
 
     assert raised.value.retryable is True
     assert raised.value.__cause__ is schema_error
@@ -511,7 +546,7 @@ def test_executor_requires_api_key_without_using_fake_fallback(
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     with raises(TaskExecutorError, match="OPENAI_API_KEY is not configured") as raised:
-        OpenAITaskExecutor(api_key="").execute(request)
+        OpenAITaskExecutor(api_key="").execute(_bound(request))
     assert raised.value.retryable is False
 
 
@@ -549,7 +584,7 @@ def test_typed_transient_provider_errors_are_retryable(
     with raises(TaskExecutorError) as raised:
         OpenAITaskExecutor(
             client=SimpleNamespace(responses=StubResponses())
-        ).execute(request)
+        ).execute(_bound(request))
 
     assert raised.value.retryable is True
 
@@ -576,7 +611,7 @@ def test_typed_configuration_and_request_errors_are_non_retryable(
     with raises(TaskExecutorError) as raised:
         OpenAITaskExecutor(
             client=SimpleNamespace(responses=StubResponses())
-        ).execute(request)
+        ).execute(_bound(request))
 
     assert raised.value.retryable is False
 
@@ -598,7 +633,7 @@ def test_sdk_response_validation_error_is_retryable() -> None:
     with raises(TaskExecutorError) as raised:
         OpenAITaskExecutor(
             client=SimpleNamespace(responses=StubResponses())
-        ).execute(request)
+        ).execute(_bound(request))
 
     assert raised.value.retryable is True
 

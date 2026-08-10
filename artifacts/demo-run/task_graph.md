@@ -1,9 +1,9 @@
 # Engineering Task Dependency Graph
 
-- Graph: GRAPH-518F10826DAD-V001
+- Graph: GRAPH-34C2DB80991E-V001
 - Version: 1
-- Requirement specification: SPEC-79BDBC13BA00-V001
-- Content hash: `518f10826dadbc5516026a805809a184945f6d479cc27913a1fc3da9f5fcc3af`
+- Requirement specification: SPEC-8D5D9B661E30-V001
+- Content hash: `34c2db80991e64027a3d4187dd24d207237151c9f3cf4f05b35b8de8eabcd301`
 - Execution status: SUCCEEDED
 
 ## Derived execution layers
@@ -45,7 +45,7 @@
 #### TASK-003 — Implement shortening behavior
 
 - Type: IMPLEMENTATION
-- Materialization policy: FORBIDDEN
+- Materialization policy: REQUIRED
 - Depends on: TASK-001, TASK-002
 - Runtime status: SUCCEEDED
 - Attempts: 2
@@ -62,7 +62,7 @@
 #### TASK-004 — Verify approved behavior
 
 - Type: TEST
-- Materialization policy: FORBIDDEN
+- Materialization policy: REQUIRED
 - Depends on: TASK-003
 - Runtime status: SUCCEEDED
 - Attempts: 1
@@ -79,7 +79,7 @@
 #### TASK-005 — Document service contract
 
 - Type: DOCUMENTATION
-- Materialization policy: FORBIDDEN
+- Materialization policy: REQUIRED
 - Depends on: TASK-004
 - Runtime status: SUCCEEDED
 - Attempts: 1

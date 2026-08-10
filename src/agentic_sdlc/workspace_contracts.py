@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifact,
+    TaskExecutionResult,
     TaskExecutionValidationResult,
 )
 from agentic_sdlc.task_graph import Task, TaskMaterializationPolicy
@@ -451,6 +452,40 @@ def validate_artifact_materialization(
     return ArtifactMaterializationValidationResult(
         materialization_validation_id=_materialization_validation_id(payload),
         **payload,
+    )
+
+
+def canonicalize_artifact_materialization_proposals(
+    result: TaskExecutionResult,
+    artifacts: tuple[EngineeringArtifact, ...],
+) -> tuple[ArtifactMaterializationIntent, ...]:
+    """Correlate untrusted output ordinals to canonical artifact identities."""
+
+    artifacts_by_index = {artifact.output_index: artifact for artifact in artifacts}
+    if len(artifacts_by_index) != len(artifacts):
+        raise WorkspaceContractError(
+            "Canonical artifact output indices must be unique."
+        )
+    intents: list[ArtifactMaterializationIntent] = []
+    for proposal in result.materialization_proposals:
+        artifact = artifacts_by_index.get(proposal.output_index)
+        if artifact is None:
+            raise WorkspaceContractError(
+                "Materialization proposal references an unknown output index: "
+                f"{proposal.output_index}."
+            )
+        try:
+            intent = ArtifactMaterializationIntent(
+                artifact_id=artifact.artifact_id,
+                target_path=proposal.target_path,
+            )
+        except ValueError as exc:
+            raise WorkspaceContractError(
+                "Materialization proposal target violates repository path policy."
+            ) from exc
+        intents.append(intent)
+    return tuple(
+        sorted(intents, key=lambda item: (item.target_path, item.artifact_id))
     )
 
 

@@ -8,8 +8,11 @@ from pydantic import ValidationError
 from pytest import mark, raises
 
 from agentic_sdlc.task_execution_contracts import (
+    ArtifactMaterializationProposal,
+    ArtifactOutput,
     EngineeringArtifact,
     EngineeringArtifactType,
+    TaskExecutionResult,
     TaskExecutionValidationResult,
 )
 from agentic_sdlc.task_graph import Task, TaskMaterializationPolicy, TaskType
@@ -27,6 +30,7 @@ from agentic_sdlc.workspace_contracts import (
     analyze_workspace_change_set_conflicts,
     build_workspace_change_set,
     build_workspace_snapshot,
+    canonicalize_artifact_materialization_proposals,
     normalize_repository_path,
     validate_artifact_materialization,
     validate_workspace_change_set,
@@ -34,6 +38,35 @@ from agentic_sdlc.workspace_contracts import (
     workspace_change_set_identity_is_valid,
     workspace_file_content_hash,
 )
+
+
+def _result_with_proposal(
+    artifact: EngineeringArtifact,
+    *,
+    output_index: int = 1,
+    target_path: str = "src/target.py",
+) -> TaskExecutionResult:
+    return TaskExecutionResult(
+        request_id=artifact.request_id,
+        attempt_id=artifact.attempt_id,
+        task_id=artifact.task_id,
+        summary="Proposed semantic output and desired repository path.",
+        outputs=(
+            ArtifactOutput(
+                artifact_type=artifact.artifact_type,
+                logical_name=artifact.logical_name,
+                content=artifact.content,
+            ),
+        ),
+        materialization_proposals=(
+            ArtifactMaterializationProposal(
+                output_index=output_index,
+                target_path=target_path,
+            ),
+        ),
+        assumptions=(),
+        risks=(),
+    )
 
 
 def _artifact(
@@ -188,6 +221,61 @@ def _codes(
     result: WorkspaceChangeSetValidationResult,
 ) -> set[WorkspaceChangeSetIssueCode]:
     return {issue.code for issue in result.issues}
+
+
+def test_executor_materialization_proposal_correlates_output_index_to_artifact() -> None:
+    artifact = _artifact(
+        path="semantic-name", artifact_type=EngineeringArtifactType.TEST
+    )
+    result = _result_with_proposal(
+        artifact,
+        target_path="tests/test_api.py",
+    )
+
+    intents = canonicalize_artifact_materialization_proposals(result, (artifact,))
+
+    assert intents == (
+        ArtifactMaterializationIntent(
+            artifact_id=artifact.artifact_id,
+            target_path="tests/test_api.py",
+        ),
+    )
+    assert artifact.logical_name == "semantic-name"
+
+
+def test_materialization_target_does_not_change_semantic_artifact_identity() -> None:
+    artifact = _artifact(path="semantic-name")
+    first = canonicalize_artifact_materialization_proposals(
+        _result_with_proposal(artifact, target_path="src/a.py"),
+        (artifact,),
+    )
+    second = canonicalize_artifact_materialization_proposals(
+        _result_with_proposal(artifact, target_path="src/b.py"),
+        (artifact,),
+    )
+
+    assert first[0].artifact_id == second[0].artifact_id == artifact.artifact_id
+    assert first[0].target_path != second[0].target_path
+
+
+def test_invalid_materialization_output_index_fails_deterministically() -> None:
+    artifact = _artifact()
+
+    with raises(WorkspaceContractError, match="unknown output index: 2"):
+        canonicalize_artifact_materialization_proposals(
+            _result_with_proposal(artifact, output_index=2),
+            (artifact,),
+        )
+
+
+def test_invalid_executor_target_path_fails_before_intent_authority() -> None:
+    artifact = _artifact()
+
+    with raises(WorkspaceContractError, match="violates repository path policy"):
+        canonicalize_artifact_materialization_proposals(
+            _result_with_proposal(artifact, target_path="../../escape.py"),
+            (artifact,),
+        )
 
 
 def _materialization_codes(

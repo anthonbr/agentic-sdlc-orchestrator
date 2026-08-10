@@ -43,9 +43,9 @@ from agentic_sdlc.state import (
 )
 from agentic_sdlc.task_execution import TaskGraphExecutionStatus
 from agentic_sdlc.task_execution_contracts import (
+    ArtifactMaterializationProposal,
     ArtifactOutput,
     EngineeringArtifactType,
-    TaskExecutionRequest,
     TaskExecutionResult,
 )
 from agentic_sdlc.task_graph import (
@@ -54,6 +54,9 @@ from agentic_sdlc.task_graph import (
     TaskGraph,
     TaskMaterializationPolicy,
     TaskType,
+)
+from agentic_sdlc.workspace_integration_contracts import (
+    WorkspaceBoundTaskExecutionRequest,
 )
 from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
 
@@ -64,9 +67,11 @@ class RecordingTaskExecutor:
     model_name = "recording-task-executor"
 
     def __init__(self) -> None:
-        self.calls: list[TaskExecutionRequest] = []
+        self.calls: list[WorkspaceBoundTaskExecutionRequest] = []
 
-    def execute(self, request: TaskExecutionRequest) -> TaskExecutionResult:
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
         self.calls.append(request)
         artifact_types = {
             TaskType.DESIGN: EngineeringArtifactType.DESIGN,
@@ -91,6 +96,21 @@ class RecordingTaskExecutor:
                     ),
                 ),
             ),
+            materialization_proposals=(
+                (
+                    ArtifactMaterializationProposal(
+                        output_index=1,
+                        target_path={
+                            "build_service": "src/url_shortener/service.py",
+                            "verify_service": "tests/test_service.py",
+                            "document_service": "README.md",
+                        }[request.task.source_key],
+                    ),
+                )
+                if request.task.materialization_policy
+                is TaskMaterializationPolicy.REQUIRED
+                else ()
+            ),
             assumptions=(),
             risks=(),
         )
@@ -112,7 +132,7 @@ def _analysis(version: str = "v1") -> RequirementAnalysis:
         constraints=["The persistence technology is not yet selected."],
         ambiguities=["URL expiration behavior is unspecified."],
         assumptions=[
-            "The workflow produces semantic artifacts without writing the service."
+            "Materialization is limited to the disposable isolated workspace."
         ],
         acceptance_criteria=[
             "A submitted valid URL receives a unique short URL.",
@@ -134,13 +154,16 @@ def _proposed_task(
     acceptance_refs: list[str] | None = None,
     risk_refs: list[str] | None = None,
     ambiguity_refs: list[str] | None = None,
+    materialization_policy: TaskMaterializationPolicy = (
+        TaskMaterializationPolicy.FORBIDDEN
+    ),
 ) -> ProposedTask:
     return ProposedTask(
         key=key,
         title=title,
         description=f"Produce the governed {title.lower()} output.",
         task_type=task_type,
-        materialization_policy=TaskMaterializationPolicy.FORBIDDEN,
+        materialization_policy=materialization_policy,
         depends_on=depends_on or [],
         requirement_refs=requirement_refs or ["FR-001"],
         acceptance_criteria_refs=acceptance_refs or [],
@@ -173,6 +196,7 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
                 requirement_refs=["FR-001", "FR-002", "FR-003", "FR-004"],
                 acceptance_refs=["AC-001", "AC-002"],
                 ambiguity_refs=["AMB-001"],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
             ),
             _proposed_task(
                 "verify_service",
@@ -182,6 +206,7 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
                 requirement_refs=["NFR-001"],
                 acceptance_refs=["AC-001", "AC-002"],
                 risk_refs=["RISK-001"],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
             ),
             _proposed_task(
                 "document_service",
@@ -189,6 +214,7 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
                 task_type=TaskType.DOCUMENTATION,
                 depends_on=["verify_service"],
                 requirement_refs=["FR-001"],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
             ),
         ]
     )

@@ -5,7 +5,7 @@
 - Entry gate: passed
 - Requirement analysis: validated
 - Requirement review: APPROVE
-- Approved requirement spec: SPEC-79BDBC13BA00-V001
+- Approved requirement spec: SPEC-8D5D9B661E30-V001
 - Task planning: validated
 - Task-graph review: APPROVE
 - TaskGraph execution: SUCCEEDED
@@ -13,9 +13,17 @@
 - Retries performed: 1
 - Execution waves: 5
 - Maximum parallel wave width: 2
+- Workspace integrity: VERIFIED
+- Final authoritative workspace snapshot: WORKSPACE-SNAPSHOT-CD18A89365E2
+- Workspace mutations: 3
+- Workspace mutation outcomes: APPLIED, APPLIED, APPLIED
+- Conflicting wave reconciliations: 0
+- Rollback outcomes: 0
+- Materialized desired paths: README.md (CREATE), src/url_shortener/service.py (CREATE), tests/test_service.py (CREATE)
+- Generated code/tests executed: no
 - Exit gate: passed
 
-The governed V0.5 workflow executed bounded READY waves from the human-approved TaskGraph, joined concurrent executor calls, canonicalized results in deterministic scheduler order, and allowed only application validation to settle tasks.
+The governed V0.5 workflow executed bounded READY waves from the human-approved TaskGraph, joined concurrent executor calls, canonicalized and reconciled results in deterministic scheduler order, applied eligible isolated-workspace mutations serially, and allowed only the complete governed exit gate to settle tasks.
 
 ## Human Approval History
 
@@ -37,5 +45,6 @@ The governed V0.5 workflow executed bounded READY waves from the human-approved 
 - `task_graph.json`
 - `task_graph.md`
 - `task_execution.json`
+- `workspace_execution.json`
 - `engineering_artifacts.json`
 - `summary.md`

@@ -48,6 +48,11 @@ from agentic_sdlc.state import (
 )
 from agentic_sdlc.task_execution import TaskGraphExecutionStatus
 from agentic_sdlc.task_executor import OpenAITaskExecutor, TaskExecutor
+from agentic_sdlc.workspace_integration import (
+    DeterministicRepositoryContextPathProvider,
+    GovernedWorkspaceRuntime,
+    RepositoryContextPathProvider,
+)
 
 
 def route_after_entry_gate(state: WorkflowState) -> Literal["proceed", "stop"]:
@@ -188,12 +193,19 @@ def build_workflow(
     requirement_analyst: RequirementAnalysisClient | None = None,
     task_planner: TaskPlanningClient | None = None,
     task_executor: TaskExecutor | None = None,
+    workspace_runtime: GovernedWorkspaceRuntime | None = None,
+    repository_context_path_provider: RepositoryContextPathProvider | None = None,
 ) -> CompiledStateGraph:
     """Build the explicit static control graph; engineering tasks stay data."""
 
     analyst = requirement_analyst or OpenAIRequirementAnalysisClient()
     planner = task_planner or OpenAITaskPlanningClient()
     executor = task_executor or OpenAITaskExecutor()
+    active_workspace_runtime = workspace_runtime or GovernedWorkspaceRuntime()
+    path_provider = (
+        repository_context_path_provider
+        or DeterministicRepositoryContextPathProvider()
+    )
     builder = StateGraph(WorkflowState)
 
     builder.add_node("requirements_intake", requirements_intake)
@@ -225,11 +237,20 @@ def build_workflow(
     builder.add_node("prepare_task_graph_revision", prepare_task_graph_revision)
     builder.add_node("approve_task_graph", approve_task_graph)
     builder.add_node(
-        "initialize_task_graph_execution", initialize_task_graph_execution_node
+        "initialize_task_graph_execution",
+        partial(
+            initialize_task_graph_execution_node,
+            workspace_runtime=active_workspace_runtime,
+        ),
     )
     builder.add_node(
         "execute_task_graph_step",
-        partial(execute_task_graph_step, executor=executor),
+        partial(
+            execute_task_graph_step,
+            executor=executor,
+            workspace_runtime=active_workspace_runtime,
+            repository_context_path_provider=path_provider,
+        ),
     )
     builder.add_node("safe_stop", safe_stop)
     builder.add_node("exit_gate", exit_gate)
@@ -344,8 +365,14 @@ def run_workflow(
         "recursion_limit": 100,
     }
     active_workflow = workflow or WORKFLOW
+    prepared_input: WorkflowState | Command = workflow_input
+    if isinstance(workflow_input, dict):
+        prepared_input = cast(
+            WorkflowState,
+            {**workflow_input, "run_id": thread_id},
+        )
     final_state = cast(
-        WorkflowState, active_workflow.invoke(workflow_input, config=config)
+        WorkflowState, active_workflow.invoke(prepared_input, config=config)
     )
     if (
         artifact_dir is not None

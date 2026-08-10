@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from uuid import uuid4
 
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, mark
 
 import agentic_sdlc.nodes as nodes_module
 from agentic_sdlc.artifacts import write_artifacts
@@ -26,9 +26,11 @@ from agentic_sdlc.task_execution import (
     TaskGraphExecutionStatus,
     initialize_task_graph_execution,
     prepare_task_retry,
+    ready_task_ids,
     start_task,
 )
 from agentic_sdlc.task_execution_contracts import (
+    ArtifactMaterializationProposal,
     ArtifactOutput,
     EngineeringArtifactType,
     TaskExecutionContractError,
@@ -50,6 +52,36 @@ from agentic_sdlc.nodes import (
     safe_stop,
 )
 from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
+from agentic_sdlc.workspace_contracts import (
+    ArtifactMaterializationIssueCode,
+    ArtifactMaterializationValidationIssue,
+    WorkspaceChangeOperation,
+    WorkspaceChangeSet,
+    WorkspaceSnapshot,
+)
+from agentic_sdlc.workspace_integration import (
+    DeterministicRepositoryContextPathProvider,
+    GovernedWorkspaceRuntime,
+    WorkspaceIntegrationError,
+    WorkspaceIntegrationIssueCode,
+    establish_governed_workspace_session,
+)
+from agentic_sdlc.workspace_integration_contracts import (
+    GovernedWorkspaceSession,
+    TaskAttemptExitDisposition,
+    TaskAttemptExitDecision,
+    WorkspaceBoundTaskExecutionRequest,
+    WorkspaceDispatchMode,
+    WorkspaceExecutionWave,
+    WorkspaceIntegrityStatus,
+)
+from agentic_sdlc.workspace_mutation import (
+    WorkspaceMutationIssue,
+    WorkspaceMutationIssueCode,
+    WorkspaceMutationResult,
+    WorkspaceMutationStatus,
+)
+from agentic_sdlc.workspace_runtime import snapshot_isolated_workspace
 
 
 class DeterministicExecutor:
@@ -65,10 +97,12 @@ class DeterministicExecutor:
     ) -> None:
         self.blank_content_for = blank_content_for
         self.error_for = error_for
-        self.calls: list[TaskExecutionRequest] = []
+        self.calls: list[WorkspaceBoundTaskExecutionRequest] = []
         self._lock = threading.Lock()
 
-    def execute(self, request: TaskExecutionRequest) -> TaskExecutionResult:
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
         with self._lock:
             self.calls.append(request)
         if request.task_id == self.error_for:
@@ -107,10 +141,12 @@ class ScriptedRecoveryExecutor:
 
     def __init__(self, outcomes: dict[str, tuple[str, ...]]) -> None:
         self.outcomes = outcomes
-        self.calls: list[TaskExecutionRequest] = []
+        self.calls: list[WorkspaceBoundTaskExecutionRequest] = []
         self._lock = threading.Lock()
 
-    def execute(self, request: TaskExecutionRequest) -> TaskExecutionResult:
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
         with self._lock:
             self.calls.append(request)
         configured = self.outcomes.get(request.task_id, ("valid",))
@@ -176,12 +212,14 @@ class CoordinatedExecutor:
         self.barrier = threading.Barrier(len(parallel_task_ids))
         self.task_three_completed = threading.Event()
         self.lock = threading.Lock()
-        self.calls: list[TaskExecutionRequest] = []
+        self.calls: list[WorkspaceBoundTaskExecutionRequest] = []
         self.completions: list[str] = []
         self.active = 0
         self.maximum_active = 0
 
-    def execute(self, request: TaskExecutionRequest) -> TaskExecutionResult:
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
         with self.lock:
             self.calls.append(request)
             self.active += 1
@@ -243,6 +281,115 @@ class CoordinatedExecutor:
                 self.task_three_completed.set()
 
 
+class MaterializingExecutor:
+    """Propose deterministic desired files while recording exact bindings."""
+
+    model_name = "materializing-executor"
+
+    def __init__(
+        self,
+        targets: dict[str, str],
+        *,
+        contents: dict[str, str] | None = None,
+    ) -> None:
+        self.targets = targets
+        self.contents = contents or {}
+        self.calls: list[WorkspaceBoundTaskExecutionRequest] = []
+        self.lock = threading.Lock()
+
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
+        with self.lock:
+            self.calls.append(request)
+        target_path = self.targets.get(request.task_id)
+        return TaskExecutionResult(
+            request_id=request.request_id,
+            attempt_id=request.attempt_id,
+            task_id=request.task_id,
+            summary=f"Prepared desired state for {request.task_id}.",
+            outputs=(
+                ArtifactOutput(
+                    artifact_type=EngineeringArtifactType.TEST,
+                    logical_name=f"semantic-{request.task_id}",
+                    content=self.contents.get(
+                        request.task_id,
+                        f"desired {request.task_id} attempt {request.attempt_number}\n",
+                    ),
+                ),
+            ),
+            materialization_proposals=(
+                (
+                    ArtifactMaterializationProposal(
+                        output_index=1,
+                        target_path=target_path,
+                    ),
+                )
+                if target_path is not None
+                else ()
+            ),
+            assumptions=(),
+            risks=(),
+        )
+
+
+class InvalidProposalIndexExecutor(MaterializingExecutor):
+    """Return a bounded but uncorrelatable executor proposal for recovery tests."""
+
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
+        result = super().execute(request)
+        return result.model_copy(
+            update={
+                "materialization_proposals": (
+                    ArtifactMaterializationProposal(
+                        output_index=2,
+                        target_path="src/service.py",
+                    ),
+                )
+            }
+        )
+
+
+class DuplicateMaterializationProposalExecutor(MaterializingExecutor):
+    """Return two desired paths for one output to exercise proposal recovery."""
+
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
+        result = super().execute(request)
+        return result.model_copy(
+            update={
+                "materialization_proposals": (
+                    ArtifactMaterializationProposal(
+                        output_index=1,
+                        target_path="src/first.py",
+                    ),
+                    ArtifactMaterializationProposal(
+                        output_index=1,
+                        target_path="src/second.py",
+                    ),
+                )
+            }
+        )
+
+
+class TerminalPeerMaterializingExecutor(MaterializingExecutor):
+    """Terminally fail one peer while another produces desired workspace state."""
+
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
+        if request.task_id == "TASK-001":
+            with self.lock:
+                self.calls.append(request)
+            raise TaskExecutorError(
+                "Deterministic terminal peer failure.", retryable=False
+            )
+        return super().execute(request)
+
+
 def _analysis() -> RequirementAnalysis:
     return RequirementAnalysis(
         normalized_problem_statement="Produce governed URL-shortener engineering artifacts.",
@@ -251,7 +398,9 @@ def _analysis() -> RequirementAnalysis:
         nonfunctional_requirements=[],
         constraints=[],
         ambiguities=["URL expiration behavior remains unspecified."],
-        assumptions=["Generated engineering artifacts remain data only."],
+        assumptions=[
+            "Generated artifacts may propose governed isolated-workspace state."
+        ],
         acceptance_criteria=["Every planned task produces reviewable output."],
         risks=["Inconsistent predecessor artifacts could break downstream work."],
         needs_clarification=True,
@@ -264,13 +413,16 @@ def _task(
     *,
     depends_on: list[str],
     task_type: TaskType = TaskType.DESIGN,
+    materialization_policy: TaskMaterializationPolicy = (
+        TaskMaterializationPolicy.FORBIDDEN
+    ),
 ) -> ProposedTask:
     return ProposedTask(
         key=key,
         title=key.replace("_", " ").title(),
         description=f"Produce the {key} engineering artifact.",
         task_type=task_type,
-        materialization_policy=TaskMaterializationPolicy.FORBIDDEN,
+        materialization_policy=materialization_policy,
         depends_on=depends_on,
         requirement_refs=["FR-001"],
         acceptance_criteria_refs=["AC-001"],
@@ -325,7 +477,7 @@ def _three_branch_proposal() -> ProposedTaskGraph:
 
 def _direct_execution_state(
     proposal: ProposedTaskGraph,
-) -> tuple[WorkflowState, TaskGraph]:
+) -> tuple[WorkflowState, TaskGraph, GovernedWorkspaceRuntime]:
     spec = build_approved_requirement_spec(
         _analysis(),
         source_analysis_revision=0,
@@ -337,24 +489,37 @@ def _direct_execution_state(
         version=1,
         created_at="2026-08-10T12:00:00+00:00",
     )
+    run_id = uuid4().hex
+    runtime = GovernedWorkspaceRuntime()
+    session, snapshot = establish_governed_workspace_session(
+        runtime.establish_workspace_for_run(run_id), run_id=run_id
+    )
     state: WorkflowState = {
+        "run_id": run_id,
         "approved_requirement_spec": spec.model_dump(mode="json"),
         "approved_task_graph": graph.model_dump(mode="json"),
         "task_graph_execution": initialize_task_graph_execution(graph),
+        "governed_workspace_session": session,
+        "workspace_snapshots": [snapshot],
+        "serialized_conflict_retry_task_ids": [],
     }
-    return state, graph
+    return state, graph, runtime
 
 
 def _run_approved(
     proposal: ProposedTaskGraph,
     executor: TaskExecutor,
+    *,
+    workspace_runtime: GovernedWorkspaceRuntime | None = None,
+    thread_id: str | None = None,
 ) -> WorkflowState:
     workflow = build_workflow(
         FakeRequirementAnalysisClient([_analysis()]),
         FakeTaskPlanningClient([proposal]),
         executor,
+        workspace_runtime=workspace_runtime,
     )
-    thread_id = uuid4().hex
+    thread_id = thread_id or uuid4().hex
     requirement_review = run_workflow(
         demo_input(), thread_id=thread_id, workflow=workflow
     )
@@ -380,6 +545,38 @@ def _statuses(state: WorkflowState) -> dict[str, TaskExecutionStatus]:
         item.task_id: item.status
         for item in state["task_graph_execution"].task_states
     }
+
+
+def _controlled_mutation_result(
+    change_set: WorkspaceChangeSet,
+    status: WorkspaceMutationStatus,
+    code: WorkspaceMutationIssueCode,
+) -> WorkspaceMutationResult:
+    return WorkspaceMutationResult(
+        mutation_id=f"MUTATION-CONTROLLED-{status.value}",
+        workspace_id=change_set.workspace_id,
+        change_set_id=change_set.change_set_id,
+        base_snapshot_id=change_set.base_snapshot_id,
+        task_id=change_set.task_id,
+        request_id=change_set.request_id,
+        attempt_id=change_set.attempt_id,
+        pre_mutation_snapshot_id=change_set.base_snapshot_id,
+        post_mutation_snapshot_id=None,
+        rollback_snapshot_id=(
+            change_set.base_snapshot_id
+            if status is WorkspaceMutationStatus.ROLLED_BACK
+            else None
+        ),
+        status=status,
+        file_evidence=(),
+        issues=(
+            WorkspaceMutationIssue(
+                code=code,
+                path=change_set.file_changes[0].path,
+                detail=f"Controlled {code.value} outcome.",
+            ),
+        ),
+    )
 
 
 def test_compiled_topology_uses_one_fixed_loop_and_no_dynamic_task_nodes() -> None:
@@ -620,7 +817,7 @@ def test_request_build_failure_does_not_abandon_valid_authorized_peer(
             _task("second", depends_on=[]),
         ]
     )
-    state, _ = _direct_execution_state(proposal)
+    state, _, runtime = _direct_execution_state(proposal)
     executor = DeterministicExecutor()
     real_builder = nodes_module.build_task_execution_request
 
@@ -633,7 +830,12 @@ def test_request_build_failure_does_not_abandon_valid_authorized_peer(
 
     monkeypatch.setattr(nodes_module, "build_task_execution_request", controlled_builder)
 
-    update = execute_task_graph_step(state, executor=executor)
+    update = execute_task_graph_step(
+        state,
+        executor=executor,
+        workspace_runtime=runtime,
+        repository_context_path_provider=DeterministicRepositoryContextPathProvider(),
+    )
 
     assert update["task_graph_execution"].status is TaskGraphExecutionStatus.FAILED
     assert _statuses(update) == {
@@ -853,7 +1055,7 @@ def test_correlation_failure_retries_but_other_canonicalization_failure_does_not
         TaskExecutionFailurePhase.CANONICALIZATION
     )
 
-    state, _ = _direct_execution_state(_single_proposal())
+    state, _, runtime = _direct_execution_state(_single_proposal())
     terminal_executor = ScriptedRecoveryExecutor({})
 
     def fail_application_invariant(*args: object, **kwargs: object) -> object:
@@ -863,7 +1065,12 @@ def test_correlation_failure_retries_but_other_canonicalization_failure_does_not
         "agentic_sdlc.nodes.canonicalize_execution_result",
         fail_application_invariant,
     )
-    terminal = execute_task_graph_step(state, executor=terminal_executor)
+    terminal = execute_task_graph_step(
+        state,
+        executor=terminal_executor,
+        workspace_runtime=runtime,
+        repository_context_path_provider=DeterministicRepositoryContextPathProvider(),
+    )
     assert terminal["task_graph_execution"].status is (
         TaskGraphExecutionStatus.FAILED
     )
@@ -875,7 +1082,7 @@ def test_correlation_failure_retries_but_other_canonicalization_failure_does_not
 
 
 def test_missing_retry_history_is_non_retryable_request_build_failure() -> None:
-    state, graph = _direct_execution_state(_single_proposal())
+    state, graph, runtime = _direct_execution_state(_single_proposal())
     running = start_task(
         graph, state["task_graph_execution"], "TASK-001"
     )
@@ -884,7 +1091,12 @@ def test_missing_retry_history_is_non_retryable_request_build_failure() -> None:
     )
     executor = ScriptedRecoveryExecutor({})
 
-    update = execute_task_graph_step(state, executor=executor)
+    update = execute_task_graph_step(
+        state,
+        executor=executor,
+        workspace_runtime=runtime,
+        repository_context_path_provider=DeterministicRepositoryContextPathProvider(),
+    )
     terminal_state = {**state, **update}
     stopped = safe_stop(terminal_state)
 
@@ -992,3 +1204,910 @@ def test_execution_audit_artifacts_include_recovery_history(
     assert "Runtime status: SUCCEEDED" in task_graph
     assert "Attempts: 2" in task_graph
     assert "Execution waves: 1 (attempt 1), 2 (attempt 2)" in task_graph
+
+
+def test_disjoint_parallel_materialization_advances_authority_serially(
+    tmp_path: Path,
+) -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "first",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+            _task(
+                "second",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+        ]
+    )
+    runtime = GovernedWorkspaceRuntime()
+    executor = MaterializingExecutor(
+        {"TASK-001": "src/a.py", "TASK-002": "src/b.py"}
+    )
+
+    result = _run_approved(
+        proposal, executor, workspace_runtime=runtime
+    )
+
+    assert result["workflow_status"] == "success"
+    assert [item.status for item in result["workspace_mutation_results"]] == [
+        WorkspaceMutationStatus.APPLIED,
+        WorkspaceMutationStatus.APPLIED,
+    ]
+    assert [item.task_id for item in result["workspace_mutation_results"]] == [
+        "TASK-001",
+        "TASK-002",
+    ]
+    first_wave = result["workspace_bound_task_execution_requests"][:2]
+    assert first_wave[0].workspace_binding == first_wave[1].workspace_binding
+    assert len(result["workspace_snapshots"]) == 3
+    assert result["governed_workspace_session"].integrity_status is (
+        WorkspaceIntegrityStatus.VERIFIED
+    )
+    workspace = runtime.workspace_for_run(result["run_id"])
+    assert (workspace.root / "src/a.py").read_text() == "desired TASK-001 attempt 1\n"
+    assert (workspace.root / "src/b.py").read_text() == "desired TASK-002 attempt 1\n"
+    assert all(
+        item.disposition is TaskAttemptExitDisposition.SUCCEED_TASK
+        for item in result["task_attempt_exit_decisions"]
+    )
+    write_artifacts(result, tmp_path)
+    workspace_evidence = json.loads(
+        (tmp_path / "workspace_execution.json").read_text()
+    )
+    summary = (tmp_path / "summary.md").read_text()
+    GovernedWorkspaceSession.model_validate_json(
+        json.dumps(workspace_evidence["session"])
+    )
+    for contract, values in (
+        (WorkspaceSnapshot, workspace_evidence["snapshots"]),
+        (WorkspaceExecutionWave, workspace_evidence["waves"]),
+        (WorkspaceMutationResult, workspace_evidence["mutations"]),
+        (
+            TaskAttemptExitDecision,
+            workspace_evidence["task_attempt_exit_decisions"],
+        ),
+    ):
+        for value in values:
+            contract.model_validate_json(json.dumps(value))
+    assert workspace_evidence["session"]["authoritative_snapshot_id"] == (
+        result["governed_workspace_session"].authoritative_snapshot_id
+    )
+    assert len(workspace_evidence["mutations"]) == 2
+    assert len(workspace_evidence["task_attempt_exit_decisions"]) == 2
+    assert "src/a.py (CREATE)" in summary
+    assert "src/b.py (CREATE)" in summary
+    assert "Generated code/tests executed: no" in summary
+
+
+def test_same_path_conflict_retries_serially_against_latest_snapshots() -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "first",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+            _task(
+                "second",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+        ]
+    )
+    runtime = GovernedWorkspaceRuntime()
+    executor = MaterializingExecutor(
+        {"TASK-001": "src/shared.py", "TASK-002": "src/shared.py"}
+    )
+
+    result = _run_approved(
+        proposal, executor, workspace_runtime=runtime
+    )
+
+    assert result["workflow_status"] == "success"
+    assert [wave.dispatch_mode for wave in result["workspace_execution_waves"]] == [
+        WorkspaceDispatchMode.PARALLEL,
+        WorkspaceDispatchMode.SERIALIZED_CONFLICT_RETRY,
+        WorkspaceDispatchMode.SERIALIZED_CONFLICT_RETRY,
+    ]
+    assert [state.attempt_count for state in result["task_graph_execution"].task_states] == [2, 2]
+    assert len(result["workspace_conflict_evidence"]) == 1
+    conflict_id = result["workspace_conflict_evidence"][0].conflict_evidence_id
+    assert all(
+        conflict_id in item.evidence_ids
+        for item in result["task_attempt_exit_decisions"][:2]
+    )
+    assert len(result["workspace_mutation_results"]) == 2
+    calls = {(item.task_id, item.attempt_number): item for item in executor.calls}
+    assert calls[("TASK-001", 1)].workspace_binding == calls[("TASK-002", 1)].workspace_binding
+    assert calls[("TASK-001", 2)].workspace_binding.snapshot_id != calls[("TASK-002", 2)].workspace_binding.snapshot_id
+    second_retry_context = calls[("TASK-002", 2)].repository_context.observations
+    assert tuple(item.path for item in second_retry_context) == ("src/shared.py",)
+    assert second_retry_context[0].content == "desired TASK-001 attempt 2\n"
+    workspace = runtime.workspace_for_run(result["run_id"])
+    assert (workspace.root / "src/shared.py").read_text() == "desired TASK-002 attempt 2\n"
+
+
+def test_direct_dependency_materialized_paths_are_bounded_child_context() -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "parent",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+            _task("child", depends_on=["parent"]),
+        ]
+    )
+    executor = MaterializingExecutor({"TASK-001": "src/service.py"})
+
+    result = _run_approved(proposal, executor)
+
+    assert result["workflow_status"] == "success"
+    child_request = next(item for item in executor.calls if item.task_id == "TASK-002")
+    assert tuple(
+        observation.path
+        for observation in child_request.repository_context.observations
+    ) == ("src/service.py",)
+    assert child_request.repository_context.observations[0].content == (
+        "desired TASK-001 attempt 1\n"
+    )
+    assert "root" not in child_request.model_dump(mode="json")
+
+
+def test_required_task_without_proposal_never_succeeds() -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "required",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            )
+        ]
+    )
+    result = _run_approved(proposal, DeterministicExecutor())
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result["task_graph_execution"].task_states[0].status is (
+        TaskExecutionStatus.FAILED
+    )
+    assert [item.disposition for item in result["task_attempt_exit_decisions"]] == [
+        TaskAttemptExitDisposition.RETRY_TASK,
+        TaskAttemptExitDisposition.RETRY_TASK,
+        TaskAttemptExitDisposition.FAIL_TASK,
+    ]
+    assert result.get("workspace_mutation_results", []) == []
+    assert result["governed_workspace_session"].integrity_status is (
+        WorkspaceIntegrityStatus.VERIFIED
+    )
+    assert [
+        item.action for item in result["task_execution_recovery_decisions"]
+    ] == [
+        TaskExecutionRecoveryAction.RETRY,
+        TaskExecutionRecoveryAction.RETRY,
+        TaskExecutionRecoveryAction.FAIL_TASK,
+    ]
+    assert all(
+        "POLICY" in item.feedback
+        for item in result["task_execution_recovery_decisions"]
+    )
+
+
+def test_invalid_proposal_output_index_is_bounded_materialization_failure() -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "required",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            )
+        ]
+    )
+
+    result = _run_approved(
+        proposal,
+        InvalidProposalIndexExecutor({"TASK-001": "src/service.py"}),
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result.get("workspace_mutation_results", []) == []
+    assert [
+        item.failure_kind
+        for item in result["task_execution_recovery_decisions"]
+    ] == [TaskExecutionRecoveryFailureKind.MATERIALIZATION] * 3
+    assert all(
+        "unknown output index" in item.feedback
+        for item in result["task_execution_recovery_decisions"]
+    )
+
+
+def test_duplicate_materialization_proposal_receives_bounded_retry() -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "required",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            )
+        ]
+    )
+
+    result = _run_approved(
+        proposal,
+        DuplicateMaterializationProposalExecutor({"TASK-001": "unused.py"}),
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result.get("workspace_mutation_results", []) == []
+    assert [
+        item.action for item in result["task_execution_recovery_decisions"]
+    ] == [
+        TaskExecutionRecoveryAction.RETRY,
+        TaskExecutionRecoveryAction.RETRY,
+        TaskExecutionRecoveryAction.FAIL_TASK,
+    ]
+    assert all(
+        "DUPLICATE_ARTIFACT" in item.feedback
+        for item in result["task_execution_recovery_decisions"]
+    )
+
+
+@mark.parametrize(
+    "issue_code",
+    (
+        ArtifactMaterializationIssueCode.ARTIFACT_SET,
+        ArtifactMaterializationIssueCode.LINEAGE,
+        ArtifactMaterializationIssueCode.ARTIFACT_REFERENCE,
+    ),
+)
+def test_trusted_materialization_evidence_inconsistency_is_terminal(
+    monkeypatch: MonkeyPatch,
+    issue_code: ArtifactMaterializationIssueCode,
+) -> None:
+    original = nodes_module.validate_artifact_materialization
+
+    def artifact_set_failure(*args: object, **kwargs: object) -> object:
+        validation = original(*args, **kwargs)  # type: ignore[arg-type]
+        return validation.model_copy(
+            update={
+                "passed": False,
+                "issues": (
+                    ArtifactMaterializationValidationIssue(
+                        code=issue_code,
+                        artifact_id=None,
+                        path=None,
+                        detail="Controlled trusted-evidence inconsistency.",
+                    ),
+                ),
+            }
+        )
+
+    monkeypatch.setattr(
+        nodes_module, "validate_artifact_materialization", artifact_set_failure
+    )
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "required",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            )
+        ]
+    )
+
+    result = _run_approved(
+        proposal,
+        MaterializingExecutor({"TASK-001": "src/service.py"}),
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result["task_graph_execution"].task_states[0].attempt_count == 1
+    assert len(result["task_execution_recovery_decisions"]) == 1
+    assert result["task_execution_recovery_decisions"][0].action is (
+        TaskExecutionRecoveryAction.FAIL_TASK
+    )
+    assert issue_code.value in (
+        result["task_execution_recovery_decisions"][0].feedback
+    )
+    assert result["task_attempt_exit_decisions"][0].disposition is (
+        TaskAttemptExitDisposition.FAIL_TASK
+    )
+
+
+def test_allowed_task_without_proposal_uses_lighter_success_gate() -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "allowed",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.ALLOWED,
+            )
+        ]
+    )
+
+    result = _run_approved(proposal, DeterministicExecutor())
+
+    assert result["workflow_status"] == "success"
+    assert result.get("workspace_mutation_results", []) == []
+    assert result["task_attempt_exit_decisions"][0].disposition is (
+        TaskAttemptExitDisposition.SUCCEED_TASK
+    )
+
+
+def test_allowed_task_with_proposal_uses_full_mutation_gate() -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "allowed",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.ALLOWED,
+            )
+        ]
+    )
+
+    result = _run_approved(
+        proposal,
+        MaterializingExecutor({"TASK-001": "docs/optional.md"}),
+    )
+
+    assert result["workflow_status"] == "success"
+    assert result["workspace_mutation_results"][0].status is (
+        WorkspaceMutationStatus.APPLIED
+    )
+    assert result["task_attempt_exit_decisions"][0].disposition is (
+        TaskAttemptExitDisposition.SUCCEED_TASK
+    )
+
+
+def test_forbidden_task_proposal_never_reaches_mutation() -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "forbidden",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.FORBIDDEN,
+            )
+        ]
+    )
+
+    result = _run_approved(
+        proposal,
+        MaterializingExecutor({"TASK-001": "src/forbidden.py"}),
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result.get("workspace_mutation_results", []) == []
+    assert [item.disposition for item in result["task_attempt_exit_decisions"]] == [
+        TaskAttemptExitDisposition.RETRY_TASK,
+        TaskAttemptExitDisposition.RETRY_TASK,
+        TaskAttemptExitDisposition.FAIL_TASK,
+    ]
+
+
+def test_predispatch_workspace_drift_hard_safe_stops() -> None:
+    state, graph, runtime = _direct_execution_state(_single_proposal())
+    workspace = runtime.workspace_for_run(state["run_id"])
+    (workspace.root / "external.txt").write_text("drift\n")
+
+    update = execute_task_graph_step(
+        state,
+        executor=DeterministicExecutor(),
+        workspace_runtime=runtime,
+        repository_context_path_provider=DeterministicRepositoryContextPathProvider(),
+    )
+
+    assert update["task_graph_execution"].status is TaskGraphExecutionStatus.FAILED
+    assert update["governed_workspace_session"].integrity_status is (
+        WorkspaceIntegrityStatus.UNPROVABLE
+    )
+    assert ready_task_ids(graph, update["task_graph_execution"]) == ()
+
+
+def test_missing_runtime_capability_hard_safe_stops() -> None:
+    state, graph, _ = _direct_execution_state(_single_proposal())
+
+    update = execute_task_graph_step(
+        state,
+        executor=DeterministicExecutor(),
+        workspace_runtime=GovernedWorkspaceRuntime(),
+        repository_context_path_provider=DeterministicRepositoryContextPathProvider(),
+    )
+
+    assert update["task_graph_execution"].status is TaskGraphExecutionStatus.FAILED
+    assert update["governed_workspace_session"].integrity_status is (
+        WorkspaceIntegrityStatus.UNPROVABLE
+    )
+    assert ready_task_ids(graph, update["task_graph_execution"]) == ()
+
+
+def test_workspace_initialization_failure_routes_to_safe_stop(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    runtime = GovernedWorkspaceRuntime()
+
+    def unavailable(run_id: str) -> object:
+        del run_id
+        raise WorkspaceIntegrationError(
+            WorkspaceIntegrationIssueCode.RUNTIME,
+            "Controlled workspace creation failure.",
+        )
+
+    monkeypatch.setattr(runtime, "establish_workspace_for_run", unavailable)
+    executor = DeterministicExecutor()
+
+    result = _run_approved(
+        _single_proposal(),
+        executor,
+        workspace_runtime=runtime,
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result["task_graph_execution"].status is (
+        TaskGraphExecutionStatus.SAFE_STOPPED
+    )
+    assert result.get("governed_workspace_session") is None
+    assert executor.calls == []
+
+
+def test_rollback_failed_maps_to_hard_safe_stop(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "required",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            )
+        ]
+    )
+
+    def rollback_failed(
+        workspace: object,
+        change_set: WorkspaceChangeSet,
+        validation: object,
+    ) -> WorkspaceMutationResult:
+        del workspace, validation
+        return _controlled_mutation_result(
+            change_set,
+            WorkspaceMutationStatus.ROLLBACK_FAILED,
+            WorkspaceMutationIssueCode.ROLLBACK_FAILURE,
+        )
+
+    monkeypatch.setattr(nodes_module, "apply_workspace_change_set", rollback_failed)
+    result = _run_approved(
+        proposal, MaterializingExecutor({"TASK-001": "src/a.py"})
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result["governed_workspace_session"].integrity_status is (
+        WorkspaceIntegrityStatus.UNPROVABLE
+    )
+    assert result["task_attempt_exit_decisions"][0].disposition is (
+        TaskAttemptExitDisposition.SAFE_STOP_RUN
+    )
+    assert len(result["workspace_mutation_results"]) == 1
+
+
+def test_stale_mutation_rejection_retries_then_succeeds(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    original = nodes_module.apply_workspace_change_set
+    call_count = 0
+
+    def stale_once(
+        workspace: object,
+        change_set: WorkspaceChangeSet,
+        validation: object,
+    ) -> WorkspaceMutationResult:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return _controlled_mutation_result(
+                change_set,
+                WorkspaceMutationStatus.REJECTED,
+                WorkspaceMutationIssueCode.STALE_PRECONDITION,
+            )
+        return original(workspace, change_set, validation)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(nodes_module, "apply_workspace_change_set", stale_once)
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "required",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            )
+        ]
+    )
+
+    result = _run_approved(
+        proposal, MaterializingExecutor({"TASK-001": "src/service.py"})
+    )
+
+    assert result["workflow_status"] == "success"
+    assert call_count == 2
+    assert [item.disposition for item in result["task_attempt_exit_decisions"]] == [
+        TaskAttemptExitDisposition.RETRY_TASK,
+        TaskAttemptExitDisposition.SUCCEED_TASK,
+    ]
+    assert result["task_graph_execution"].task_states[0].attempt_count == 2
+
+
+def test_terminal_mutation_rejection_fails_task_and_keeps_child_blocked(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    def terminal_rejection(
+        workspace: object,
+        change_set: WorkspaceChangeSet,
+        validation: object,
+    ) -> WorkspaceMutationResult:
+        del workspace, validation
+        return _controlled_mutation_result(
+            change_set,
+            WorkspaceMutationStatus.REJECTED,
+            WorkspaceMutationIssueCode.SYMLINK_DETECTED,
+        )
+
+    monkeypatch.setattr(
+        nodes_module, "apply_workspace_change_set", terminal_rejection
+    )
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "parent",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+            _task("child", depends_on=["parent"]),
+        ]
+    )
+    executor = MaterializingExecutor({"TASK-001": "src/service.py"})
+
+    result = _run_approved(proposal, executor)
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert [item.status for item in result["task_graph_execution"].task_states] == [
+        TaskExecutionStatus.FAILED,
+        TaskExecutionStatus.BLOCKED,
+    ]
+    assert [item.task_id for item in executor.calls] == ["TASK-001"]
+    assert result["task_attempt_exit_decisions"][0].disposition is (
+        TaskAttemptExitDisposition.FAIL_TASK
+    )
+    assert result["governed_workspace_session"].integrity_status is (
+        WorkspaceIntegrityStatus.VERIFIED
+    )
+
+
+def test_retryable_rolled_back_mutation_retries_then_succeeds(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    original = nodes_module.apply_workspace_change_set
+    call_count = 0
+
+    def rolled_back_once(
+        workspace: object,
+        change_set: WorkspaceChangeSet,
+        validation: object,
+    ) -> WorkspaceMutationResult:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return _controlled_mutation_result(
+                change_set,
+                WorkspaceMutationStatus.ROLLED_BACK,
+                WorkspaceMutationIssueCode.MODIFY_FAILURE,
+            )
+        return original(workspace, change_set, validation)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        nodes_module, "apply_workspace_change_set", rolled_back_once
+    )
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "required",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            )
+        ]
+    )
+
+    result = _run_approved(
+        proposal, MaterializingExecutor({"TASK-001": "src/service.py"})
+    )
+
+    assert result["workflow_status"] == "success"
+    assert [item.disposition for item in result["task_attempt_exit_decisions"]] == [
+        TaskAttemptExitDisposition.RETRY_TASK,
+        TaskAttemptExitDisposition.SUCCEED_TASK,
+    ]
+
+
+def test_nonretryable_rolled_back_mutation_fails_task(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    def rolled_back_terminal(
+        workspace: object,
+        change_set: WorkspaceChangeSet,
+        validation: object,
+    ) -> WorkspaceMutationResult:
+        del workspace, validation
+        return _controlled_mutation_result(
+            change_set,
+            WorkspaceMutationStatus.ROLLED_BACK,
+            WorkspaceMutationIssueCode.RUNTIME_PATH_POLICY,
+        )
+
+    monkeypatch.setattr(
+        nodes_module, "apply_workspace_change_set", rolled_back_terminal
+    )
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "required",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            )
+        ]
+    )
+
+    result = _run_approved(
+        proposal, MaterializingExecutor({"TASK-001": "src/service.py"})
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result["task_attempt_exit_decisions"][0].disposition is (
+        TaskAttemptExitDisposition.FAIL_TASK
+    )
+    assert result["governed_workspace_session"].integrity_status is (
+        WorkspaceIntegrityStatus.VERIFIED
+    )
+
+
+def test_same_path_no_change_proposals_are_compatible_and_keep_snapshot(
+    tmp_path: Path,
+) -> None:
+    runtime = GovernedWorkspaceRuntime(parent_directory=tmp_path)
+    thread_id = "same-path-no-change"
+    workspace = runtime.establish_workspace_for_run(thread_id)
+    (workspace.root / "src").mkdir()
+    desired = "already authoritative\n"
+    (workspace.root / "src/shared.py").write_text(desired)
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "first",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+            _task(
+                "second",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+        ]
+    )
+    executor = MaterializingExecutor(
+        {"TASK-001": "src/shared.py", "TASK-002": "src/shared.py"},
+        contents={"TASK-001": desired, "TASK-002": desired},
+    )
+
+    result = _run_approved(
+        proposal,
+        executor,
+        workspace_runtime=runtime,
+        thread_id=thread_id,
+    )
+
+    assert result["workflow_status"] == "success"
+    assert len(result["workspace_conflict_evidence"]) == 1
+    assert result["workspace_conflict_evidence"][0].analysis.has_conflicts is False
+    assert len(result["workspace_snapshots"]) == 1
+    assert {
+        change.operation
+        for change_set in result["workspace_change_sets"]
+        for change in change_set.file_changes
+    } == {WorkspaceChangeOperation.NO_CHANGE}
+    assert all(
+        item.status is WorkspaceMutationStatus.APPLIED
+        for item in result["workspace_mutation_results"]
+    )
+
+
+def test_hard_stop_prevents_later_same_wave_mutation(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def rollback_failed(
+        workspace: object,
+        change_set: WorkspaceChangeSet,
+        validation: object,
+    ) -> WorkspaceMutationResult:
+        del workspace, validation
+        calls.append(change_set.task_id)
+        return _controlled_mutation_result(
+            change_set,
+            WorkspaceMutationStatus.ROLLBACK_FAILED,
+            WorkspaceMutationIssueCode.ROLLBACK_FAILURE,
+        )
+
+    monkeypatch.setattr(nodes_module, "apply_workspace_change_set", rollback_failed)
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "first",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+            _task(
+                "second",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+        ]
+    )
+
+    result = _run_approved(
+        proposal,
+        MaterializingExecutor(
+            {"TASK-001": "src/a.py", "TASK-002": "src/b.py"}
+        ),
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert calls == ["TASK-001"]
+    assert all(
+        item.disposition is TaskAttemptExitDisposition.SAFE_STOP_RUN
+        for item in result["task_attempt_exit_decisions"]
+    )
+    assert all(
+        item.status is TaskExecutionStatus.ABORTED
+        for item in result["task_graph_execution"].task_states
+    )
+
+
+def test_later_same_wave_integrity_loss_preserves_verified_peer_success(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    original = nodes_module.apply_workspace_change_set
+    calls: list[str] = []
+
+    def apply_then_lose_integrity(
+        workspace: object,
+        change_set: WorkspaceChangeSet,
+        validation: object,
+    ) -> WorkspaceMutationResult:
+        calls.append(change_set.task_id)
+        if change_set.task_id == "TASK-001":
+            return original(workspace, change_set, validation)  # type: ignore[arg-type]
+        return _controlled_mutation_result(
+            change_set,
+            WorkspaceMutationStatus.ROLLBACK_FAILED,
+            WorkspaceMutationIssueCode.ROLLBACK_FAILURE,
+        )
+
+    monkeypatch.setattr(
+        nodes_module, "apply_workspace_change_set", apply_then_lose_integrity
+    )
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "first",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+            _task(
+                "second",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+            _task(
+                "later",
+                depends_on=["first", "second"],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+        ]
+    )
+    runtime = GovernedWorkspaceRuntime(parent_directory=tmp_path)
+    thread_id = "preserve-succeeded-peer"
+
+    result = _run_approved(
+        proposal,
+        MaterializingExecutor(
+            {
+                "TASK-001": "src/a.py",
+                "TASK-002": "src/b.py",
+                "TASK-003": "src/c.py",
+            }
+        ),
+        workspace_runtime=runtime,
+        thread_id=thread_id,
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert calls == ["TASK-001", "TASK-002"]
+    assert result["governed_workspace_session"].integrity_status is (
+        WorkspaceIntegrityStatus.UNPROVABLE
+    )
+    assert [
+        item.status for item in result["task_graph_execution"].task_states
+    ] == [
+        TaskExecutionStatus.SUCCEEDED,
+        TaskExecutionStatus.ABORTED,
+        TaskExecutionStatus.BLOCKED,
+    ]
+    assert [
+        item.disposition for item in result["task_attempt_exit_decisions"]
+    ] == [
+        TaskAttemptExitDisposition.SUCCEED_TASK,
+        TaskAttemptExitDisposition.SAFE_STOP_RUN,
+    ]
+    assert [item.status for item in result["workspace_mutation_results"]] == [
+        WorkspaceMutationStatus.APPLIED,
+        WorkspaceMutationStatus.ROLLBACK_FAILED,
+    ]
+    first_mutation = result["workspace_mutation_results"][0]
+    assert first_mutation.mutation_id in (
+        result["task_attempt_exit_decisions"][0].evidence_ids
+    )
+    assert (runtime.workspace_for_run(thread_id).root / "src/a.py").is_file()
+    assert not (runtime.workspace_for_run(thread_id).root / "src/b.py").exists()
+    assert not (runtime.workspace_for_run(thread_id).root / "src/c.py").exists()
+
+
+def test_peer_integrity_loss_preserves_prior_terminal_task_failure(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    def rollback_failed(
+        workspace: object,
+        change_set: WorkspaceChangeSet,
+        validation: object,
+    ) -> WorkspaceMutationResult:
+        del workspace, validation
+        return _controlled_mutation_result(
+            change_set,
+            WorkspaceMutationStatus.ROLLBACK_FAILED,
+            WorkspaceMutationIssueCode.ROLLBACK_FAILURE,
+        )
+
+    monkeypatch.setattr(nodes_module, "apply_workspace_change_set", rollback_failed)
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "terminal",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+            _task(
+                "integrity_loss",
+                depends_on=[],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            ),
+        ]
+    )
+
+    result = _run_approved(
+        proposal,
+        TerminalPeerMaterializingExecutor({"TASK-002": "src/b.py"}),
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result["governed_workspace_session"].integrity_status is (
+        WorkspaceIntegrityStatus.UNPROVABLE
+    )
+    assert [
+        item.status for item in result["task_graph_execution"].task_states
+    ] == [TaskExecutionStatus.FAILED, TaskExecutionStatus.ABORTED]
+    assert [
+        item.disposition for item in result["task_attempt_exit_decisions"]
+    ] == [
+        TaskAttemptExitDisposition.FAIL_TASK,
+        TaskAttemptExitDisposition.SAFE_STOP_RUN,
+    ]

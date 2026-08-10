@@ -26,8 +26,10 @@ from pydantic import ValidationError
 from agentic_sdlc.llm import DEFAULT_OPENAI_MODEL
 from agentic_sdlc.prompts import TASK_EXECUTION_SYSTEM_PROMPT
 from agentic_sdlc.task_execution_contracts import (
-    TaskExecutionRequest,
     TaskExecutionResult,
+)
+from agentic_sdlc.workspace_integration_contracts import (
+    WorkspaceBoundTaskExecutionRequest,
 )
 
 
@@ -41,7 +43,9 @@ class TaskExecutor(Protocol):
 
     model_name: str
 
-    def execute(self, request: TaskExecutionRequest) -> TaskExecutionResult:
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
         """Propose semantic output for exactly one task attempt."""
 
 
@@ -74,7 +78,9 @@ class OpenAITaskExecutor:
         self._api_key = api_key
         self._client = client
 
-    def execute(self, request: TaskExecutionRequest) -> TaskExecutionResult:
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
         """Return one non-authoritative result without lifecycle side effects."""
 
         client = self._client or self._create_client()
@@ -157,7 +163,7 @@ class OpenAITaskExecutor:
         return OpenAI(api_key=api_key, max_retries=0)
 
 
-def build_task_execution_input(request: TaskExecutionRequest) -> str:
+def build_task_execution_input(request: WorkspaceBoundTaskExecutionRequest) -> str:
     """Serialize only authoritative bounded request context deterministically."""
 
     payload = {
@@ -182,5 +188,7 @@ def build_task_execution_input(request: TaskExecutionRequest) -> str:
             if request.retry_context is not None
             else None
         ),
+        "workspace_binding": request.workspace_binding.model_dump(mode="json"),
+        "repository_context": request.repository_context.model_dump(mode="json"),
     }
     return json.dumps(payload, sort_keys=True, indent=2, ensure_ascii=False)

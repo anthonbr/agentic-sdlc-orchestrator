@@ -21,6 +21,7 @@ class TaskExecutionStatus(StrEnum):
     RUNNING = "RUNNING"
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
+    ABORTED = "ABORTED"
 
 
 class TaskGraphExecutionStatus(StrEnum):
@@ -107,6 +108,9 @@ class TaskExecutionRecoveryFailureKind(StrEnum):
     EXECUTOR = "EXECUTOR"
     CANONICALIZATION = "CANONICALIZATION"
     VALIDATION = "VALIDATION"
+    MATERIALIZATION = "MATERIALIZATION"
+    WORKSPACE_CONFLICT = "WORKSPACE_CONFLICT"
+    WORKSPACE_MUTATION = "WORKSPACE_MUTATION"
 
 
 class TaskExecutionRecoveryAction(StrEnum):
@@ -218,6 +222,22 @@ def start_task_wave(
     return started
 
 
+def start_serialized_task_wave(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    task_id: str,
+) -> TaskGraphExecutionState:
+    """Authorize one canonical READY retry as a serialized fallback wave."""
+
+    _validate_dispatchable_execution(graph, execution)
+    ready = ready_task_ids(graph, execution)
+    if task_id not in ready:
+        raise TaskExecutionError(
+            f"Serialized retry task {task_id} is not currently READY."
+        )
+    return start_task(graph, execution, task_id)
+
+
 def start_task(
     graph: TaskGraph,
     execution: TaskGraphExecutionState,
@@ -318,6 +338,50 @@ def mark_task_failed(
         index,
         failed,
         graph_status=TaskGraphExecutionStatus.FAILED,
+    )
+
+
+def abort_running_task(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    task_id: str,
+) -> TaskGraphExecutionState:
+    """Abort an authorized peer because run-level workspace proof was lost."""
+
+    index, current = _settleable_task(
+        graph, execution, task_id, transition="abort"
+    )
+    aborted = TaskExecutionState(
+        task_id=task_id,
+        status=TaskExecutionStatus.ABORTED,
+        attempt_count=current.attempt_count,
+    )
+    return _replace_task_state(
+        execution,
+        index,
+        aborted,
+        graph_status=TaskGraphExecutionStatus.FAILED,
+    )
+
+
+def fail_task_graph_integrity(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+) -> TaskGraphExecutionState:
+    """Freeze future dispatch when live workspace authority is unprovable."""
+
+    _validate_execution_matches_graph(graph, execution)
+    if execution.status not in {
+        TaskGraphExecutionStatus.PENDING,
+        TaskGraphExecutionStatus.RUNNING,
+    }:
+        raise TaskExecutionError(
+            "Workspace-integrity failure requires a dispatchable graph execution."
+        )
+    return TaskGraphExecutionState(
+        graph_id=execution.graph_id,
+        status=TaskGraphExecutionStatus.FAILED,
+        task_states=execution.task_states,
     )
 
 

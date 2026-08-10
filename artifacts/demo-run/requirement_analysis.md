@@ -39,7 +39,7 @@ v1: Provide short URLs that resolve to submitted long URLs.
 
 ### Assumptions
 
-- The workflow produces semantic artifacts without writing the service.
+- Materialization is limited to the disposable isolated workspace.
 
 ### Acceptance criteria
 
@@ -58,7 +58,7 @@ v1: Provide short URLs that resolve to submitted long URLs.
    - Model: fake-requirement-analyst
    - Normalized problem: v1: Provide short URLs that resolve to submitted long URLs.
    - Ambiguities: URL expiration behavior is unspecified.
-   - Assumptions: The workflow produces semantic artifacts without writing the service.
+   - Assumptions: Materialization is limited to the disposable isolated workspace.
 
 ## Human requirement-review history
 

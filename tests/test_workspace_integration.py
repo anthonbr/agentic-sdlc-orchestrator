@@ -15,8 +15,11 @@ from agentic_sdlc.task_execution_contracts import (
 from agentic_sdlc.task_graph import Task, TaskMaterializationPolicy, TaskType
 from agentic_sdlc.workspace_contracts import workspace_file_content_hash
 from agentic_sdlc.workspace_integration import (
+    DeterministicRepositoryContextPathProvider,
+    GovernedWorkspaceRuntime,
     WorkspaceIntegrationError,
     WorkspaceIntegrationIssueCode,
+    advance_governed_workspace_session,
     establish_governed_workspace_session,
     provide_repository_context,
 )
@@ -27,7 +30,10 @@ from agentic_sdlc.workspace_integration_contracts import (
     WorkspaceIntegrityStatus,
     build_workspace_bound_task_execution_request,
 )
-from agentic_sdlc.workspace_runtime import create_isolated_workspace
+from agentic_sdlc.workspace_runtime import (
+    create_isolated_workspace,
+    snapshot_isolated_workspace,
+)
 
 
 def _request() -> TaskExecutionRequest:
@@ -283,3 +289,72 @@ def test_workspace_bound_request_rejects_mismatched_context_binding(
             WorkspaceBinding(workspace_id="OTHER", snapshot_id=snapshot.snapshot_id),
             context,
         )
+
+
+def test_governed_runtime_reuses_one_capability_per_run(tmp_path: Path) -> None:
+    runtime = GovernedWorkspaceRuntime(parent_directory=tmp_path)
+
+    first = runtime.establish_workspace_for_run("RUN-001")
+    second = runtime.workspace_for_run("RUN-001")
+    other = runtime.establish_workspace_for_run("RUN-002")
+
+    assert first is second
+    assert first != other
+    assert first.root.parent == tmp_path.resolve()
+    assert other.root.parent == tmp_path.resolve()
+
+
+def test_governed_runtime_never_replaces_an_unavailable_capability(
+    tmp_path: Path,
+) -> None:
+    runtime = GovernedWorkspaceRuntime(parent_directory=tmp_path)
+
+    with raises(WorkspaceIntegrationError) as error:
+        runtime.workspace_for_run("RUN-MISSING")
+
+    assert error.value.code is WorkspaceIntegrationIssueCode.RUNTIME
+
+
+def test_governed_runtime_accepts_one_precreated_workspace(tmp_path: Path) -> None:
+    runtime = GovernedWorkspaceRuntime(parent_directory=tmp_path)
+    supplied = create_isolated_workspace("WORKSPACE-SUPPLIED", parent_directory=tmp_path)
+    (supplied.root / "README.md").write_text("brownfield\n")
+
+    runtime.bind_workspace("RUN-001", supplied)
+
+    assert runtime.workspace_for_run("RUN-001") is supplied
+    with raises(WorkspaceIntegrationError) as error:
+        runtime.bind_workspace(
+            "RUN-001",
+            create_isolated_workspace("WORKSPACE-OTHER", parent_directory=tmp_path),
+        )
+    assert error.value.code is WorkspaceIntegrationIssueCode.WORKSPACE_ID
+
+
+def test_authoritative_snapshot_advances_without_changing_baseline(
+    tmp_path: Path,
+) -> None:
+    workspace = create_isolated_workspace("WORKSPACE-001", parent_directory=tmp_path)
+    session, baseline = establish_governed_workspace_session(
+        workspace, run_id="RUN-001"
+    )
+    (workspace.root / "README.md").write_text("created\n")
+    postimage = snapshot_isolated_workspace(workspace)
+
+    advanced = advance_governed_workspace_session(session, postimage)
+
+    assert advanced.baseline_snapshot_id == baseline.snapshot_id
+    assert advanced.authoritative_snapshot_id == postimage.snapshot_id
+    assert advanced.integrity_status is WorkspaceIntegrityStatus.VERIFIED
+
+
+def test_repository_context_path_provider_is_bounded_and_canonical() -> None:
+    provider = DeterministicRepositoryContextPathProvider(("README.md",))
+
+    paths = provider.paths_for_attempt(
+        _request().task,
+        dependency_paths=("src/service.py",),
+        retry_paths=("README.md", "tests/test_service.py"),
+    )
+
+    assert paths == ("README.md", "src/service.py", "tests/test_service.py")

@@ -1,8 +1,7 @@
-"""Immutable vocabulary for future governed task-to-workspace integration.
+"""Immutable vocabulary for governed task-to-workspace integration.
 
-This module is pure contract groundwork.  It grants no filesystem authority,
-does not provide repository context, and does not alter task execution or
-settlement.
+These checkpoint-safe contracts grant no filesystem capability. Application
+runtime code separately provides bounded read and isolated mutation authority.
 """
 
 from __future__ import annotations
@@ -14,13 +13,19 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from agentic_sdlc.task_execution_contracts import TaskExecutionRequest
-from agentic_sdlc.task_graph import TaskMaterializationPolicy
+from agentic_sdlc.task_execution_contracts import (
+    EngineeringArtifact,
+    TaskExecutionRequest,
+    TaskExecutionRetryContext,
+    TaskRequirementContext,
+)
+from agentic_sdlc.task_graph import Task, TaskMaterializationPolicy
 from agentic_sdlc.workspace_contracts import (
     ArtifactMaterializationIntent,
     ArtifactMaterializationIssueCode,
     ArtifactMaterializationValidationIssue,
     ArtifactMaterializationValidationResult,
+    WorkspaceChangeSetConflictAnalysis,
     normalize_repository_path,
     workspace_file_content_hash,
 )
@@ -137,6 +142,13 @@ class WorkspaceIntegrityStatus(StrEnum):
     UNPROVABLE = "UNPROVABLE"
 
 
+class WorkspaceDispatchMode(StrEnum):
+    """Finite scheduler modes for normal waves and serialized conflict fallback."""
+
+    PARALLEL = "PARALLEL"
+    SERIALIZED_CONFLICT_RETRY = "SERIALIZED_CONFLICT_RETRY"
+
+
 class GovernedWorkspaceSession(BaseModel):
     """Immutable authority record for one run's isolated workspace state."""
 
@@ -147,6 +159,26 @@ class GovernedWorkspaceSession(BaseModel):
     baseline_snapshot_id: str = Field(min_length=1)
     authoritative_snapshot_id: str = Field(min_length=1)
     integrity_status: WorkspaceIntegrityStatus
+
+
+class WorkspaceExecutionWave(BaseModel):
+    """Immutable binding shared by every attempt in one authorized wave."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    wave_number: int = Field(ge=1)
+    dispatch_mode: WorkspaceDispatchMode
+    binding: WorkspaceBinding
+
+
+class WorkspaceWaveConflictEvidence(BaseModel):
+    """Deterministic same-wave write/write reconciliation evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    conflict_evidence_id: str
+    wave_number: int = Field(ge=1)
+    analysis: WorkspaceChangeSetConflictAnalysis
 
 
 class WorkspaceBoundTaskExecutionRequest(BaseModel):
@@ -165,6 +197,38 @@ class WorkspaceBoundTaskExecutionRequest(BaseModel):
                 "Repository context and workspace request binding must match."
             )
         return self
+
+    @property
+    def request_id(self) -> str:
+        return self.request.request_id
+
+    @property
+    def attempt_id(self) -> str:
+        return self.request.attempt_id
+
+    @property
+    def task_id(self) -> str:
+        return self.request.task_id
+
+    @property
+    def attempt_number(self) -> int:
+        return self.request.attempt_number
+
+    @property
+    def task(self) -> Task:
+        return self.request.task
+
+    @property
+    def requirement_context(self) -> TaskRequirementContext:
+        return self.request.requirement_context
+
+    @property
+    def dependency_artifacts(self) -> tuple[EngineeringArtifact, ...]:
+        return self.request.dependency_artifacts
+
+    @property
+    def retry_context(self) -> TaskExecutionRetryContext | None:
+        return self.request.retry_context
 
 
 def build_repository_context(
@@ -205,6 +269,31 @@ def repository_context_identity_is_valid(context: RepositoryContext) -> bool:
 
     return context.repository_context_id == _repository_context_id(
         context.binding, context.observations
+    )
+
+
+def build_workspace_wave_conflict_evidence(
+    wave_number: int,
+    analysis: WorkspaceChangeSetConflictAnalysis,
+) -> WorkspaceWaveConflictEvidence:
+    """Bind deterministic conflict analysis to its execution wave."""
+
+    payload = {
+        "wave_number": wave_number,
+        "analysis": analysis.model_dump(mode="json"),
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    return WorkspaceWaveConflictEvidence(
+        conflict_evidence_id=f"WORKSPACE-CONFLICT-{digest[:12].upper()}",
+        wave_number=wave_number,
+        analysis=analysis,
     )
 
 

@@ -14,7 +14,9 @@ from agentic_sdlc.task_execution import (
     TaskExecutionStatus,
     TaskGraphExecutionState,
     TaskGraphExecutionStatus,
+    abort_running_task,
     decide_task_execution_recovery,
+    fail_task_graph_integrity,
     initialize_task_graph_execution,
     mark_task_failed,
     mark_task_succeeded,
@@ -23,6 +25,7 @@ from agentic_sdlc.task_execution import (
     ready_task_wave_ids,
     safe_stop_task_graph_execution,
     start_task,
+    start_serialized_task_wave,
     start_task_wave,
 )
 from agentic_sdlc.task_graph import (
@@ -164,6 +167,46 @@ def test_start_task_wave_rejects_noncanonical_selection_before_authorization() -
         and state.attempt_count == 0
         for state in initial.task_states
     )
+
+
+def test_serialized_fallback_authorizes_one_explicit_ready_retry() -> None:
+    graph = _graph(_task("TASK-001"), _task("TASK-002"))
+    initial = initialize_task_graph_execution(graph)
+
+    started = start_serialized_task_wave(graph, initial, "TASK-002")
+
+    assert _status(started, "TASK-001") is TaskExecutionStatus.READY
+    assert _status(started, "TASK-002") is TaskExecutionStatus.RUNNING
+    assert _attempts(started, "TASK-002") == 1
+
+
+def test_workspace_integrity_failure_aborts_running_peer_before_safe_stop() -> None:
+    graph = _graph(_task("TASK-001"), _task("TASK-002"))
+    running = start_task_wave(
+        graph,
+        initialize_task_graph_execution(graph),
+        ("TASK-001", "TASK-002"),
+    )
+
+    aborted = abort_running_task(graph, running, "TASK-001")
+    aborted = abort_running_task(graph, aborted, "TASK-002")
+    stopped = safe_stop_task_graph_execution(graph, aborted)
+
+    assert stopped.status is TaskGraphExecutionStatus.SAFE_STOPPED
+    assert all(
+        item.status is TaskExecutionStatus.ABORTED for item in stopped.task_states
+    )
+
+
+def test_predispatch_integrity_failure_freezes_ready_graph() -> None:
+    graph = _graph(_task("TASK-001"))
+    initial = initialize_task_graph_execution(graph)
+
+    failed = fail_task_graph_integrity(graph, initial)
+
+    assert failed.status is TaskGraphExecutionStatus.FAILED
+    assert _status(failed, "TASK-001") is TaskExecutionStatus.READY
+    assert ready_task_ids(graph, failed) == ()
 
 
 def test_start_task_transitions_ready_to_running_and_increments_attempt() -> None:

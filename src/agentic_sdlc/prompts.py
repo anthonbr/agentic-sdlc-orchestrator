@@ -68,7 +68,7 @@ routing. Return only the requested structured task proposal.
 """
 
 
-TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.2"
+TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.4"
 
 TASK_EXECUTION_SYSTEM_PROMPT = """\
 Execute exactly one approved software-engineering task using only the bounded
@@ -78,8 +78,11 @@ required by that task and return only the requested structured execution result.
 Echo request_id, attempt_id, and task_id exactly as supplied. Do not generate or
 modify those correlation identifiers.
 
-The serialized execution request contains approved requirement context and
-accepted dependency artifacts. Approved functional requirements, nonfunctional
+The serialized execution request contains approved requirement context,
+accepted dependency artifacts, an exact workspace/snapshot binding, and bounded
+repository context. Repository context is authoritative read-only evidence from
+that exact snapshot. It grants no filesystem, repository, shell, or tool authority.
+Approved functional requirements, nonfunctional
 requirements, constraints, and acceptance criteria are authoritative engineering
 obligations. Satisfy them where they apply to the canonical task, including when
 they are written in imperative form.
@@ -131,7 +134,14 @@ files, execute commands, or perform Git operations. Do not assign canonical
 artifact IDs, lineage IDs, content hashes, provenance, or runtime status.
 
 Artifact logical names are descriptive metadata only and do not authorize file
-creation. Return concise summaries, explicit assumptions and risks, and only the
-semantic artifact outputs requested by the application. Do not expose private
-reasoning or chain-of-thought.
+creation. When the approved task policy permits or requires repository
+materialization, materialization_proposals may associate a 1-based semantic output
+index with a repository-relative target path. Such proposals express desired file
+state only. They do not assert that a write occurred and cannot choose CREATE,
+MODIFY, NO_CHANGE, preimages, workspace identity, mutation outcome, or task
+success. FORBIDDEN tasks must return no materialization proposals; REQUIRED tasks
+should propose at least one desired repository-file target; ALLOWED tasks may
+propose zero or more. Return concise summaries, explicit assumptions and risks,
+and only the semantic artifact outputs requested by the application. Do not expose
+private reasoning or chain-of-thought.
 """

@@ -18,13 +18,14 @@ the software-development lifecycle.
   execution state, deterministic readiness and transitions, application-owned
   contracts and artifacts, a bounded OpenAI executor, and a static governed loop
   that interprets the approved engineering TaskGraph through bounded parallel
-  execution waves.
+  execution waves and governed mutation of one disposable isolated workspace.
 
 The current V0.5 slices execute approved engineering tasks as bounded semantic
-LLM calls and settle their runtime status from deterministic application
-validation. They deliberately do **not** write generated outputs into project
-source paths, run commands, perform Git operations, use fallback models, or
-implement the URL Shortener demonstration service.
+LLM calls and may transactionally materialize validated desired files only beneath
+one factory-created disposable workspace. They do **not** mutate the orchestrator
+checkout or an authoritative repository, run generated code or commands, perform
+Git operations, use fallback models, or implement the URL Shortener demonstration
+service as executable application code.
 
 ## Two distinct graphs
 
@@ -198,13 +199,13 @@ NULs, empty/dot/traversal segments, duplicate destinations, `.git`, exact `.env`
 runtime symlink containment. The isolated runtime below enforces that separate
 containment check against the real workspace immediately before mutation.
 
-Parallel change sets remain isolated desired-state records. Same-path proposals are
+Parallel change sets begin as isolated desired-state records. Same-path proposals are
 sorted and reported deterministically: two `NO_CHANGE` observations are compatible,
 while any overlap containing `CREATE` or `MODIFY` fails closed, even for identical
 desired contents or mutation plus `NO_CHANGE`. No AI merge or completion-order
-selection occurs. This slice performs no writes, deletes, copying, Git operations,
-shell execution, or task-settlement integration; the separate bounded runtime below
-is the only component authorized to realize a validated change set.
+selection occurs. After a parallel join, the governed scheduler uses this analysis
+before invoking the separate bounded runtime below. DELETE, copying, Git operations,
+shell execution, and generated-code execution remain absent.
 
 ### Isolated transactional workspace mutation
 
@@ -270,11 +271,10 @@ explicit `ROLLBACK_FAILED`, with canonical per-file and structured issue evidenc
 These guarantees are process-level transactions for handled failures, not
 crash-consistent journaling, power-loss durability, ACID filesystem isolation, or
 hostile same-host process containment. Workspaces are retained for inspection; no
-automatic cleanup, TaskGraph settlement integration, filesystem retry, concurrent
-filesystem mutation, Git/shell operation, generated-code execution, or promotion
-into an authoritative repository exists yet.
+automatic cleanup, concurrent filesystem mutation, Git/shell operation,
+generated-code execution, or promotion into an authoritative repository exists.
 
-### Governed task-to-workspace integration groundwork
+### Governed task-to-workspace execution
 
 Every proposed and canonical task carries an explicit human-approved
 `materialization_policy`: `FORBIDDEN`, `ALLOWED`, or `REQUIRED`. The planner proposes
@@ -286,29 +286,64 @@ of human authority for this policy.
 Application code can establish an immutable `GovernedWorkspaceSession` from a
 factory-created `IsolatedWorkspace`. Its baseline and authoritative snapshot IDs
 initially identify the same real snapshot and integrity begins `VERIFIED`; this
-slice does not advance sessions after mutation. A read-only provider accepts only
-explicit repository-relative paths and produces a bounded canonical
+baseline never changes, while verified `APPLIED` mutations advance only the
+authoritative snapshot. A read-only provider accepts only explicit
+repository-relative paths and produces a bounded canonical
 `RepositoryContext` containing exact UTF-8 file contents and hashes or explicit
 nonexistence. It rejects binary requested content, identity mismatch, symlinks,
 unverified integrity, and live drift before binding evidence to the authoritative
 snapshot.
 
-`WorkspaceBoundTaskExecutionRequest` strictly combines an unchanged existing task
-request with one matching `WorkspaceBinding` and `RepositoryContext`, without
-putting nullable workspace fields on today's scheduler request. Separate immutable
-materialization validation proves task policy, canonical artifact correlation,
-unique artifact/path intent mapping, and lineage before generic change-set
-derivation. Materialization remains only a proposal and confers no filesystem
-capability. The current TaskGraph/LangGraph scheduler still uses
-`TaskExecutionRequest`, does not build repository context, does not reconcile
-parallel change sets, and cannot call workspace mutation automatically.
+Every executor attempt now receives a strict `WorkspaceBoundTaskExecutionRequest`
+that combines the unchanged canonical task request with one matching
+`WorkspaceBinding` and bounded `RepositoryContext`. The live
+`IsolatedWorkspace` capability remains in a per-compiled-workflow runtime owner,
+outside serialized/checkpointed state and outside executor input. Default greenfield
+runs receive one empty workspace; application code may instead bind one already
+factory-created isolated workspace before the run without copying or selecting a
+source checkout.
+
+The executor may return non-authoritative `ArtifactMaterializationProposal` values
+that identify a semantic output by 1-based output index and propose a target path.
+Only application code can correlate that output to its canonical artifact ID and
+create a strict `ArtifactMaterializationIntent`. Separate immutable validation then
+proves task policy, canonical artifact correlation, unique artifact/path intent
+mapping, and lineage before generic change-set derivation. Neither proposals nor
+intents confer filesystem capability or select `CREATE`, `MODIFY`, or `NO_CHANGE`.
+
+At each scheduler wave boundary, the control plane verifies the live workspace
+against the session's authoritative snapshot and binds every parallel attempt to
+that same exact snapshot. Explicit baseline paths, successfully materialized direct
+dependency paths, and immediately prior conflict/stale-mutation targets form the
+only bounded repository-context selection inputs; no autonomous browsing or
+whole-repository scan exists. Worker threads perform only executor reasoning. After
+the full join, the control plane canonicalizes and validates all evidence in
+TaskGraph order, reconciles write/write conflicts, then applies non-conflicting
+per-task transactions serially in canonical order.
+
+Disjoint same-base change sets remain applicable through targeted optimistic
+preimages even after an earlier task advances the global snapshot. Same-path
+mutation conflicts do not select a completion-order winner: eligible participants
+consume the existing retry budget and fall back to explicit singleton waves in
+canonical task order, each bound to the latest authoritative snapshot. This is
+bounded execution fallback, not TaskGraph replanning. Read/write stale-context
+conflict detection remains deferred.
+
+`APPLIED` requires a verified postimage and advances authoritative state;
+`REJECTED` and verified `ROLLED_BACK` retain the previously proven snapshot and are
+retried only for finite machine-readable causes. `ROLLBACK_FAILED`, pre-dispatch
+drift, or another loss of workspace proof marks integrity `UNPROVABLE`, aborts
+unsettled peers, freezes all further dispatch/mutation, and produces a hard
+safe-stop decision. Ordinary task failure remains distinct and does not make a
+trusted workspace unprovable. A task unlocks dependents only after its complete
+semantic, materialization, mutation, and governed exit gate succeeds.
 
 ### Bounded LLM task-executor adapter
 
 The first provider adapter preserves the contract boundary:
 
 ```text
-TaskExecutionRequest
+WorkspaceBoundTaskExecutionRequest
     -> OpenAITaskExecutor
     -> TaskExecutionResult
 ```
@@ -317,8 +352,11 @@ TaskExecutionRequest
 `OPENAI_MODEL` configuration. Its fixed instructions and deterministic input are
 derived only from the authoritative request: approved global and task-scoped
 requirement context, the canonical current task, accepted direct-dependency
-artifacts, and correlation IDs. Raw conversation history, unrelated requirements,
-unrelated tasks, and arbitrary workflow state are excluded.
+artifacts, exact workspace binding, bounded repository observations, and correlation
+IDs. Raw conversation history, unrelated requirements, unrelated tasks, arbitrary
+workflow state, absolute workspace paths, handles, and mutation functions are
+excluded. Repository context is authoritative evidence for reasoning, not mutation
+authority.
 
 All governed OpenAI Responses calls explicitly set `store=False`, requesting that
 generated Responses objects not be stored for later retrieval through the Responses
@@ -344,31 +382,37 @@ the executor's role, capabilities, application policy, governance authority, out
 contract, or permission for external actions: fixed system instructions define
 executor-control authority, while the canonical task defines work scope.
 
-The returned `TaskExecutionResult` remains a non-authoritative semantic proposal.
+The returned `TaskExecutionResult` remains a non-authoritative semantic proposal,
+including any output-index-to-target materialization proposals.
 The executor cannot declare success or assign canonical artifact identity,
 lineage, hashes, provenance, or runtime state. Application code still performs
 artifact canonicalization and deterministic validation separately. The adapter
-does not retry internally, write artifacts to the repository, run commands, or
-settle task or graph state. One `TaskExecutor.execute()` invocation remains exactly
-one provider attempt. The static LangGraph loop invokes the adapter and, outside
-it, uses the validation judgment and deterministic recovery policy to settle
-runtime state.
+does not retry internally, write files, run commands, or settle task or graph
+state. One `TaskExecutor.execute()` invocation remains exactly one provider attempt.
+The static LangGraph loop invokes the adapter and, outside worker threads, owns
+proposal correlation, reconciliation, serial mutation, and deterministic
+settlement.
 
 ### Governed bounded-parallel TaskGraph execution loop
 
-Human TaskGraph approval grants bounded semantic execution authority because the
-executor still has no repository, shell, Git, deployment, or external-system side
-effects. Approval enters this fixed lifecycle:
+Human TaskGraph approval, including each task's materialization policy, grants
+bounded autonomous mutation authority only inside the disposable isolated
+workspace. The executor itself still has no filesystem, shell, Git, deployment, or
+external-system side effects. Approval enters this fixed lifecycle:
 
 ```text
 approved TaskGraph
     -> initialize immutable runtime state
     -> select a bounded READY wave in canonical order
     -> start every authorized wave member
-    -> build authoritative TaskExecutionRequests sequentially
+    -> verify and freeze one authoritative wave-start snapshot
+    -> build bounded workspace requests sequentially
     -> invoke TaskExecutor concurrently for prepared requests
     -> join every authorized peer
-    -> canonicalize, validate, and classify in canonical order
+    -> canonicalize, validate, and prepare change sets in canonical order
+    -> reconcile same-wave write/write conflicts
+    -> apply eligible per-task transactions serially
+    -> verify/advance workspace authority or hard safe stop
     -> settle deterministically
     -> next wave / success / quiescent safe stop
 ```
@@ -376,18 +420,21 @@ approved TaskGraph
 LangGraph topology remains static while the approved engineering graph remains
 dynamic per-run data; no `TASK-###` record becomes a LangGraph node. Only
 `TaskExecutor.execute()` calls run concurrently in a bounded standard-library
-thread pool. Request construction, state mutation, canonicalization, validation,
-recovery classification, and scheduler settlement remain single-threaded. The
-control plane persists requests, results, artifacts, validations, failures, and
-recovery decisions in canonical wave order, so physical completion timing cannot
-change audit order.
+thread pool. Request/context construction, state mutation, canonicalization,
+validation, reconciliation, mutation, recovery classification, and scheduler
+settlement remain single-threaded. The control plane persists bindings, requests,
+results, artifacts, intents, validations, change sets, conflicts, mutation results,
+snapshot progression, and exit decisions in canonical wave order, so physical
+completion timing cannot change audit or mutation order.
 
 The control plane selects complete successful validation and artifact evidence for
 each direct dependency, and the request builder independently revalidates that
-evidence. A terminal peer failure freezes new dispatch but does not cancel or erase
-already-authorized peers; they finish and settle before safe stop. There is no
-fallback model, task cancellation, production timeout, delayed backoff, or
-work-conserving mid-wave dispatch.
+evidence. Downstream work remains blocked until the parent's full governed exit
+decision succeeds. A terminal peer failure freezes new dispatch but does not cancel
+or erase already-authorized executor reasoning; those calls join before settlement.
+Workspace-integrity loss additionally prevents remaining mutations and marks
+unsettled peers aborted. There is no fallback model, task cancellation, production
+timeout, delayed backoff, or work-conserving mid-wave dispatch.
 
 `TaskExecutor` implementations used by parallel dispatch may receive concurrent
 `execute()` calls for independent attempts. Custom implementations and injected
@@ -431,7 +478,8 @@ The prior V0.4 `architecture_task`, `test_plan_task`, and `synchronize` demo
 branches and their obsolete state were removed: they generated canned examples and
 would compete with the approved TaskGraph once real semantic task execution begins.
 Architecture, source, test, and documentation proposals now originate only from
-approved TASK-### execution and remain canonical data rather than repository writes.
+approved TASK-### execution. They remain canonical evidence unless a separate
+validated intent passes the governed isolated-workspace mutation gate.
 
 ## Governed planning and lineage
 
@@ -535,6 +583,7 @@ approved_requirement_spec.json
 task_graph.json
 task_graph.md
 task_execution.json
+workspace_execution.json
 engineering_artifacts.json
 summary.md
 ```
@@ -543,15 +592,20 @@ summary.md
 that includes derived layers, execution status, and governance history.
 `task_execution.json` retains runtime snapshots and immutable execution-wave
 membership plus correlated requests, results, validations, failures, retry
-contexts, and recovery decisions;
+contexts, and recovery decisions. `workspace_execution.json` retains the governed
+session and snapshot history, wave bindings, bounded requests, canonical intents,
+materialization/change-set validations, conflict evidence, mutation results, and
+task-attempt exit decisions;
 `engineering_artifacts.json` contains immutable
 application-canonicalized outputs, including failed-validation output for audit.
 The checked-in `artifacts/demo-run/` snapshot is generated network-free through the
 actual governed workflow using scripted requirement analysis, task planning, and a
 concurrency-safe deterministic task executor with a fixed demonstration timestamp.
-It includes an actual two-task executor wave plus one controlled retryable local
-executor failure followed by a successful later attempt, without a provider call.
-The generated
+It includes an actual two-task executor wave, one controlled retryable local
+executor failure followed by a successful later attempt, governed file
+materialization, and authoritative snapshot progression without a provider call.
+The generated files are audit data only; the demo never executes the materialized
+source or tests. The generated
 `artifacts/workflow_diagram.png` documents the static LangGraph control plane, not
 the per-run engineering TaskGraph.
 
@@ -575,13 +629,16 @@ input, one-call structured parsing, typed retryability, and invocation-failure
 handling without a network connection. Static-loop tests use barriers and
 thread-safe fakes to prove true two-task overlap, the concurrency cap, canonical
 evidence ordering despite reversed completion, fan-out/fan-in dependency flow,
-bounded recovery, terminal-peer settlement, and quiescent safe stop through actual
-LangGraph routing. Workspace-contract tests cover deterministic logical snapshots,
+bounded recovery, terminal-peer settlement, same-snapshot reasoning, serial
+disjoint mutation, deterministic conflict fallback, authoritative advancement,
+governed exit decisions, and integrity hard stops through actual LangGraph routing.
+Workspace-contract tests cover deterministic logical snapshots,
 artifact-independent materialization intents, conservative path policy, derived
 operations, tamper detection, optimistic preimages, and order-independent parallel
-conflict evidence without filesystem I/O. Integration tests cover governed session
-establishment, bounded exact repository context, drift/binary rejection, and strict
-request binding. Workspace-runtime and mutation tests exercise real
+conflict evidence without filesystem I/O. Integration tests cover per-run
+capability ownership, governed session establishment/advancement, bounded exact
+repository context, drift/binary rejection, strict request binding, and deterministic
+path selection. Workspace-runtime and mutation tests exercise real
 isolated files, non-following snapshots, runtime containment, targeted preimages,
 exclusive creation, atomic mode-preserving replacement, postimage verification,
 fault-injected rollback, and explicit rollback-failure evidence.
@@ -593,6 +650,7 @@ policy, work-conserving streaming dispatch, fallback models or providers, delaye
 retry/backoff policy, distributed workers, repository copying or Git worktrees,
 DELETE support, generated-code execution,
 authoritative-repository promotion, crash-recovery journaling, dynamically generated
-LangGraph nodes, workspace mutation settlement integration, full dynamic replanning,
-completed-task reconciliation, brownfield impact analysis, cross-process rollback,
-skill loading, a persistent execution store, deployment, or a web UI.
+LangGraph nodes, read/write stale-context conflict detection, full dynamic
+replanning, brownfield impact analysis or autonomous repository discovery,
+cross-process rollback, skill loading, a persistent execution store, deployment,
+or a web UI.

@@ -1,0 +1,1197 @@
+{
+  "session": {
+    "run_id": "deterministic-v05-slice6-demo",
+    "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+    "baseline_snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
+    "authoritative_snapshot_id": "WORKSPACE-SNAPSHOT-CD18A89365E2",
+    "integrity_status": "VERIFIED"
+  },
+  "snapshots": [
+    {
+      "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "files": []
+    },
+    {
+      "snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "files": [
+        {
+          "path": "src/url_shortener/service.py",
+          "content_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "files": [
+        {
+          "path": "src/url_shortener/service.py",
+          "content_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e"
+        },
+        {
+          "path": "tests/test_service.py",
+          "content_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0"
+        }
+      ]
+    },
+    {
+      "snapshot_id": "WORKSPACE-SNAPSHOT-CD18A89365E2",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "files": [
+        {
+          "path": "README.md",
+          "content_hash": "159fcf96ce5819767d505a8100f9d3a85cea2934f9436387d81db8f4fe81e566"
+        },
+        {
+          "path": "src/url_shortener/service.py",
+          "content_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e"
+        },
+        {
+          "path": "tests/test_service.py",
+          "content_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0"
+        }
+      ]
+    }
+  ],
+  "waves": [
+    {
+      "wave_number": 1,
+      "dispatch_mode": "PARALLEL",
+      "binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+      }
+    },
+    {
+      "wave_number": 2,
+      "dispatch_mode": "PARALLEL",
+      "binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+      }
+    },
+    {
+      "wave_number": 3,
+      "dispatch_mode": "PARALLEL",
+      "binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+      }
+    },
+    {
+      "wave_number": 4,
+      "dispatch_mode": "PARALLEL",
+      "binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75"
+      }
+    },
+    {
+      "wave_number": 5,
+      "dispatch_mode": "PARALLEL",
+      "binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84"
+      }
+    }
+  ],
+  "bound_requests": [
+    {
+      "request": {
+        "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+        "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
+        "graph_id": "GRAPH-34C2DB80991E-V001",
+        "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+        "task_id": "TASK-001",
+        "attempt_number": 1,
+        "task": {
+          "task_id": "TASK-001",
+          "lineage_id": "26853caa-900d-5cd7-b975-0859f6fc2f81",
+          "source_key": "define_api",
+          "title": "Define API contract v1",
+          "description": "Produce the governed define api contract v1 output.",
+          "task_type": "DESIGN",
+          "materialization_policy": "FORBIDDEN",
+          "depends_on": [],
+          "requirement_refs": [
+            "FR-001",
+            "FR-003",
+            "FR-004"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002"
+          ],
+          "risk_refs": [],
+          "ambiguity_refs": [],
+          "expected_outputs": [
+            "define_api.md"
+          ]
+        },
+        "requirement_context": {
+          "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+          "requirement_type": "greenfield",
+          "assumptions": [
+            "Materialization is limited to the disposable isolated workspace."
+          ],
+          "functional_requirements": [
+            {
+              "item_id": "FR-001",
+              "lineage_id": "be48f8a5-272e-53be-99ed-2bc8ad178e19",
+              "text": "Accept a long URL."
+            },
+            {
+              "item_id": "FR-003",
+              "lineage_id": "e49700e5-fd91-5507-b77a-04dd39c9e45d",
+              "text": "Redirect the short URL to the original URL."
+            },
+            {
+              "item_id": "FR-004",
+              "lineage_id": "9c629bbf-a432-5855-89d3-4d873651d053",
+              "text": "Return an error for unknown short URLs."
+            }
+          ],
+          "nonfunctional_requirements": [],
+          "constraints": [],
+          "acceptance_criteria": [
+            {
+              "item_id": "AC-001",
+              "lineage_id": "f3673e76-0d6c-5ee2-a196-638739b96b85",
+              "text": "A submitted valid URL receives a unique short URL."
+            },
+            {
+              "item_id": "AC-002",
+              "lineage_id": "e3c6d089-dce4-5ae2-9ed6-b78c2499b062",
+              "text": "An unknown short code returns a defined error."
+            }
+          ],
+          "risks": [],
+          "ambiguities": []
+        },
+        "dependency_artifacts": [],
+        "retry_context": null
+      },
+      "workspace_binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+      },
+      "repository_context": {
+        "repository_context_id": "REPOSITORY-CONTEXT-2080C1234045",
+        "binding": {
+          "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+          "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+        },
+        "observations": []
+      }
+    },
+    {
+      "request": {
+        "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
+        "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
+        "graph_id": "GRAPH-34C2DB80991E-V001",
+        "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+        "task_id": "TASK-002",
+        "attempt_number": 1,
+        "task": {
+          "task_id": "TASK-002",
+          "lineage_id": "b598b8c1-5367-5c82-92f7-480119ca2bf0",
+          "source_key": "define_storage",
+          "title": "Define persistence model",
+          "description": "Produce the governed define persistence model output.",
+          "task_type": "DESIGN",
+          "materialization_policy": "FORBIDDEN",
+          "depends_on": [],
+          "requirement_refs": [
+            "FR-002",
+            "CON-001"
+          ],
+          "acceptance_criteria_refs": [],
+          "risk_refs": [
+            "RISK-001"
+          ],
+          "ambiguity_refs": [],
+          "expected_outputs": [
+            "define_storage.md"
+          ]
+        },
+        "requirement_context": {
+          "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+          "requirement_type": "greenfield",
+          "assumptions": [
+            "Materialization is limited to the disposable isolated workspace."
+          ],
+          "functional_requirements": [
+            {
+              "item_id": "FR-002",
+              "lineage_id": "e9db0fcb-8282-5c3a-a069-d37ca328094b",
+              "text": "Generate a unique short URL."
+            }
+          ],
+          "nonfunctional_requirements": [],
+          "constraints": [
+            {
+              "item_id": "CON-001",
+              "lineage_id": "72f86821-b829-52bc-8125-7fc04e7ad4c5",
+              "text": "The persistence technology is not yet selected."
+            }
+          ],
+          "acceptance_criteria": [],
+          "risks": [
+            {
+              "item_id": "RISK-001",
+              "lineage_id": "4cb8fa83-79d9-5a90-a1eb-233986c00c37",
+              "text": "Short-code collisions could produce incorrect redirects."
+            }
+          ],
+          "ambiguities": []
+        },
+        "dependency_artifacts": [],
+        "retry_context": null
+      },
+      "workspace_binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+      },
+      "repository_context": {
+        "repository_context_id": "REPOSITORY-CONTEXT-2080C1234045",
+        "binding": {
+          "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+          "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+        },
+        "observations": []
+      }
+    },
+    {
+      "request": {
+        "request_id": "1a9152b4-4f7b-5c27-8ba4-023a9fd1f83f",
+        "attempt_id": "685c950d-8125-5ce6-8368-40273d7735b8",
+        "graph_id": "GRAPH-34C2DB80991E-V001",
+        "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+        "task_id": "TASK-003",
+        "attempt_number": 1,
+        "task": {
+          "task_id": "TASK-003",
+          "lineage_id": "495ecb1f-fc8d-5f2c-912f-5c2e1888a0ca",
+          "source_key": "build_service",
+          "title": "Implement shortening behavior",
+          "description": "Produce the governed implement shortening behavior output.",
+          "task_type": "IMPLEMENTATION",
+          "materialization_policy": "REQUIRED",
+          "depends_on": [
+            "TASK-001",
+            "TASK-002"
+          ],
+          "requirement_refs": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002"
+          ],
+          "risk_refs": [],
+          "ambiguity_refs": [
+            "AMB-001"
+          ],
+          "expected_outputs": [
+            "build_service.md"
+          ]
+        },
+        "requirement_context": {
+          "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+          "requirement_type": "greenfield",
+          "assumptions": [
+            "Materialization is limited to the disposable isolated workspace."
+          ],
+          "functional_requirements": [
+            {
+              "item_id": "FR-001",
+              "lineage_id": "be48f8a5-272e-53be-99ed-2bc8ad178e19",
+              "text": "Accept a long URL."
+            },
+            {
+              "item_id": "FR-002",
+              "lineage_id": "e9db0fcb-8282-5c3a-a069-d37ca328094b",
+              "text": "Generate a unique short URL."
+            },
+            {
+              "item_id": "FR-003",
+              "lineage_id": "e49700e5-fd91-5507-b77a-04dd39c9e45d",
+              "text": "Redirect the short URL to the original URL."
+            },
+            {
+              "item_id": "FR-004",
+              "lineage_id": "9c629bbf-a432-5855-89d3-4d873651d053",
+              "text": "Return an error for unknown short URLs."
+            }
+          ],
+          "nonfunctional_requirements": [],
+          "constraints": [],
+          "acceptance_criteria": [
+            {
+              "item_id": "AC-001",
+              "lineage_id": "f3673e76-0d6c-5ee2-a196-638739b96b85",
+              "text": "A submitted valid URL receives a unique short URL."
+            },
+            {
+              "item_id": "AC-002",
+              "lineage_id": "e3c6d089-dce4-5ae2-9ed6-b78c2499b062",
+              "text": "An unknown short code returns a defined error."
+            }
+          ],
+          "risks": [],
+          "ambiguities": [
+            {
+              "item_id": "AMB-001",
+              "lineage_id": "514b318e-c096-5f18-a687-a794951ca0b2",
+              "text": "URL expiration behavior is unspecified."
+            }
+          ]
+        },
+        "dependency_artifacts": [
+          {
+            "artifact_id": "ARTIFACT-EFB55182ECD7-O001",
+            "lineage_id": "c70c9c5a-1247-5893-aacf-ce749af6ba07",
+            "artifact_type": "DESIGN",
+            "logical_name": "define_api.md",
+            "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0.",
+            "content_hash": "efb55182ecd71cf1537e57516b7da3514ab456fba31090ae204b051802bfe7bb",
+            "output_index": 1,
+            "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+            "graph_id": "GRAPH-34C2DB80991E-V001",
+            "task_id": "TASK-001",
+            "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+            "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
+            "attempt_number": 1,
+            "requirement_refs": [
+              "FR-001",
+              "FR-003",
+              "FR-004"
+            ],
+            "acceptance_criteria_refs": [
+              "AC-001",
+              "AC-002"
+            ],
+            "risk_refs": [],
+            "ambiguity_refs": [],
+            "created_at": "2026-08-10T12:00:00+00:00"
+          },
+          {
+            "artifact_id": "ARTIFACT-A93891D011A8-O001",
+            "lineage_id": "abf02d56-20b7-5a06-83c1-c7e1365ea986",
+            "artifact_type": "DESIGN",
+            "logical_name": "define_storage.md",
+            "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0.",
+            "content_hash": "a93891d011a8d0e7c82b509930ffc81dcdd60b6962523705f79100b28e1e15a8",
+            "output_index": 1,
+            "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+            "graph_id": "GRAPH-34C2DB80991E-V001",
+            "task_id": "TASK-002",
+            "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
+            "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
+            "attempt_number": 1,
+            "requirement_refs": [
+              "FR-002",
+              "CON-001"
+            ],
+            "acceptance_criteria_refs": [],
+            "risk_refs": [
+              "RISK-001"
+            ],
+            "ambiguity_refs": [],
+            "created_at": "2026-08-10T12:00:00+00:00"
+          }
+        ],
+        "retry_context": null
+      },
+      "workspace_binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+      },
+      "repository_context": {
+        "repository_context_id": "REPOSITORY-CONTEXT-2080C1234045",
+        "binding": {
+          "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+          "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+        },
+        "observations": []
+      }
+    },
+    {
+      "request": {
+        "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+        "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
+        "graph_id": "GRAPH-34C2DB80991E-V001",
+        "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+        "task_id": "TASK-003",
+        "attempt_number": 2,
+        "task": {
+          "task_id": "TASK-003",
+          "lineage_id": "495ecb1f-fc8d-5f2c-912f-5c2e1888a0ca",
+          "source_key": "build_service",
+          "title": "Implement shortening behavior",
+          "description": "Produce the governed implement shortening behavior output.",
+          "task_type": "IMPLEMENTATION",
+          "materialization_policy": "REQUIRED",
+          "depends_on": [
+            "TASK-001",
+            "TASK-002"
+          ],
+          "requirement_refs": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "FR-004"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002"
+          ],
+          "risk_refs": [],
+          "ambiguity_refs": [
+            "AMB-001"
+          ],
+          "expected_outputs": [
+            "build_service.md"
+          ]
+        },
+        "requirement_context": {
+          "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+          "requirement_type": "greenfield",
+          "assumptions": [
+            "Materialization is limited to the disposable isolated workspace."
+          ],
+          "functional_requirements": [
+            {
+              "item_id": "FR-001",
+              "lineage_id": "be48f8a5-272e-53be-99ed-2bc8ad178e19",
+              "text": "Accept a long URL."
+            },
+            {
+              "item_id": "FR-002",
+              "lineage_id": "e9db0fcb-8282-5c3a-a069-d37ca328094b",
+              "text": "Generate a unique short URL."
+            },
+            {
+              "item_id": "FR-003",
+              "lineage_id": "e49700e5-fd91-5507-b77a-04dd39c9e45d",
+              "text": "Redirect the short URL to the original URL."
+            },
+            {
+              "item_id": "FR-004",
+              "lineage_id": "9c629bbf-a432-5855-89d3-4d873651d053",
+              "text": "Return an error for unknown short URLs."
+            }
+          ],
+          "nonfunctional_requirements": [],
+          "constraints": [],
+          "acceptance_criteria": [
+            {
+              "item_id": "AC-001",
+              "lineage_id": "f3673e76-0d6c-5ee2-a196-638739b96b85",
+              "text": "A submitted valid URL receives a unique short URL."
+            },
+            {
+              "item_id": "AC-002",
+              "lineage_id": "e3c6d089-dce4-5ae2-9ed6-b78c2499b062",
+              "text": "An unknown short code returns a defined error."
+            }
+          ],
+          "risks": [],
+          "ambiguities": [
+            {
+              "item_id": "AMB-001",
+              "lineage_id": "514b318e-c096-5f18-a687-a794951ca0b2",
+              "text": "URL expiration behavior is unspecified."
+            }
+          ]
+        },
+        "dependency_artifacts": [
+          {
+            "artifact_id": "ARTIFACT-EFB55182ECD7-O001",
+            "lineage_id": "c70c9c5a-1247-5893-aacf-ce749af6ba07",
+            "artifact_type": "DESIGN",
+            "logical_name": "define_api.md",
+            "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0.",
+            "content_hash": "efb55182ecd71cf1537e57516b7da3514ab456fba31090ae204b051802bfe7bb",
+            "output_index": 1,
+            "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+            "graph_id": "GRAPH-34C2DB80991E-V001",
+            "task_id": "TASK-001",
+            "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+            "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
+            "attempt_number": 1,
+            "requirement_refs": [
+              "FR-001",
+              "FR-003",
+              "FR-004"
+            ],
+            "acceptance_criteria_refs": [
+              "AC-001",
+              "AC-002"
+            ],
+            "risk_refs": [],
+            "ambiguity_refs": [],
+            "created_at": "2026-08-10T12:00:00+00:00"
+          },
+          {
+            "artifact_id": "ARTIFACT-A93891D011A8-O001",
+            "lineage_id": "abf02d56-20b7-5a06-83c1-c7e1365ea986",
+            "artifact_type": "DESIGN",
+            "logical_name": "define_storage.md",
+            "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0.",
+            "content_hash": "a93891d011a8d0e7c82b509930ffc81dcdd60b6962523705f79100b28e1e15a8",
+            "output_index": 1,
+            "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+            "graph_id": "GRAPH-34C2DB80991E-V001",
+            "task_id": "TASK-002",
+            "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
+            "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
+            "attempt_number": 1,
+            "requirement_refs": [
+              "FR-002",
+              "CON-001"
+            ],
+            "acceptance_criteria_refs": [],
+            "risk_refs": [
+              "RISK-001"
+            ],
+            "ambiguity_refs": [],
+            "created_at": "2026-08-10T12:00:00+00:00"
+          }
+        ],
+        "retry_context": {
+          "prior_attempt_number": 1,
+          "prior_request_id": "1a9152b4-4f7b-5c27-8ba4-023a9fd1f83f",
+          "prior_attempt_id": "685c950d-8125-5ce6-8368-40273d7735b8",
+          "failure_kind": "EXECUTOR",
+          "feedback": "EXECUTOR failed: Controlled deterministic demo provider interruption."
+        }
+      },
+      "workspace_binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+      },
+      "repository_context": {
+        "repository_context_id": "REPOSITORY-CONTEXT-2080C1234045",
+        "binding": {
+          "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+          "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4"
+        },
+        "observations": []
+      }
+    },
+    {
+      "request": {
+        "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+        "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
+        "graph_id": "GRAPH-34C2DB80991E-V001",
+        "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+        "task_id": "TASK-004",
+        "attempt_number": 1,
+        "task": {
+          "task_id": "TASK-004",
+          "lineage_id": "58cd7f25-dec2-5366-805a-425d7a822a2a",
+          "source_key": "verify_service",
+          "title": "Verify approved behavior",
+          "description": "Produce the governed verify approved behavior output.",
+          "task_type": "TEST",
+          "materialization_policy": "REQUIRED",
+          "depends_on": [
+            "TASK-003"
+          ],
+          "requirement_refs": [
+            "NFR-001"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002"
+          ],
+          "risk_refs": [
+            "RISK-001"
+          ],
+          "ambiguity_refs": [],
+          "expected_outputs": [
+            "verify_service.md"
+          ]
+        },
+        "requirement_context": {
+          "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+          "requirement_type": "greenfield",
+          "assumptions": [
+            "Materialization is limited to the disposable isolated workspace."
+          ],
+          "functional_requirements": [],
+          "nonfunctional_requirements": [
+            {
+              "item_id": "NFR-001",
+              "lineage_id": "ce0289af-85a1-5191-a7b4-11ddb6c6736b",
+              "text": "Short-code lookup should be reliable."
+            }
+          ],
+          "constraints": [],
+          "acceptance_criteria": [
+            {
+              "item_id": "AC-001",
+              "lineage_id": "f3673e76-0d6c-5ee2-a196-638739b96b85",
+              "text": "A submitted valid URL receives a unique short URL."
+            },
+            {
+              "item_id": "AC-002",
+              "lineage_id": "e3c6d089-dce4-5ae2-9ed6-b78c2499b062",
+              "text": "An unknown short code returns a defined error."
+            }
+          ],
+          "risks": [
+            {
+              "item_id": "RISK-001",
+              "lineage_id": "4cb8fa83-79d9-5a90-a1eb-233986c00c37",
+              "text": "Short-code collisions could produce incorrect redirects."
+            }
+          ],
+          "ambiguities": []
+        },
+        "dependency_artifacts": [
+          {
+            "artifact_id": "ARTIFACT-E4159CAF9047-O001",
+            "lineage_id": "516fc198-6b00-5dd6-82e9-1c6d4c725804",
+            "artifact_type": "SOURCE",
+            "logical_name": "build_service.md",
+            "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2.",
+            "content_hash": "e4159caf9047c0190839665317fcfa098e62daf30146a70ca086bb341c747251",
+            "output_index": 1,
+            "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+            "graph_id": "GRAPH-34C2DB80991E-V001",
+            "task_id": "TASK-003",
+            "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+            "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
+            "attempt_number": 2,
+            "requirement_refs": [
+              "FR-001",
+              "FR-002",
+              "FR-003",
+              "FR-004"
+            ],
+            "acceptance_criteria_refs": [
+              "AC-001",
+              "AC-002"
+            ],
+            "risk_refs": [],
+            "ambiguity_refs": [
+              "AMB-001"
+            ],
+            "created_at": "2026-08-10T12:00:00+00:00"
+          }
+        ],
+        "retry_context": null
+      },
+      "workspace_binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75"
+      },
+      "repository_context": {
+        "repository_context_id": "REPOSITORY-CONTEXT-076941855B89",
+        "binding": {
+          "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+          "snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75"
+        },
+        "observations": [
+          {
+            "path": "src/url_shortener/service.py",
+            "exists": true,
+            "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2.",
+            "content_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
+        "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
+        "graph_id": "GRAPH-34C2DB80991E-V001",
+        "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+        "task_id": "TASK-005",
+        "attempt_number": 1,
+        "task": {
+          "task_id": "TASK-005",
+          "lineage_id": "29c3c4fd-cfdf-5c68-9c7c-d4dcb96733b1",
+          "source_key": "document_service",
+          "title": "Document service contract",
+          "description": "Produce the governed document service contract output.",
+          "task_type": "DOCUMENTATION",
+          "materialization_policy": "REQUIRED",
+          "depends_on": [
+            "TASK-004"
+          ],
+          "requirement_refs": [
+            "FR-001"
+          ],
+          "acceptance_criteria_refs": [],
+          "risk_refs": [],
+          "ambiguity_refs": [],
+          "expected_outputs": [
+            "document_service.md"
+          ]
+        },
+        "requirement_context": {
+          "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
+          "requirement_type": "greenfield",
+          "assumptions": [
+            "Materialization is limited to the disposable isolated workspace."
+          ],
+          "functional_requirements": [
+            {
+              "item_id": "FR-001",
+              "lineage_id": "be48f8a5-272e-53be-99ed-2bc8ad178e19",
+              "text": "Accept a long URL."
+            }
+          ],
+          "nonfunctional_requirements": [],
+          "constraints": [],
+          "acceptance_criteria": [],
+          "risks": [],
+          "ambiguities": []
+        },
+        "dependency_artifacts": [
+          {
+            "artifact_id": "ARTIFACT-2C49357CABB6-O001",
+            "lineage_id": "b8ec0eed-4909-50fe-b75d-bac456aa9b6a",
+            "artifact_type": "TEST",
+            "logical_name": "verify_service.md",
+            "content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1.",
+            "content_hash": "2c49357cabb658848eb3fdf5449b8accfd5f03c3369b1dab1c04b738f2dab42d",
+            "output_index": 1,
+            "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+            "graph_id": "GRAPH-34C2DB80991E-V001",
+            "task_id": "TASK-004",
+            "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+            "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
+            "attempt_number": 1,
+            "requirement_refs": [
+              "NFR-001"
+            ],
+            "acceptance_criteria_refs": [
+              "AC-001",
+              "AC-002"
+            ],
+            "risk_refs": [
+              "RISK-001"
+            ],
+            "ambiguity_refs": [],
+            "created_at": "2026-08-10T12:00:00+00:00"
+          }
+        ],
+        "retry_context": null
+      },
+      "workspace_binding": {
+        "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+        "snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84"
+      },
+      "repository_context": {
+        "repository_context_id": "REPOSITORY-CONTEXT-FFF9A9DC65FE",
+        "binding": {
+          "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+          "snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84"
+        },
+        "observations": [
+          {
+            "path": "tests/test_service.py",
+            "exists": true,
+            "content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1.",
+            "content_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0"
+          }
+        ]
+      }
+    }
+  ],
+  "materialization_intents": [
+    {
+      "artifact_id": "ARTIFACT-E4159CAF9047-O001",
+      "target_path": "src/url_shortener/service.py"
+    },
+    {
+      "artifact_id": "ARTIFACT-2C49357CABB6-O001",
+      "target_path": "tests/test_service.py"
+    },
+    {
+      "artifact_id": "ARTIFACT-8D35FF562FBC-O001",
+      "target_path": "README.md"
+    }
+  ],
+  "materialization_validations": [
+    {
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-95385A3A9186",
+      "task_id": "TASK-001",
+      "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+      "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
+      "policy": "FORBIDDEN",
+      "artifact_ids": [
+        "ARTIFACT-EFB55182ECD7-O001"
+      ],
+      "artifact_evidence_digests": [
+        "bd68c0148d07c1b3fa41b51bb727c5158e884446d0bc7e108aeba0030718627f"
+      ],
+      "intents": [],
+      "passed": true,
+      "issues": []
+    },
+    {
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-1D9BBAFA59BE",
+      "task_id": "TASK-002",
+      "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
+      "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
+      "policy": "FORBIDDEN",
+      "artifact_ids": [
+        "ARTIFACT-A93891D011A8-O001"
+      ],
+      "artifact_evidence_digests": [
+        "d8df897983efa6b24fc05c23832a2ad08f9c2bf6bbf50be793f005fa08cae303"
+      ],
+      "intents": [],
+      "passed": true,
+      "issues": []
+    },
+    {
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-E637830B5757",
+      "task_id": "TASK-003",
+      "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+      "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
+      "policy": "REQUIRED",
+      "artifact_ids": [
+        "ARTIFACT-E4159CAF9047-O001"
+      ],
+      "artifact_evidence_digests": [
+        "e9fce4ae9ff4df31fa884ff18a69a8c6fda723923a14672ee01b0a93ec3dde24"
+      ],
+      "intents": [
+        {
+          "artifact_id": "ARTIFACT-E4159CAF9047-O001",
+          "target_path": "src/url_shortener/service.py"
+        }
+      ],
+      "passed": true,
+      "issues": []
+    },
+    {
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-C37FA2D4C5D7",
+      "task_id": "TASK-004",
+      "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+      "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
+      "policy": "REQUIRED",
+      "artifact_ids": [
+        "ARTIFACT-2C49357CABB6-O001"
+      ],
+      "artifact_evidence_digests": [
+        "66820f03b479430307d9eb6840585952734af1c1ff5ccd91219e84f3c11167ca"
+      ],
+      "intents": [
+        {
+          "artifact_id": "ARTIFACT-2C49357CABB6-O001",
+          "target_path": "tests/test_service.py"
+        }
+      ],
+      "passed": true,
+      "issues": []
+    },
+    {
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-6125C54993B6",
+      "task_id": "TASK-005",
+      "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
+      "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
+      "policy": "REQUIRED",
+      "artifact_ids": [
+        "ARTIFACT-8D35FF562FBC-O001"
+      ],
+      "artifact_evidence_digests": [
+        "0cbfbbf128236945c2bc34d97cf5da0447a9eac7b18e45af63c0e7d0ab3342ce"
+      ],
+      "intents": [
+        {
+          "artifact_id": "ARTIFACT-8D35FF562FBC-O001",
+          "target_path": "README.md"
+        }
+      ],
+      "passed": true,
+      "issues": []
+    }
+  ],
+  "change_sets": [
+    {
+      "change_set_id": "WORKSPACE-CHANGESET-B86E8AFFE3A0",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "base_snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
+      "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+      "graph_id": "GRAPH-34C2DB80991E-V001",
+      "task_id": "TASK-003",
+      "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+      "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
+      "attempt_number": 2,
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-E637830B5757",
+      "materialized_artifact_ids": [
+        "ARTIFACT-E4159CAF9047-O001"
+      ],
+      "file_changes": [
+        {
+          "artifact_id": "ARTIFACT-E4159CAF9047-O001",
+          "artifact_lineage_id": "516fc198-6b00-5dd6-82e9-1c6d4c725804",
+          "path": "src/url_shortener/service.py",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "desired_content_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e",
+          "desired_content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2."
+        }
+      ]
+    },
+    {
+      "change_set_id": "WORKSPACE-CHANGESET-3E47DD8DB0B3",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "base_snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+      "graph_id": "GRAPH-34C2DB80991E-V001",
+      "task_id": "TASK-004",
+      "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+      "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
+      "attempt_number": 1,
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-C37FA2D4C5D7",
+      "materialized_artifact_ids": [
+        "ARTIFACT-2C49357CABB6-O001"
+      ],
+      "file_changes": [
+        {
+          "artifact_id": "ARTIFACT-2C49357CABB6-O001",
+          "artifact_lineage_id": "b8ec0eed-4909-50fe-b75d-bac456aa9b6a",
+          "path": "tests/test_service.py",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "desired_content_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0",
+          "desired_content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1."
+        }
+      ]
+    },
+    {
+      "change_set_id": "WORKSPACE-CHANGESET-86BCEBF4C9C0",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "base_snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+      "graph_id": "GRAPH-34C2DB80991E-V001",
+      "task_id": "TASK-005",
+      "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
+      "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
+      "attempt_number": 1,
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-6125C54993B6",
+      "materialized_artifact_ids": [
+        "ARTIFACT-8D35FF562FBC-O001"
+      ],
+      "file_changes": [
+        {
+          "artifact_id": "ARTIFACT-8D35FF562FBC-O001",
+          "artifact_lineage_id": "aa2a41a3-32d1-54c8-91da-bfe3953fec9d",
+          "path": "README.md",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "desired_content_hash": "159fcf96ce5819767d505a8100f9d3a85cea2934f9436387d81db8f4fe81e566",
+          "desired_content": "Canonical proposal for Document service contract. Dependency artifacts: 1."
+        }
+      ]
+    }
+  ],
+  "change_set_validations": [
+    {
+      "change_set_id": "WORKSPACE-CHANGESET-B86E8AFFE3A0",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
+      "passed": true,
+      "issues": []
+    },
+    {
+      "change_set_id": "WORKSPACE-CHANGESET-3E47DD8DB0B3",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "passed": true,
+      "issues": []
+    },
+    {
+      "change_set_id": "WORKSPACE-CHANGESET-86BCEBF4C9C0",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "passed": true,
+      "issues": []
+    }
+  ],
+  "conflicts": [],
+  "mutations": [
+    {
+      "mutation_id": "WORKSPACE-MUTATION-C12B3B286F7F",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "change_set_id": "WORKSPACE-CHANGESET-B86E8AFFE3A0",
+      "base_snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
+      "task_id": "TASK-003",
+      "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+      "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
+      "pre_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
+      "post_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "rollback_snapshot_id": null,
+      "status": "APPLIED",
+      "file_evidence": [
+        {
+          "path": "src/url_shortener/service.py",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "observed_preimage_hash": null,
+          "desired_postimage_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e",
+          "observed_postimage_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e",
+          "write_performed": true,
+          "created_parent_paths": [
+            "src",
+            "src/url_shortener"
+          ],
+          "rollback_attempted": false,
+          "rollback_verified": false
+        }
+      ],
+      "issues": []
+    },
+    {
+      "mutation_id": "WORKSPACE-MUTATION-3720FB353A21",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "change_set_id": "WORKSPACE-CHANGESET-3E47DD8DB0B3",
+      "base_snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "task_id": "TASK-004",
+      "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+      "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
+      "pre_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "post_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "rollback_snapshot_id": null,
+      "status": "APPLIED",
+      "file_evidence": [
+        {
+          "path": "tests/test_service.py",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "observed_preimage_hash": null,
+          "desired_postimage_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0",
+          "observed_postimage_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0",
+          "write_performed": true,
+          "created_parent_paths": [
+            "tests"
+          ],
+          "rollback_attempted": false,
+          "rollback_verified": false
+        }
+      ],
+      "issues": []
+    },
+    {
+      "mutation_id": "WORKSPACE-MUTATION-AA65AAD84DB4",
+      "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
+      "change_set_id": "WORKSPACE-CHANGESET-86BCEBF4C9C0",
+      "base_snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "task_id": "TASK-005",
+      "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
+      "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
+      "pre_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "post_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-CD18A89365E2",
+      "rollback_snapshot_id": null,
+      "status": "APPLIED",
+      "file_evidence": [
+        {
+          "path": "README.md",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "observed_preimage_hash": null,
+          "desired_postimage_hash": "159fcf96ce5819767d505a8100f9d3a85cea2934f9436387d81db8f4fe81e566",
+          "observed_postimage_hash": "159fcf96ce5819767d505a8100f9d3a85cea2934f9436387d81db8f4fe81e566",
+          "write_performed": true,
+          "created_parent_paths": [],
+          "rollback_attempted": false,
+          "rollback_verified": false
+        }
+      ],
+      "issues": []
+    }
+  ],
+  "task_attempt_exit_decisions": [
+    {
+      "task_id": "TASK-001",
+      "attempt_number": 1,
+      "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+      "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
+      "disposition": "SUCCEED_TASK",
+      "reason_code": "GOVERNED_EXIT_PASSED",
+      "evidence_ids": [
+        "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+        "MATERIALIZATION-VALIDATION-95385A3A9186"
+      ]
+    },
+    {
+      "task_id": "TASK-002",
+      "attempt_number": 1,
+      "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
+      "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
+      "disposition": "SUCCEED_TASK",
+      "reason_code": "GOVERNED_EXIT_PASSED",
+      "evidence_ids": [
+        "MATERIALIZATION-VALIDATION-1D9BBAFA59BE",
+        "ad9eba06-548f-5aaf-abe6-5855f2977e6a"
+      ]
+    },
+    {
+      "task_id": "TASK-003",
+      "attempt_number": 1,
+      "request_id": "1a9152b4-4f7b-5c27-8ba4-023a9fd1f83f",
+      "attempt_id": "685c950d-8125-5ce6-8368-40273d7735b8",
+      "disposition": "RETRY_TASK",
+      "reason_code": "EXECUTOR_RETRY",
+      "evidence_ids": [
+        "1a9152b4-4f7b-5c27-8ba4-023a9fd1f83f"
+      ]
+    },
+    {
+      "task_id": "TASK-003",
+      "attempt_number": 2,
+      "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+      "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
+      "disposition": "SUCCEED_TASK",
+      "reason_code": "GOVERNED_EXIT_PASSED",
+      "evidence_ids": [
+        "MATERIALIZATION-VALIDATION-E637830B5757",
+        "WORKSPACE-CHANGESET-B86E8AFFE3A0",
+        "WORKSPACE-MUTATION-C12B3B286F7F",
+        "d535de6a-4ad4-5676-baab-d07a60710d24"
+      ]
+    },
+    {
+      "task_id": "TASK-004",
+      "attempt_number": 1,
+      "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+      "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
+      "disposition": "SUCCEED_TASK",
+      "reason_code": "GOVERNED_EXIT_PASSED",
+      "evidence_ids": [
+        "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+        "MATERIALIZATION-VALIDATION-C37FA2D4C5D7",
+        "WORKSPACE-CHANGESET-3E47DD8DB0B3",
+        "WORKSPACE-MUTATION-3720FB353A21"
+      ]
+    },
+    {
+      "task_id": "TASK-005",
+      "attempt_number": 1,
+      "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
+      "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
+      "disposition": "SUCCEED_TASK",
+      "reason_code": "GOVERNED_EXIT_PASSED",
+      "evidence_ids": [
+        "6a012676-2131-5286-a4f8-c2f6d2c2a430",
+        "MATERIALIZATION-VALIDATION-6125C54993B6",
+        "WORKSPACE-CHANGESET-86BCEBF4C9C0",
+        "WORKSPACE-MUTATION-AA65AAD84DB4"
+      ]
+    }
+  ]
+}

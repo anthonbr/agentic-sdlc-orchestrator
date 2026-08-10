@@ -51,6 +51,15 @@ class ArtifactOutput(BaseModel):
     content: str
 
 
+class ArtifactMaterializationProposal(BaseModel):
+    """Non-authoritative proposal to materialize one semantic output by ordinal."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    output_index: int = Field(ge=1)
+    target_path: str = Field(min_length=1)
+
+
 class EngineeringArtifact(BaseModel):
     """Immutable application-canonicalized engineering output with provenance."""
 
@@ -143,6 +152,7 @@ class TaskExecutionResult(BaseModel):
     task_id: str
     summary: str
     outputs: tuple[ArtifactOutput, ...]
+    materialization_proposals: tuple[ArtifactMaterializationProposal, ...] = ()
     assumptions: tuple[str, ...]
     risks: tuple[str, ...]
 

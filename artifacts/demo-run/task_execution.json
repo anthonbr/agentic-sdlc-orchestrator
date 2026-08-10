@@ -1,6 +1,6 @@
 {
   "task_graph_execution": {
-    "graph_id": "GRAPH-518F10826DAD-V001",
+    "graph_id": "GRAPH-34C2DB80991E-V001",
     "status": "SUCCEEDED",
     "task_states": [
       {
@@ -83,15 +83,15 @@
   ],
   "requests": [
     {
-      "request_id": "3bc07d95-d0f7-5276-8cdf-a9b7a3e0fd7d",
-      "attempt_id": "08f15f20-535e-513e-af06-e8e02a4d2e0f",
-      "graph_id": "GRAPH-518F10826DAD-V001",
-      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+      "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
+      "graph_id": "GRAPH-34C2DB80991E-V001",
+      "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
       "task_id": "TASK-001",
       "attempt_number": 1,
       "task": {
         "task_id": "TASK-001",
-        "lineage_id": "3a021295-d3a3-5900-8ce5-29265cf1abf6",
+        "lineage_id": "26853caa-900d-5cd7-b975-0859f6fc2f81",
         "source_key": "define_api",
         "title": "Define API contract v1",
         "description": "Produce the governed define api contract v1 output.",
@@ -117,7 +117,7 @@
         "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
         "requirement_type": "greenfield",
         "assumptions": [
-          "The workflow produces semantic artifacts without writing the service."
+          "Materialization is limited to the disposable isolated workspace."
         ],
         "functional_requirements": [
           {
@@ -157,15 +157,15 @@
       "retry_context": null
     },
     {
-      "request_id": "66b6f4bd-4d1c-59c8-a78a-42f7adb7e863",
-      "attempt_id": "7ff477da-1d21-5b38-8ea4-4e0ae0173b8b",
-      "graph_id": "GRAPH-518F10826DAD-V001",
-      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
+      "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
+      "graph_id": "GRAPH-34C2DB80991E-V001",
+      "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
       "task_id": "TASK-002",
       "attempt_number": 1,
       "task": {
         "task_id": "TASK-002",
-        "lineage_id": "e7a0bc06-86cf-5289-9406-802c4ff3c950",
+        "lineage_id": "b598b8c1-5367-5c82-92f7-480119ca2bf0",
         "source_key": "define_storage",
         "title": "Define persistence model",
         "description": "Produce the governed define persistence model output.",
@@ -189,7 +189,7 @@
         "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
         "requirement_type": "greenfield",
         "assumptions": [
-          "The workflow produces semantic artifacts without writing the service."
+          "Materialization is limited to the disposable isolated workspace."
         ],
         "functional_requirements": [
           {
@@ -220,20 +220,20 @@
       "retry_context": null
     },
     {
-      "request_id": "ee00f5ae-7d5c-5080-acae-749dd0042133",
-      "attempt_id": "cc6b27ae-5f1f-54cb-8f05-3fe334e92a34",
-      "graph_id": "GRAPH-518F10826DAD-V001",
-      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "request_id": "1a9152b4-4f7b-5c27-8ba4-023a9fd1f83f",
+      "attempt_id": "685c950d-8125-5ce6-8368-40273d7735b8",
+      "graph_id": "GRAPH-34C2DB80991E-V001",
+      "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
       "task_id": "TASK-003",
       "attempt_number": 1,
       "task": {
         "task_id": "TASK-003",
-        "lineage_id": "4f47870a-28f7-5c63-9faa-a9d9a6d48512",
+        "lineage_id": "495ecb1f-fc8d-5f2c-912f-5c2e1888a0ca",
         "source_key": "build_service",
         "title": "Implement shortening behavior",
         "description": "Produce the governed implement shortening behavior output.",
         "task_type": "IMPLEMENTATION",
-        "materialization_policy": "FORBIDDEN",
+        "materialization_policy": "REQUIRED",
         "depends_on": [
           "TASK-001",
           "TASK-002"
@@ -260,7 +260,7 @@
         "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
         "requirement_type": "greenfield",
         "assumptions": [
-          "The workflow produces semantic artifacts without writing the service."
+          "Materialization is limited to the disposable isolated workspace."
         ],
         "functional_requirements": [
           {
@@ -309,18 +309,18 @@
       },
       "dependency_artifacts": [
         {
-          "artifact_id": "ARTIFACT-D936C409E8F9-O001",
-          "lineage_id": "a5d71e86-34b3-5e57-ab88-bbd9adb8ef4d",
+          "artifact_id": "ARTIFACT-EFB55182ECD7-O001",
+          "lineage_id": "c70c9c5a-1247-5893-aacf-ce749af6ba07",
           "artifact_type": "DESIGN",
           "logical_name": "define_api.md",
           "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0.",
-          "content_hash": "d936c409e8f9cca8c7f8cb26034a735a844a8eb74ef706d786b9433ca021ac59",
+          "content_hash": "efb55182ecd71cf1537e57516b7da3514ab456fba31090ae204b051802bfe7bb",
           "output_index": 1,
-          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
-          "graph_id": "GRAPH-518F10826DAD-V001",
+          "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+          "graph_id": "GRAPH-34C2DB80991E-V001",
           "task_id": "TASK-001",
-          "request_id": "3bc07d95-d0f7-5276-8cdf-a9b7a3e0fd7d",
-          "attempt_id": "08f15f20-535e-513e-af06-e8e02a4d2e0f",
+          "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+          "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
           "attempt_number": 1,
           "requirement_refs": [
             "FR-001",
@@ -336,18 +336,18 @@
           "created_at": "2026-08-10T12:00:00+00:00"
         },
         {
-          "artifact_id": "ARTIFACT-0C6FD66773A5-O001",
-          "lineage_id": "179de7c0-af13-57da-9a15-be0746bb9a7a",
+          "artifact_id": "ARTIFACT-A93891D011A8-O001",
+          "lineage_id": "abf02d56-20b7-5a06-83c1-c7e1365ea986",
           "artifact_type": "DESIGN",
           "logical_name": "define_storage.md",
           "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0.",
-          "content_hash": "0c6fd66773a5f101ce2ad9b4f530b924daf3eb12966df97d9a444128a00e417e",
+          "content_hash": "a93891d011a8d0e7c82b509930ffc81dcdd60b6962523705f79100b28e1e15a8",
           "output_index": 1,
-          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
-          "graph_id": "GRAPH-518F10826DAD-V001",
+          "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+          "graph_id": "GRAPH-34C2DB80991E-V001",
           "task_id": "TASK-002",
-          "request_id": "66b6f4bd-4d1c-59c8-a78a-42f7adb7e863",
-          "attempt_id": "7ff477da-1d21-5b38-8ea4-4e0ae0173b8b",
+          "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
+          "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
           "attempt_number": 1,
           "requirement_refs": [
             "FR-002",
@@ -364,20 +364,20 @@
       "retry_context": null
     },
     {
-      "request_id": "dd55020a-5211-532e-b776-561b84e5d28d",
-      "attempt_id": "076934fe-e298-5c69-b47d-e49c0c0da022",
-      "graph_id": "GRAPH-518F10826DAD-V001",
-      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+      "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
+      "graph_id": "GRAPH-34C2DB80991E-V001",
+      "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
       "task_id": "TASK-003",
       "attempt_number": 2,
       "task": {
         "task_id": "TASK-003",
-        "lineage_id": "4f47870a-28f7-5c63-9faa-a9d9a6d48512",
+        "lineage_id": "495ecb1f-fc8d-5f2c-912f-5c2e1888a0ca",
         "source_key": "build_service",
         "title": "Implement shortening behavior",
         "description": "Produce the governed implement shortening behavior output.",
         "task_type": "IMPLEMENTATION",
-        "materialization_policy": "FORBIDDEN",
+        "materialization_policy": "REQUIRED",
         "depends_on": [
           "TASK-001",
           "TASK-002"
@@ -404,7 +404,7 @@
         "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
         "requirement_type": "greenfield",
         "assumptions": [
-          "The workflow produces semantic artifacts without writing the service."
+          "Materialization is limited to the disposable isolated workspace."
         ],
         "functional_requirements": [
           {
@@ -453,18 +453,18 @@
       },
       "dependency_artifacts": [
         {
-          "artifact_id": "ARTIFACT-D936C409E8F9-O001",
-          "lineage_id": "a5d71e86-34b3-5e57-ab88-bbd9adb8ef4d",
+          "artifact_id": "ARTIFACT-EFB55182ECD7-O001",
+          "lineage_id": "c70c9c5a-1247-5893-aacf-ce749af6ba07",
           "artifact_type": "DESIGN",
           "logical_name": "define_api.md",
           "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0.",
-          "content_hash": "d936c409e8f9cca8c7f8cb26034a735a844a8eb74ef706d786b9433ca021ac59",
+          "content_hash": "efb55182ecd71cf1537e57516b7da3514ab456fba31090ae204b051802bfe7bb",
           "output_index": 1,
-          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
-          "graph_id": "GRAPH-518F10826DAD-V001",
+          "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+          "graph_id": "GRAPH-34C2DB80991E-V001",
           "task_id": "TASK-001",
-          "request_id": "3bc07d95-d0f7-5276-8cdf-a9b7a3e0fd7d",
-          "attempt_id": "08f15f20-535e-513e-af06-e8e02a4d2e0f",
+          "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+          "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
           "attempt_number": 1,
           "requirement_refs": [
             "FR-001",
@@ -480,18 +480,18 @@
           "created_at": "2026-08-10T12:00:00+00:00"
         },
         {
-          "artifact_id": "ARTIFACT-0C6FD66773A5-O001",
-          "lineage_id": "179de7c0-af13-57da-9a15-be0746bb9a7a",
+          "artifact_id": "ARTIFACT-A93891D011A8-O001",
+          "lineage_id": "abf02d56-20b7-5a06-83c1-c7e1365ea986",
           "artifact_type": "DESIGN",
           "logical_name": "define_storage.md",
           "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0.",
-          "content_hash": "0c6fd66773a5f101ce2ad9b4f530b924daf3eb12966df97d9a444128a00e417e",
+          "content_hash": "a93891d011a8d0e7c82b509930ffc81dcdd60b6962523705f79100b28e1e15a8",
           "output_index": 1,
-          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
-          "graph_id": "GRAPH-518F10826DAD-V001",
+          "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+          "graph_id": "GRAPH-34C2DB80991E-V001",
           "task_id": "TASK-002",
-          "request_id": "66b6f4bd-4d1c-59c8-a78a-42f7adb7e863",
-          "attempt_id": "7ff477da-1d21-5b38-8ea4-4e0ae0173b8b",
+          "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
+          "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
           "attempt_number": 1,
           "requirement_refs": [
             "FR-002",
@@ -507,27 +507,27 @@
       ],
       "retry_context": {
         "prior_attempt_number": 1,
-        "prior_request_id": "ee00f5ae-7d5c-5080-acae-749dd0042133",
-        "prior_attempt_id": "cc6b27ae-5f1f-54cb-8f05-3fe334e92a34",
+        "prior_request_id": "1a9152b4-4f7b-5c27-8ba4-023a9fd1f83f",
+        "prior_attempt_id": "685c950d-8125-5ce6-8368-40273d7735b8",
         "failure_kind": "EXECUTOR",
         "feedback": "EXECUTOR failed: Controlled deterministic demo provider interruption."
       }
     },
     {
-      "request_id": "29d37119-206d-59ce-aa2b-6d3cdaaa2a35",
-      "attempt_id": "cd4c23d6-acf3-570b-a629-15c50703741b",
-      "graph_id": "GRAPH-518F10826DAD-V001",
-      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+      "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
+      "graph_id": "GRAPH-34C2DB80991E-V001",
+      "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
       "task_id": "TASK-004",
       "attempt_number": 1,
       "task": {
         "task_id": "TASK-004",
-        "lineage_id": "04e74a1e-3c22-5e37-acf1-046873ebaf30",
+        "lineage_id": "58cd7f25-dec2-5366-805a-425d7a822a2a",
         "source_key": "verify_service",
         "title": "Verify approved behavior",
         "description": "Produce the governed verify approved behavior output.",
         "task_type": "TEST",
-        "materialization_policy": "FORBIDDEN",
+        "materialization_policy": "REQUIRED",
         "depends_on": [
           "TASK-003"
         ],
@@ -550,7 +550,7 @@
         "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
         "requirement_type": "greenfield",
         "assumptions": [
-          "The workflow produces semantic artifacts without writing the service."
+          "Materialization is limited to the disposable isolated workspace."
         ],
         "functional_requirements": [],
         "nonfunctional_requirements": [
@@ -584,18 +584,18 @@
       },
       "dependency_artifacts": [
         {
-          "artifact_id": "ARTIFACT-278C1BC7B14F-O001",
-          "lineage_id": "53487900-2321-587d-a56c-4178eb51bd44",
+          "artifact_id": "ARTIFACT-E4159CAF9047-O001",
+          "lineage_id": "516fc198-6b00-5dd6-82e9-1c6d4c725804",
           "artifact_type": "SOURCE",
           "logical_name": "build_service.md",
           "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2.",
-          "content_hash": "278c1bc7b14fd8aa8bc724b4913285a80d4d59942bfed78e241f143068ce25ee",
+          "content_hash": "e4159caf9047c0190839665317fcfa098e62daf30146a70ca086bb341c747251",
           "output_index": 1,
-          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
-          "graph_id": "GRAPH-518F10826DAD-V001",
+          "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+          "graph_id": "GRAPH-34C2DB80991E-V001",
           "task_id": "TASK-003",
-          "request_id": "dd55020a-5211-532e-b776-561b84e5d28d",
-          "attempt_id": "076934fe-e298-5c69-b47d-e49c0c0da022",
+          "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+          "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
           "attempt_number": 2,
           "requirement_refs": [
             "FR-001",
@@ -617,20 +617,20 @@
       "retry_context": null
     },
     {
-      "request_id": "c85ce076-f9e5-54a1-9272-2178f467a683",
-      "attempt_id": "64c35baa-bf80-524f-963e-f421e1fa9233",
-      "graph_id": "GRAPH-518F10826DAD-V001",
-      "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
+      "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
+      "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
+      "graph_id": "GRAPH-34C2DB80991E-V001",
+      "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
       "task_id": "TASK-005",
       "attempt_number": 1,
       "task": {
         "task_id": "TASK-005",
-        "lineage_id": "06306036-be6b-5beb-be09-c78a5967e867",
+        "lineage_id": "29c3c4fd-cfdf-5c68-9c7c-d4dcb96733b1",
         "source_key": "document_service",
         "title": "Document service contract",
         "description": "Produce the governed document service contract output.",
         "task_type": "DOCUMENTATION",
-        "materialization_policy": "FORBIDDEN",
+        "materialization_policy": "REQUIRED",
         "depends_on": [
           "TASK-004"
         ],
@@ -648,7 +648,7 @@
         "normalized_problem_statement": "v1: Provide short URLs that resolve to submitted long URLs.",
         "requirement_type": "greenfield",
         "assumptions": [
-          "The workflow produces semantic artifacts without writing the service."
+          "Materialization is limited to the disposable isolated workspace."
         ],
         "functional_requirements": [
           {
@@ -665,18 +665,18 @@
       },
       "dependency_artifacts": [
         {
-          "artifact_id": "ARTIFACT-FD226CB25689-O001",
-          "lineage_id": "59ac3d28-0d4b-5e16-aa0b-048363a52c4d",
+          "artifact_id": "ARTIFACT-2C49357CABB6-O001",
+          "lineage_id": "b8ec0eed-4909-50fe-b75d-bac456aa9b6a",
           "artifact_type": "TEST",
           "logical_name": "verify_service.md",
           "content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1.",
-          "content_hash": "fd226cb256896fa4f093ee48c8f4265c78a242493a357f8a79f2cf5fdbd2bff8",
+          "content_hash": "2c49357cabb658848eb3fdf5449b8accfd5f03c3369b1dab1c04b738f2dab42d",
           "output_index": 1,
-          "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
-          "graph_id": "GRAPH-518F10826DAD-V001",
+          "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+          "graph_id": "GRAPH-34C2DB80991E-V001",
           "task_id": "TASK-004",
-          "request_id": "29d37119-206d-59ce-aa2b-6d3cdaaa2a35",
-          "attempt_id": "cd4c23d6-acf3-570b-a629-15c50703741b",
+          "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+          "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
           "attempt_number": 1,
           "requirement_refs": [
             "NFR-001"
@@ -697,8 +697,8 @@
   ],
   "results": [
     {
-      "request_id": "3bc07d95-d0f7-5276-8cdf-a9b7a3e0fd7d",
-      "attempt_id": "08f15f20-535e-513e-af06-e8e02a4d2e0f",
+      "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+      "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
       "task_id": "TASK-001",
       "summary": "Produced governed output for TASK-001.",
       "outputs": [
@@ -708,12 +708,13 @@
           "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0."
         }
       ],
+      "materialization_proposals": [],
       "assumptions": [],
       "risks": []
     },
     {
-      "request_id": "66b6f4bd-4d1c-59c8-a78a-42f7adb7e863",
-      "attempt_id": "7ff477da-1d21-5b38-8ea4-4e0ae0173b8b",
+      "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
+      "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
       "task_id": "TASK-002",
       "summary": "Produced governed output for TASK-002.",
       "outputs": [
@@ -723,12 +724,13 @@
           "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0."
         }
       ],
+      "materialization_proposals": [],
       "assumptions": [],
       "risks": []
     },
     {
-      "request_id": "dd55020a-5211-532e-b776-561b84e5d28d",
-      "attempt_id": "076934fe-e298-5c69-b47d-e49c0c0da022",
+      "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+      "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
       "task_id": "TASK-003",
       "summary": "Produced governed output for TASK-003.",
       "outputs": [
@@ -738,12 +740,18 @@
           "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2."
         }
       ],
+      "materialization_proposals": [
+        {
+          "output_index": 1,
+          "target_path": "src/url_shortener/service.py"
+        }
+      ],
       "assumptions": [],
       "risks": []
     },
     {
-      "request_id": "29d37119-206d-59ce-aa2b-6d3cdaaa2a35",
-      "attempt_id": "cd4c23d6-acf3-570b-a629-15c50703741b",
+      "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+      "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
       "task_id": "TASK-004",
       "summary": "Produced governed output for TASK-004.",
       "outputs": [
@@ -753,12 +761,18 @@
           "content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1."
         }
       ],
+      "materialization_proposals": [
+        {
+          "output_index": 1,
+          "target_path": "tests/test_service.py"
+        }
+      ],
       "assumptions": [],
       "risks": []
     },
     {
-      "request_id": "c85ce076-f9e5-54a1-9272-2178f467a683",
-      "attempt_id": "64c35baa-bf80-524f-963e-f421e1fa9233",
+      "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
+      "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
       "task_id": "TASK-005",
       "summary": "Produced governed output for TASK-005.",
       "outputs": [
@@ -768,18 +782,24 @@
           "content": "Canonical proposal for Document service contract. Dependency artifacts: 1."
         }
       ],
+      "materialization_proposals": [
+        {
+          "output_index": 1,
+          "target_path": "README.md"
+        }
+      ],
       "assumptions": [],
       "risks": []
     }
   ],
   "validations": [
     {
-      "request_id": "3bc07d95-d0f7-5276-8cdf-a9b7a3e0fd7d",
-      "attempt_id": "08f15f20-535e-513e-af06-e8e02a4d2e0f",
+      "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
+      "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
       "task_id": "TASK-001",
       "passed": true,
       "artifact_ids": [
-        "ARTIFACT-D936C409E8F9-O001"
+        "ARTIFACT-EFB55182ECD7-O001"
       ],
       "checks": [
         {
@@ -826,12 +846,12 @@
       "errors": []
     },
     {
-      "request_id": "66b6f4bd-4d1c-59c8-a78a-42f7adb7e863",
-      "attempt_id": "7ff477da-1d21-5b38-8ea4-4e0ae0173b8b",
+      "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
+      "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
       "task_id": "TASK-002",
       "passed": true,
       "artifact_ids": [
-        "ARTIFACT-0C6FD66773A5-O001"
+        "ARTIFACT-A93891D011A8-O001"
       ],
       "checks": [
         {
@@ -878,12 +898,12 @@
       "errors": []
     },
     {
-      "request_id": "dd55020a-5211-532e-b776-561b84e5d28d",
-      "attempt_id": "076934fe-e298-5c69-b47d-e49c0c0da022",
+      "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+      "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
       "task_id": "TASK-003",
       "passed": true,
       "artifact_ids": [
-        "ARTIFACT-278C1BC7B14F-O001"
+        "ARTIFACT-E4159CAF9047-O001"
       ],
       "checks": [
         {
@@ -930,12 +950,12 @@
       "errors": []
     },
     {
-      "request_id": "29d37119-206d-59ce-aa2b-6d3cdaaa2a35",
-      "attempt_id": "cd4c23d6-acf3-570b-a629-15c50703741b",
+      "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
+      "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
       "task_id": "TASK-004",
       "passed": true,
       "artifact_ids": [
-        "ARTIFACT-FD226CB25689-O001"
+        "ARTIFACT-2C49357CABB6-O001"
       ],
       "checks": [
         {
@@ -982,12 +1002,12 @@
       "errors": []
     },
     {
-      "request_id": "c85ce076-f9e5-54a1-9272-2178f467a683",
-      "attempt_id": "64c35baa-bf80-524f-963e-f421e1fa9233",
+      "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
+      "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
       "task_id": "TASK-005",
       "passed": true,
       "artifact_ids": [
-        "ARTIFACT-6F1143F9E031-O001"
+        "ARTIFACT-8D35FF562FBC-O001"
       ],
       "checks": [
         {
@@ -1038,8 +1058,8 @@
     {
       "task_id": "TASK-003",
       "attempt_number": 1,
-      "request_id": "ee00f5ae-7d5c-5080-acae-749dd0042133",
-      "attempt_id": "cc6b27ae-5f1f-54cb-8f05-3fe334e92a34",
+      "request_id": "1a9152b4-4f7b-5c27-8ba4-023a9fd1f83f",
+      "attempt_id": "685c950d-8125-5ce6-8368-40273d7735b8",
       "phase": "EXECUTOR",
       "error_type": "TaskExecutorError",
       "message": "Controlled deterministic demo provider interruption."
@@ -1049,8 +1069,8 @@
     {
       "task_id": "TASK-003",
       "attempt_number": 1,
-      "request_id": "ee00f5ae-7d5c-5080-acae-749dd0042133",
-      "attempt_id": "cc6b27ae-5f1f-54cb-8f05-3fe334e92a34",
+      "request_id": "1a9152b4-4f7b-5c27-8ba4-023a9fd1f83f",
+      "attempt_id": "685c950d-8125-5ce6-8368-40273d7735b8",
       "failure_kind": "EXECUTOR",
       "retryable": true,
       "max_attempts": 3,
