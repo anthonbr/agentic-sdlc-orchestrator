@@ -32,7 +32,12 @@ from agentic_sdlc.task_execution_contracts import (
 
 
 class TaskExecutor(Protocol):
-    """Narrow boundary from one authoritative request to one semantic result."""
+    """Narrow boundary from one authoritative request to one semantic result.
+
+    Governed parallel workflows may call ``execute`` concurrently for independent
+    attempts. Implementations must therefore be concurrency-safe or provide their
+    own synchronization.
+    """
 
     model_name: str
 
@@ -49,7 +54,12 @@ class TaskExecutorError(RuntimeError):
 
 
 class OpenAITaskExecutor:
-    """Invoke OpenAI Structured Outputs once for one bounded task request."""
+    """Invoke OpenAI Structured Outputs once for one bounded task request.
+
+    Without an injected client, each invocation creates its own OpenAI client.
+    Concurrency safety for a caller-owned injected client remains the caller's
+    responsibility.
+    """
 
     def __init__(
         self,

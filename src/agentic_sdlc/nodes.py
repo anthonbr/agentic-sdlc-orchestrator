@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
 
@@ -51,6 +53,7 @@ from agentic_sdlc.task_graph import (
     normalize_and_validate_task_graph as normalize_task_graph,
 )
 from agentic_sdlc.task_execution import (
+    MAX_PARALLEL_TASK_EXECUTIONS,
     TaskExecutionError,
     TaskExecutionFailure,
     TaskExecutionFailurePhase,
@@ -58,6 +61,8 @@ from agentic_sdlc.task_execution import (
     TaskExecutionRecoveryDecision,
     TaskExecutionRecoveryFailureKind,
     TaskExecutionStatus,
+    TaskExecutionWave,
+    TaskExecutionWaveAttempt,
     TaskGraphExecutionState,
     TaskGraphExecutionStatus,
     decide_task_execution_recovery,
@@ -65,9 +70,9 @@ from agentic_sdlc.task_execution import (
     mark_task_failed,
     mark_task_succeeded,
     prepare_task_retry,
-    ready_task_ids,
+    ready_task_wave_ids,
     safe_stop_task_graph_execution,
-    start_task,
+    start_task_wave,
 )
 from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifact,
@@ -537,126 +542,239 @@ def initialize_task_graph_execution_node(state: WorkflowState) -> WorkflowState:
     }
 
 
+@dataclass
+class _WaveAttemptRecord:
+    """Ephemeral single-threaded orchestration state for one wave member."""
+
+    task_id: str
+    attempt_number: int
+    request: TaskExecutionRequest | None = None
+    result: TaskExecutionResult | None = None
+    artifacts: tuple[EngineeringArtifact, ...] = ()
+    validation: TaskExecutionValidationResult | None = None
+    failure: TaskExecutionFailure | None = None
+    recovery_decision: TaskExecutionRecoveryDecision | None = None
+    succeeded: bool = False
+
+
 def execute_task_graph_step(
     state: WorkflowState,
     *,
     executor: TaskExecutor,
 ) -> WorkflowState:
-    """Execute and settle exactly one deterministically selected ready task."""
+    """Execute and settle one bounded deterministic READY wave."""
 
     spec = _spec_from_state(state)
     graph = _task_graph_from_data(state["approved_task_graph"])
     execution = _execution_from_state(state["task_graph_execution"])
-    ready = ready_task_ids(graph, execution)
-    if not ready:
+    wave_task_ids = ready_task_wave_ids(graph, execution)
+    if not wave_task_ids:
         raise TaskExecutionError(
             "A nonterminal TaskGraph execution has no READY task to dispatch."
         )
 
-    task_id = ready[0]
-    started = start_task(graph, execution, task_id)
-    task_state = next(
-        item for item in started.task_states if item.task_id == task_id
+    started = start_task_wave(graph, execution, wave_task_ids)
+    runtime_by_task = {item.task_id: item for item in started.task_states}
+    wave_number = _next_task_execution_wave_number(state)
+    wave = TaskExecutionWave(
+        wave_number=wave_number,
+        task_attempts=tuple(
+            TaskExecutionWaveAttempt(
+                task_id=task_id,
+                attempt_number=runtime_by_task[task_id].attempt_count,
+            )
+            for task_id in wave_task_ids
+        ),
     )
-    request: TaskExecutionRequest | None = None
-    result: TaskExecutionResult | None = None
-    try:
-        artifacts, validations = _dependency_evidence(state, graph, started, task_id)
-        prior_recovery = _prior_recovery_decision(
-            state, task_id, task_state.attempt_count
+    records = [
+        _WaveAttemptRecord(
+            task_id=attempt.task_id,
+            attempt_number=attempt.attempt_number,
         )
-        request = build_task_execution_request(
-            spec,
-            graph,
-            started,
-            task_id,
-            artifacts,
-            validations,
-            prior_recovery_decision=prior_recovery,
-        )
-    except TaskExecutionContractError as error:
-        return _recover_non_validation_failure(
-            state,
-            graph,
-            started,
-            task_id=task_id,
-            attempt_number=task_state.attempt_count,
-            phase=TaskExecutionFailurePhase.REQUEST_BUILD,
-            failure_kind=TaskExecutionRecoveryFailureKind.REQUEST_BUILD,
-            retryable=False,
-            error=error,
-        )
+        for attempt in wave.task_attempts
+    ]
 
-    try:
-        result = executor.execute(request)
-    except TaskExecutorError as error:
-        return _recover_non_validation_failure(
-            state,
-            graph,
-            started,
-            task_id=task_id,
-            attempt_number=request.attempt_number,
-            phase=TaskExecutionFailurePhase.EXECUTOR,
-            failure_kind=TaskExecutionRecoveryFailureKind.EXECUTOR,
-            retryable=error.retryable,
-            error=error,
-            request=request,
-        )
+    # Request construction is deliberately sequential and canonical.
+    for record in records:
+        try:
+            artifacts, validations = _dependency_evidence(
+                state, graph, started, record.task_id
+            )
+            prior_recovery = _prior_recovery_decision(
+                state, record.task_id, record.attempt_number
+            )
+            record.request = build_task_execution_request(
+                spec,
+                graph,
+                started,
+                record.task_id,
+                artifacts,
+                validations,
+                prior_recovery_decision=prior_recovery,
+            )
+        except TaskExecutionContractError as error:
+            record.failure, record.recovery_decision = (
+                _classify_non_validation_failure(
+                    task_id=record.task_id,
+                    attempt_number=record.attempt_number,
+                    phase=TaskExecutionFailurePhase.REQUEST_BUILD,
+                    failure_kind=TaskExecutionRecoveryFailureKind.REQUEST_BUILD,
+                    retryable=False,
+                    error=error,
+                )
+            )
 
-    try:
-        produced_artifacts = canonicalize_execution_result(
-            request,
-            result,
-            created_at=datetime.now(UTC).isoformat(),
-        )
-    except TaskExecutionContractError as error:
-        return _recover_non_validation_failure(
-            state,
-            graph,
-            started,
-            task_id=task_id,
-            attempt_number=request.attempt_number,
-            phase=TaskExecutionFailurePhase.CANONICALIZATION,
-            failure_kind=TaskExecutionRecoveryFailureKind.CANONICALIZATION,
-            retryable=isinstance(error, TaskExecutionCorrelationError),
-            error=error,
-            request=request,
-            result=result,
-        )
+    # Worker threads invoke only the injected executor. Collection and every
+    # application-owned operation remain on this orchestration thread.
+    futures: dict[str, Future[TaskExecutionResult]] = {}
+    with ThreadPoolExecutor(
+        max_workers=MAX_PARALLEL_TASK_EXECUTIONS,
+        thread_name_prefix="task-executor",
+    ) as pool:
+        for record in records:
+            if record.request is not None:
+                futures[record.task_id] = pool.submit(
+                    executor.execute, record.request
+                )
+        for record in records:
+            future = futures.get(record.task_id)
+            if future is None:
+                continue
+            try:
+                record.result = future.result()
+            except TaskExecutorError as error:
+                record.failure, record.recovery_decision = (
+                    _classify_non_validation_failure(
+                        task_id=record.task_id,
+                        attempt_number=record.attempt_number,
+                        phase=TaskExecutionFailurePhase.EXECUTOR,
+                        failure_kind=TaskExecutionRecoveryFailureKind.EXECUTOR,
+                        retryable=error.retryable,
+                        error=error,
+                        request=record.request,
+                    )
+                )
+            except Exception:
+                # Custom executors are expected to raise TaskExecutorError. An
+                # unexpected exception is sanitized and terminal, but peers are
+                # still joined and retained.
+                error = TaskExecutorError(
+                    "TaskExecutor raised an unexpected exception.",
+                    retryable=False,
+                )
+                record.failure, record.recovery_decision = (
+                    _classify_non_validation_failure(
+                        task_id=record.task_id,
+                        attempt_number=record.attempt_number,
+                        phase=TaskExecutionFailurePhase.EXECUTOR,
+                        failure_kind=TaskExecutionRecoveryFailureKind.EXECUTOR,
+                        retryable=False,
+                        error=error,
+                        request=record.request,
+                    )
+                )
 
-    validation = validate_execution_result(request, result, produced_artifacts)
-    if validation.passed:
-        settled = mark_task_succeeded(graph, started, task_id)
-        outcome = "succeeded"
-        stop_reason = ""
-        recovery_decisions: list[TaskExecutionRecoveryDecision] = []
-    else:
-        retryable, feedback = classify_validation_failure(validation)
-        decision = decide_task_execution_recovery(
-            task_id=task_id,
-            attempt_number=request.attempt_number,
-            request_id=request.request_id,
-            attempt_id=request.attempt_id,
-            failure_kind=TaskExecutionRecoveryFailureKind.VALIDATION,
-            retryable=retryable,
-            feedback=feedback,
+    # Canonicalization, validation, and recovery classification are sequential
+    # in the authorized wave order, independent of physical completion timing.
+    for record in records:
+        if record.result is None or record.request is None:
+            continue
+        try:
+            record.artifacts = canonicalize_execution_result(
+                record.request,
+                record.result,
+                created_at=datetime.now(UTC).isoformat(),
+            )
+        except TaskExecutionContractError as error:
+            record.failure, record.recovery_decision = (
+                _classify_non_validation_failure(
+                    task_id=record.task_id,
+                    attempt_number=record.attempt_number,
+                    phase=TaskExecutionFailurePhase.CANONICALIZATION,
+                    failure_kind=(
+                        TaskExecutionRecoveryFailureKind.CANONICALIZATION
+                    ),
+                    retryable=isinstance(error, TaskExecutionCorrelationError),
+                    error=error,
+                    request=record.request,
+                )
+            )
+            continue
+
+        record.validation = validate_execution_result(
+            record.request, record.result, record.artifacts
         )
-        settled, outcome, stop_reason = _settle_recovery_decision(
-            graph, started, decision
-        )
-        recovery_decisions = [decision]
+        if record.validation.passed:
+            record.succeeded = True
+        else:
+            retryable, feedback = classify_validation_failure(record.validation)
+            record.recovery_decision = decide_task_execution_recovery(
+                task_id=record.task_id,
+                attempt_number=record.attempt_number,
+                request_id=record.request.request_id,
+                attempt_id=record.request.attempt_id,
+                failure_kind=TaskExecutionRecoveryFailureKind.VALIDATION,
+                retryable=retryable,
+                feedback=feedback,
+            )
+
+    settled = _settle_task_execution_wave(graph, started, records)
+    terminal_decisions = [
+        record.recovery_decision
+        for record in records
+        if record.recovery_decision is not None
+        and record.recovery_decision.action is TaskExecutionRecoveryAction.FAIL_TASK
+    ]
+    stop_reason = " | ".join(
+        _terminal_stop_reason(decision) for decision in terminal_decisions
+    )
     update: WorkflowState = {
         "task_graph_execution": settled,
-        "task_execution_requests": [request],
-        "task_execution_results": [result],
-        "engineering_artifacts": list(produced_artifacts),
-        "task_execution_validations": [validation],
-        "task_execution_recovery_decisions": recovery_decisions,
-        "trace": [f"[execute_task_graph_step] {task_id} {outcome}"],
+        "task_execution_waves": [wave],
+        "task_execution_requests": [
+            record.request for record in records if record.request is not None
+        ],
+        "task_execution_results": [
+            record.result for record in records if record.result is not None
+        ],
+        "engineering_artifacts": [
+            artifact for record in records for artifact in record.artifacts
+        ],
+        "task_execution_validations": [
+            record.validation
+            for record in records
+            if record.validation is not None
+        ],
+        "task_execution_failures": [
+            record.failure for record in records if record.failure is not None
+        ],
+        "task_execution_recovery_decisions": [
+            record.recovery_decision
+            for record in records
+            if record.recovery_decision is not None
+        ],
+        "trace": [
+            f"[execute_task_graph_step] wave {wave_number} "
+            f"{record.task_id} {_wave_record_outcome(record)}"
+            for record in records
+        ],
     }
     if stop_reason:
         update["safe_stop_reason"] = stop_reason
     return update
+
+
+def _next_task_execution_wave_number(state: WorkflowState) -> int:
+    """Derive the next wave number from contiguous append-only history."""
+
+    waves = state.get("task_execution_waves", [])
+    actual = tuple(wave.wave_number for wave in waves)
+    expected = tuple(range(1, len(waves) + 1))
+    if actual != expected:
+        raise TaskExecutionError(
+            "Task execution wave history must be contiguous and ordered."
+        )
+    return len(waves) + 1
 
 
 def _dependency_evidence(
@@ -729,10 +847,7 @@ def _prior_recovery_decision(
     return matching[0]
 
 
-def _recover_non_validation_failure(
-    state: WorkflowState,
-    graph: TaskGraph,
-    execution: TaskGraphExecutionState,
+def _classify_non_validation_failure(
     *,
     task_id: str,
     attempt_number: int,
@@ -741,9 +856,8 @@ def _recover_non_validation_failure(
     retryable: bool,
     error: Exception,
     request: TaskExecutionRequest | None = None,
-    result: TaskExecutionResult | None = None,
-) -> WorkflowState:
-    """Retain non-validation failure evidence and apply deterministic recovery."""
+) -> tuple[TaskExecutionFailure, TaskExecutionRecoveryDecision]:
+    """Create immutable failure and recovery evidence without settlement."""
 
     feedback = _safe_recovery_feedback(failure_kind, error)
     decision = decide_task_execution_recovery(
@@ -755,9 +869,6 @@ def _recover_non_validation_failure(
         retryable=retryable,
         feedback=feedback,
     )
-    settled, outcome, stop_reason = _settle_recovery_decision(
-        graph, execution, decision
-    )
     failure = TaskExecutionFailure(
         task_id=task_id,
         attempt_number=attempt_number,
@@ -767,19 +878,7 @@ def _recover_non_validation_failure(
         error_type=type(error).__name__,
         message=str(error),
     )
-    update: WorkflowState = {
-        "task_graph_execution": settled,
-        "task_execution_failures": [failure],
-        "task_execution_recovery_decisions": [decision],
-        "trace": [f"[execute_task_graph_step] {task_id} {outcome}"],
-    }
-    if stop_reason:
-        update["safe_stop_reason"] = stop_reason
-    if request is not None:
-        update["task_execution_requests"] = [request]
-    if result is not None:
-        update["task_execution_results"] = [result]
-    return update
+    return failure, decision
 
 
 def _safe_recovery_feedback(
@@ -791,24 +890,68 @@ def _safe_recovery_feedback(
     return f"{failure_kind.value} failed: {error}"
 
 
-def _settle_recovery_decision(
+def _settle_task_execution_wave(
     graph: TaskGraph,
     execution: TaskGraphExecutionState,
-    decision: TaskExecutionRecoveryDecision,
-) -> tuple[TaskGraphExecutionState, str, str]:
-    if decision.action is TaskExecutionRecoveryAction.RETRY:
-        return (
-            prepare_task_retry(graph, execution, decision.task_id),
-            f"scheduled retry after {decision.failure_kind.value.lower()}",
-            "",
-        )
-    failed = mark_task_failed(graph, execution, decision.task_id)
-    stop_reason = (
+    records: list[_WaveAttemptRecord],
+) -> TaskGraphExecutionState:
+    """Settle a classified quiescent wave in deterministic canonical phases."""
+
+    for record in records:
+        if not record.succeeded and record.recovery_decision is None:
+            raise TaskExecutionError(
+                f"Task {record.task_id} has no classified wave outcome."
+            )
+
+    settled = execution
+    # Retry transitions must occur while the graph is still RUNNING, even when
+    # another member will terminally fail this same wave.
+    for record in records:
+        decision = record.recovery_decision
+        if (
+            decision is not None
+            and decision.action is TaskExecutionRecoveryAction.RETRY
+        ):
+            settled = prepare_task_retry(graph, settled, record.task_id)
+
+    # Terminal failures freeze all future dispatch before successful peers settle.
+    for record in records:
+        decision = record.recovery_decision
+        if (
+            decision is not None
+            and decision.action is TaskExecutionRecoveryAction.FAIL_TASK
+        ):
+            settled = mark_task_failed(graph, settled, record.task_id)
+
+    # Peers that were already RUNNING retain their valid evidence and may settle
+    # after graph failure without unlocking new work.
+    for record in records:
+        if record.succeeded:
+            settled = mark_task_succeeded(graph, settled, record.task_id)
+    return settled
+
+
+def _terminal_stop_reason(decision: TaskExecutionRecoveryDecision) -> str:
+    return (
         f"Task {decision.task_id} terminally failed after "
         f"{decision.failure_kind.value}: {decision.reason} "
         f"Feedback: {decision.feedback}"
     )
-    return failed, "terminally failed", stop_reason
+
+
+def _wave_record_outcome(record: _WaveAttemptRecord) -> str:
+    if record.succeeded:
+        return "succeeded"
+    if record.recovery_decision is None:
+        raise TaskExecutionError(
+            f"Task {record.task_id} has no classified wave outcome."
+        )
+    if record.recovery_decision.action is TaskExecutionRecoveryAction.RETRY:
+        return (
+            "scheduled retry after "
+            f"{record.recovery_decision.failure_kind.value.lower()}"
+        )
+    return "terminally failed"
 
 
 def safe_stop(state: WorkflowState) -> WorkflowState:

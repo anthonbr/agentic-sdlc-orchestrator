@@ -16,6 +16,7 @@
 - Depends on: ENTRY
 - Runtime status: SUCCEEDED
 - Attempts: 1
+- Execution waves: 1 (attempt 1)
 - Requirements: FR-001, FR-003, FR-004
 - Acceptance criteria: AC-001, AC-002
 - Risks: None
@@ -29,6 +30,7 @@
 - Depends on: ENTRY
 - Runtime status: SUCCEEDED
 - Attempts: 1
+- Execution waves: 1 (attempt 1)
 - Requirements: FR-002, CON-001
 - Acceptance criteria: None
 - Risks: RISK-001
@@ -44,6 +46,7 @@
 - Depends on: TASK-001, TASK-002
 - Runtime status: SUCCEEDED
 - Attempts: 2
+- Execution waves: 2 (attempt 1), 3 (attempt 2)
 - Requirements: FR-001, FR-002, FR-003, FR-004
 - Acceptance criteria: AC-001, AC-002
 - Risks: None
@@ -59,6 +62,7 @@
 - Depends on: TASK-003
 - Runtime status: SUCCEEDED
 - Attempts: 1
+- Execution waves: 4 (attempt 1)
 - Requirements: NFR-001
 - Acceptance criteria: AC-001, AC-002
 - Risks: RISK-001
@@ -74,6 +78,7 @@
 - Depends on: TASK-004
 - Runtime status: SUCCEEDED
 - Attempts: 1
+- Execution waves: 5 (attempt 1)
 - Requirements: FR-001
 - Acceptance criteria: None
 - Risks: None

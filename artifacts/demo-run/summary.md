@@ -11,9 +11,11 @@
 - TaskGraph execution: SUCCEEDED
 - Task attempts: 6 across 5 tasks
 - Retries performed: 1
+- Execution waves: 5
+- Maximum parallel wave width: 2
 - Exit gate: passed
 
-The governed V0.5 workflow executed the human-approved TaskGraph in deterministic scheduler order, canonicalized each semantic result, and allowed only application validation to settle tasks.
+The governed V0.5 workflow executed bounded READY waves from the human-approved TaskGraph, joined concurrent executor calls, canonicalized results in deterministic scheduler order, and allowed only application validation to settle tasks.
 
 ## Human Approval History
 

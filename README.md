@@ -17,7 +17,8 @@ the software-development lifecycle.
 - **V0.5 — Governed TaskGraph execution runtime (current slices):** separate
   execution state, deterministic readiness and transitions, application-owned
   contracts and artifacts, a bounded OpenAI executor, and a static governed loop
-  that serially interprets the approved engineering TaskGraph.
+  that interprets the approved engineering TaskGraph through bounded parallel
+  execution waves.
 
 The current V0.5 slices execute approved engineering tasks as bounded semantic
 LLM calls and settle their runtime status from deterministic application
@@ -27,7 +28,7 @@ implement the URL Shortener demonstration service.
 
 ## Two distinct graphs
 
-V0.4 intentionally keeps two graph concepts separate.
+The governed design keeps two graph concepts separate.
 
 ### Orchestration / control graph
 
@@ -109,9 +110,10 @@ work; failure remains sticky, and `SAFE_STOPPED` requires no task to remain
 `RUNNING`. Slice 5 adds a controlled `RUNNING -> READY` recovery transition;
 `start_task()` remains the only operation that starts and counts a new attempt.
 
-Multiple tasks can be ready at once, representing parallel eligibility, while the
-current static control loop intentionally dispatches only the first canonical
-READY task per iteration. True concurrent dispatch remains deferred.
+Multiple tasks can be ready at once. The scheduler selects at most
+`MAX_PARALLEL_TASK_EXECUTIONS = 2` in canonical TaskGraph order, starts the whole
+authorized wave through the existing governed transition, and joins that wave
+before the next scheduler decision.
 
 ### Execution contract and artifact boundary
 
@@ -218,7 +220,7 @@ one provider attempt. The static LangGraph loop invokes the adapter and, outside
 it, uses the validation judgment and deterministic recovery policy to settle
 runtime state.
 
-### Governed serialized TaskGraph execution loop
+### Governed bounded-parallel TaskGraph execution loop
 
 Human TaskGraph approval grants bounded semantic execution authority because the
 executor still has no repository, shell, Git, deployment, or external-system side
@@ -227,24 +229,38 @@ effects. Approval enters this fixed lifecycle:
 ```text
 approved TaskGraph
     -> initialize immutable runtime state
-    -> select the first READY task in canonical order
-    -> start one attempt
-    -> build the authoritative TaskExecutionRequest
-    -> invoke TaskExecutor once
-    -> retain the semantic TaskExecutionResult
-    -> canonicalize and retain EngineeringArtifact records
-    -> retain deterministic TaskExecutionValidationResult
-    -> PASS: settle SUCCEEDED and loop
-    -> retryable failure + budget: return task to READY and loop
-    -> terminal failure: settle FAILED and safe-stop
+    -> select a bounded READY wave in canonical order
+    -> start every authorized wave member
+    -> build authoritative TaskExecutionRequests sequentially
+    -> invoke TaskExecutor concurrently for prepared requests
+    -> join every authorized peer
+    -> canonicalize, validate, and classify in canonical order
+    -> settle deterministically
+    -> next wave / success / quiescent safe stop
 ```
 
 LangGraph topology remains static while the approved engineering graph remains
-dynamic per-run data. The control plane selects complete successful validation and
-artifact evidence for each direct dependency, and the request builder independently
-revalidates that evidence. Parallel readiness is preserved, but dispatch is
-serialized. There is no fallback model, task cancellation, delayed backoff, or
-concurrent provider call.
+dynamic per-run data; no `TASK-###` record becomes a LangGraph node. Only
+`TaskExecutor.execute()` calls run concurrently in a bounded standard-library
+thread pool. Request construction, state mutation, canonicalization, validation,
+recovery classification, and scheduler settlement remain single-threaded. The
+control plane persists requests, results, artifacts, validations, failures, and
+recovery decisions in canonical wave order, so physical completion timing cannot
+change audit order.
+
+The control plane selects complete successful validation and artifact evidence for
+each direct dependency, and the request builder independently revalidates that
+evidence. A terminal peer failure freezes new dispatch but does not cancel or erase
+already-authorized peers; they finish and settle before safe stop. There is no
+fallback model, task cancellation, production timeout, delayed backoff, or
+work-conserving mid-wave dispatch.
+
+`TaskExecutor` implementations used by parallel dispatch may receive concurrent
+`execute()` calls for independent attempts. Custom implementations and injected
+clients are responsible for their own concurrency safety. The default
+`OpenAITaskExecutor` creates a separate default OpenAI client per invocation when
+no client is injected; SDK retries remain disabled and each task attempt still
+maps to exactly one governed provider invocation.
 
 ### Bounded task-attempt recovery
 
@@ -274,7 +290,8 @@ task eventually succeeds, only its final successful attempt and exact passed
 validation artifact set may feed dependents. Exhausting attempt three records a
 terminal decision, marks the task and graph failed, and uses the existing safe-stop
 transition. Parallel readiness is still understood while actual dispatch remains
-serialized.
+bounded by deterministic execution waves. A retry becomes a later wave attempt in
+the same canonical scheduler order.
 
 The prior V0.4 `architecture_task`, `test_plan_task`, and `synchronize` demo
 branches and their obsolete state were removed: they generated canned examples and
@@ -389,15 +406,16 @@ summary.md
 
 `task_graph.json` is the canonical graph. `task_graph.md` is a human-readable view
 that includes derived layers, execution status, and governance history.
-`task_execution.json` retains runtime snapshots plus correlated requests, results,
-validations, failures, retry contexts, and recovery decisions;
+`task_execution.json` retains runtime snapshots and immutable execution-wave
+membership plus correlated requests, results, validations, failures, retry
+contexts, and recovery decisions;
 `engineering_artifacts.json` contains immutable
 application-canonicalized outputs, including failed-validation output for audit.
 The checked-in `artifacts/demo-run/` snapshot is generated network-free through the
 actual governed workflow using scripted requirement analysis, task planning, and a
-deterministic task executor with a fixed demonstration timestamp. It includes one
-controlled retryable local executor failure followed by a successful second
-attempt, without a provider call.
+concurrency-safe deterministic task executor with a fixed demonstration timestamp.
+It includes an actual two-task executor wave plus one controlled retryable local
+executor failure followed by a successful later attempt, without a provider call.
 The generated
 `artifacts/workflow_diagram.png` documents the static LangGraph control plane, not
 the per-run engineering TaskGraph.
@@ -419,15 +437,17 @@ cover approved-context filtering, direct dependency artifact flow, canonical
 identity/provenance, executor trust boundaries, and separate validation.
 Bounded-executor tests inject a fake Responses client and cover deterministic
 input, one-call structured parsing, typed retryability, and invocation-failure
-handling without a network connection. Static-loop tests cover serialized
-fan-out/fan-in dispatch, bounded recovery and exhaustion, validated
-direct-dependency artifact propagation, graph completion, validation failure,
-executor failure, and quiescent safe stop through actual LangGraph routing.
+handling without a network connection. Static-loop tests use barriers and
+thread-safe fakes to prove true two-task overlap, the concurrency cap, canonical
+evidence ordering despite reversed completion, fan-out/fan-in dependency flow,
+bounded recovery, terminal-peer settlement, and quiescent safe stop through actual
+LangGraph routing.
 
 ## Deliberately deferred
 
-The current V0.5 slice does not include concurrent execution, fallback models,
-delayed retry/backoff policy, cancellation, code-generation or repository-writing
+The current V0.5 slice does not include cancellation, production task/wave timeout
+policy, work-conserving streaming dispatch, fallback models or providers, delayed
+retry/backoff policy, distributed workers, code-generation or repository-writing
 agents, dynamically generated LangGraph nodes, full dynamic replanning,
-completed-task reconciliation, brownfield impact analysis, rollback, a
-database/audit store, distributed scheduling, deployment, or a web UI.
+completed-task reconciliation, brownfield impact analysis, rollback, skill
+loading, a persistent execution store, deployment, or a web UI.

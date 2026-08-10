@@ -178,6 +178,12 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
             else ()
         )
     }
+    wave_memberships: dict[str, list[str]] = {}
+    for wave in state.get("task_execution_waves", []):
+        for attempt in wave.task_attempts:
+            wave_memberships.setdefault(attempt.task_id, []).append(
+                f"{wave.wave_number} (attempt {attempt.attempt_number})"
+            )
     lines = [
         "# Engineering Task Dependency Graph",
         "",
@@ -218,6 +224,8 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
                     ),
                     "- Attempts: "
                     + (str(runtime.attempt_count) if runtime is not None else "0"),
+                    "- Execution waves: "
+                    + (", ".join(wave_memberships.get(task_id, ())) or "None"),
                     "- Requirements: "
                     + (", ".join(task["requirement_refs"]) or "None"),
                     "- Acceptance criteria: "
@@ -255,6 +263,10 @@ def _execution_evidence(state: WorkflowState) -> dict[str, object]:
     execution = state["task_graph_execution"]
     return {
         "task_graph_execution": execution.model_dump(mode="json"),
+        "waves": [
+            wave.model_dump(mode="json")
+            for wave in state.get("task_execution_waves", [])
+        ],
         "requests": [
             request.model_dump(mode="json")
             for request in state.get("task_execution_requests", [])
@@ -293,6 +305,10 @@ def _summary_markdown(
         decision.action.value == "RETRY"
         for decision in state.get("task_execution_recovery_decisions", [])
     )
+    waves = state.get("task_execution_waves", [])
+    maximum_wave_width = max(
+        (len(wave.task_attempts) for wave in waves), default=0
+    )
     lines = [
         "# Workflow Summary",
         "",
@@ -316,6 +332,8 @@ def _summary_markdown(
         ),
         f"- Task attempts: {task_attempts} across {task_count} tasks",
         f"- Retries performed: {retries}",
+        f"- Execution waves: {len(waves)}",
+        f"- Maximum parallel wave width: {maximum_wave_width}",
         "- Exit gate: "
         + (
             "not reached"
@@ -339,9 +357,10 @@ def _summary_markdown(
     else:
         lines.extend(
             [
-                "The governed V0.5 workflow executed the human-approved TaskGraph "
-                "in deterministic scheduler order, canonicalized each semantic "
-                "result, and allowed only application validation to settle tasks.",
+                "The governed V0.5 workflow executed bounded READY waves from the "
+                "human-approved TaskGraph, joined concurrent executor calls, "
+                "canonicalized results in deterministic scheduler order, and "
+                "allowed only application validation to settle tasks.",
                 "",
             ]
         )

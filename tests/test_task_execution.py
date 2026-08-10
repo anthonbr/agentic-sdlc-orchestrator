@@ -5,6 +5,7 @@ from __future__ import annotations
 from pytest import raises
 
 from agentic_sdlc.task_execution import (
+    MAX_PARALLEL_TASK_EXECUTIONS,
     MAX_TASK_EXECUTION_ATTEMPTS,
     TaskExecutionError,
     TaskExecutionRecoveryAction,
@@ -19,8 +20,10 @@ from agentic_sdlc.task_execution import (
     mark_task_succeeded,
     prepare_task_retry,
     ready_task_ids,
+    ready_task_wave_ids,
     safe_stop_task_graph_execution,
     start_task,
+    start_task_wave,
 )
 from agentic_sdlc.task_graph import Task, TaskGraph, TaskType
 
@@ -106,6 +109,54 @@ def test_ready_task_ids_preserve_canonical_graph_order() -> None:
         "TASK-010",
         "TASK-002",
         "TASK-007",
+    )
+
+
+def test_ready_task_wave_is_canonical_and_capped_at_fixed_parallel_limit() -> None:
+    graph = _graph(_task("TASK-010"), _task("TASK-002"), _task("TASK-007"))
+    execution = initialize_task_graph_execution(graph)
+
+    assert MAX_PARALLEL_TASK_EXECUTIONS == 2
+    assert ready_task_wave_ids(graph, execution) == ("TASK-010", "TASK-002")
+
+
+def test_ready_task_wave_is_empty_for_terminal_execution() -> None:
+    graph = _graph(_task("TASK-001"), _task("TASK-002"))
+    execution = initialize_task_graph_execution(graph)
+    execution = start_task_wave(graph, execution, ("TASK-001", "TASK-002"))
+    execution = mark_task_failed(graph, execution, "TASK-001")
+    execution = mark_task_succeeded(graph, execution, "TASK-002")
+
+    assert execution.status is TaskGraphExecutionStatus.FAILED
+    assert ready_task_wave_ids(graph, execution) == ()
+
+
+def test_start_task_wave_authorizes_all_members_in_order_and_counts_attempts() -> None:
+    graph = _graph(_task("TASK-001"), _task("TASK-002"), _task("TASK-003"))
+    initial = initialize_task_graph_execution(graph)
+
+    started = start_task_wave(graph, initial, ("TASK-001", "TASK-002"))
+
+    assert started.status is TaskGraphExecutionStatus.RUNNING
+    assert _status(started, "TASK-001") is TaskExecutionStatus.RUNNING
+    assert _status(started, "TASK-002") is TaskExecutionStatus.RUNNING
+    assert _status(started, "TASK-003") is TaskExecutionStatus.READY
+    assert _attempts(started, "TASK-001") == 1
+    assert _attempts(started, "TASK-002") == 1
+    assert _attempts(started, "TASK-003") == 0
+
+
+def test_start_task_wave_rejects_noncanonical_selection_before_authorization() -> None:
+    graph = _graph(_task("TASK-001"), _task("TASK-002"), _task("TASK-003"))
+    initial = initialize_task_graph_execution(graph)
+
+    with raises(TaskExecutionError, match="canonical bounded READY"):
+        start_task_wave(graph, initial, ("TASK-002", "TASK-001"))
+
+    assert all(
+        state.status is TaskExecutionStatus.READY
+        and state.attempt_count == 0
+        for state in initial.task_states
     )
 
 

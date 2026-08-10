@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from uuid import uuid4
 
 from pytest import MonkeyPatch
 
+import agentic_sdlc.nodes as nodes_module
 from agentic_sdlc.artifacts import write_artifacts
 from agentic_sdlc.llm import (
     FakeRequirementAnalysisClient,
@@ -33,7 +35,7 @@ from agentic_sdlc.task_execution_contracts import (
     TaskExecutionRequest,
     TaskExecutionResult,
 )
-from agentic_sdlc.task_executor import TaskExecutorError
+from agentic_sdlc.task_executor import TaskExecutor, TaskExecutorError
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
@@ -63,9 +65,11 @@ class DeterministicExecutor:
         self.blank_content_for = blank_content_for
         self.error_for = error_for
         self.calls: list[TaskExecutionRequest] = []
+        self._lock = threading.Lock()
 
     def execute(self, request: TaskExecutionRequest) -> TaskExecutionResult:
-        self.calls.append(request)
+        with self._lock:
+            self.calls.append(request)
         if request.task_id == self.error_for:
             raise TaskExecutorError(
                 "Deterministic provider failure.", retryable=False
@@ -103,9 +107,11 @@ class ScriptedRecoveryExecutor:
     def __init__(self, outcomes: dict[str, tuple[str, ...]]) -> None:
         self.outcomes = outcomes
         self.calls: list[TaskExecutionRequest] = []
+        self._lock = threading.Lock()
 
     def execute(self, request: TaskExecutionRequest) -> TaskExecutionResult:
-        self.calls.append(request)
+        with self._lock:
+            self.calls.append(request)
         configured = self.outcomes.get(request.task_id, ("valid",))
         outcome = configured[min(request.attempt_number - 1, len(configured) - 1)]
         if outcome == "retryable_error":
@@ -149,6 +155,91 @@ class ScriptedRecoveryExecutor:
         if outcome == "bad_correlation":
             return result.model_copy(update={"request_id": "wrong-request"})
         return result
+
+
+class CoordinatedExecutor:
+    """Prove bounded overlap while supporting deterministic peer outcomes."""
+
+    model_name = "coordinated-executor"
+
+    def __init__(
+        self,
+        *,
+        outcomes: dict[str, tuple[str, ...]] | None = None,
+        parallel_task_ids: tuple[str, ...] = ("TASK-002", "TASK-003"),
+        reverse_completion: bool = False,
+    ) -> None:
+        self.outcomes = outcomes or {}
+        self.parallel_task_ids = parallel_task_ids
+        self.reverse_completion = reverse_completion
+        self.barrier = threading.Barrier(len(parallel_task_ids))
+        self.task_three_completed = threading.Event()
+        self.lock = threading.Lock()
+        self.calls: list[TaskExecutionRequest] = []
+        self.completions: list[str] = []
+        self.active = 0
+        self.maximum_active = 0
+
+    def execute(self, request: TaskExecutionRequest) -> TaskExecutionResult:
+        with self.lock:
+            self.calls.append(request)
+            self.active += 1
+            self.maximum_active = max(self.maximum_active, self.active)
+        coordinated = (
+            request.task_id in self.parallel_task_ids
+            and request.attempt_number == 1
+        )
+        try:
+            if coordinated:
+                try:
+                    self.barrier.wait(timeout=2)
+                except threading.BrokenBarrierError as error:
+                    raise AssertionError(
+                        "Parallel task attempts did not overlap."
+                    ) from error
+            if self.reverse_completion and request.task_id == "TASK-002":
+                if not self.task_three_completed.wait(timeout=2):
+                    raise AssertionError("TASK-003 did not complete first.")
+
+            configured = self.outcomes.get(request.task_id, ("valid",))
+            outcome = configured[
+                min(request.attempt_number - 1, len(configured) - 1)
+            ]
+            if outcome == "retryable_error":
+                raise TaskExecutorError(
+                    "Temporary deterministic provider failure.", retryable=True
+                )
+            if outcome == "terminal_error":
+                raise TaskExecutorError(
+                    "Deterministic configuration rejection.", retryable=False
+                )
+            if outcome == "unexpected_error":
+                raise RuntimeError("provider-secret-token must be sanitized")
+            return TaskExecutionResult(
+                request_id=request.request_id,
+                attempt_id=request.attempt_id,
+                task_id=request.task_id,
+                summary=f"Executed {request.task_id}.",
+                outputs=(
+                    ArtifactOutput(
+                        artifact_type=EngineeringArtifactType.DESIGN,
+                        logical_name=request.task.expected_outputs[0],
+                        content=(
+                            ""
+                            if outcome == "blank"
+                            else f"Accepted output for {request.task_id}."
+                        ),
+                    ),
+                ),
+                assumptions=(),
+                risks=(),
+            )
+        finally:
+            with self.lock:
+                self.completions.append(request.task_id)
+                self.active -= 1
+            if request.task_id == "TASK-003":
+                self.task_three_completed.set()
 
 
 def _analysis() -> RequirementAnalysis:
@@ -219,6 +310,17 @@ def _single_proposal() -> ProposedTaskGraph:
     return ProposedTaskGraph(tasks=[_task("only_task", depends_on=[])])
 
 
+def _three_branch_proposal() -> ProposedTaskGraph:
+    return ProposedTaskGraph(
+        tasks=[
+            _task("foundation", depends_on=[]),
+            _task("branch_one", depends_on=["foundation"]),
+            _task("branch_two", depends_on=["foundation"]),
+            _task("branch_three", depends_on=["foundation"]),
+        ]
+    )
+
+
 def _direct_execution_state(
     proposal: ProposedTaskGraph,
 ) -> tuple[WorkflowState, TaskGraph]:
@@ -243,7 +345,7 @@ def _direct_execution_state(
 
 def _run_approved(
     proposal: ProposedTaskGraph,
-    executor: DeterministicExecutor,
+    executor: TaskExecutor,
 ) -> WorkflowState:
     workflow = build_workflow(
         FakeRequirementAnalysisClient([_analysis()]),
@@ -299,7 +401,7 @@ def test_compiled_topology_uses_one_fixed_loop_and_no_dynamic_task_nodes() -> No
     }.isdisjoint(WorkflowState.__annotations__)
 
 
-def test_static_loop_serializes_fanout_fanin_and_propagates_dependency_evidence() -> None:
+def test_static_loop_runs_bounded_fanout_wave_and_propagates_dependency_evidence() -> None:
     executor = DeterministicExecutor()
 
     result = _run_approved(_fanout_fanin_proposal(), executor)
@@ -308,12 +410,6 @@ def test_static_loop_serializes_fanout_fanin_and_propagates_dependency_evidence(
     assert result["task_graph_execution"].status is (
         TaskGraphExecutionStatus.SUCCEEDED
     )
-    assert [request.task_id for request in executor.calls] == [
-        "TASK-001",
-        "TASK-002",
-        "TASK-003",
-        "TASK-004",
-    ]
     assert [request.task_id for request in result["task_execution_requests"]] == [
         "TASK-001",
         "TASK-002",
@@ -323,15 +419,25 @@ def test_static_loop_serializes_fanout_fanin_and_propagates_dependency_evidence(
     artifacts_by_task = {
         artifact.task_id: artifact for artifact in result["engineering_artifacts"]
     }
+    requests_by_task = {
+        request.task_id: request for request in result["task_execution_requests"]
+    }
     assert tuple(
-        artifact.artifact_id for artifact in executor.calls[1].dependency_artifacts
+        artifact.artifact_id
+        for artifact in requests_by_task["TASK-002"].dependency_artifacts
     ) == (artifacts_by_task["TASK-001"].artifact_id,)
     assert tuple(
-        artifact.artifact_id for artifact in executor.calls[2].dependency_artifacts
+        artifact.artifact_id
+        for artifact in requests_by_task["TASK-003"].dependency_artifacts
     ) == (artifacts_by_task["TASK-001"].artifact_id,)
     assert tuple(
-        artifact.task_id for artifact in executor.calls[3].dependency_artifacts
+        artifact.task_id
+        for artifact in requests_by_task["TASK-004"].dependency_artifacts
     ) == ("TASK-002", "TASK-003")
+    assert [
+        tuple(attempt.task_id for attempt in wave.task_attempts)
+        for wave in result["task_execution_waves"]
+    ] == [("TASK-001",), ("TASK-002", "TASK-003"), ("TASK-004",)]
     assert all(
         validation.passed
         for validation in result["task_execution_validations"]
@@ -353,6 +459,241 @@ def test_static_loop_serializes_fanout_fanin_and_propagates_dependency_evidence(
         event.startswith("[execute_task_graph_step]")
         for event in result["trace"]
     ) == 4
+
+
+def test_parallel_calls_overlap_while_persisted_evidence_stays_canonical() -> None:
+    executor = CoordinatedExecutor(reverse_completion=True)
+
+    result = _run_approved(_fanout_fanin_proposal(), executor)
+
+    assert result["workflow_status"] == "success"
+    assert executor.maximum_active == 2
+    assert executor.completions.index("TASK-003") < executor.completions.index(
+        "TASK-002"
+    )
+    for field in (
+        "task_execution_requests",
+        "task_execution_results",
+        "engineering_artifacts",
+        "task_execution_validations",
+    ):
+        assert [
+            item.task_id
+            for item in result[field]
+            if item.task_id in {"TASK-002", "TASK-003"}
+        ] == ["TASK-002", "TASK-003"]
+    assert tuple(
+        attempt.task_id for attempt in result["task_execution_waves"][1].task_attempts
+    ) == ("TASK-002", "TASK-003")
+    assert [
+        event.split()[3]
+        for event in result["trace"]
+        if event.startswith("[execute_task_graph_step] wave 2")
+    ] == ["TASK-002", "TASK-003"]
+
+
+def test_parallel_wave_cap_defers_third_ready_branch() -> None:
+    executor = CoordinatedExecutor()
+
+    result = _run_approved(_three_branch_proposal(), executor)
+
+    assert result["workflow_status"] == "success"
+    assert executor.maximum_active == 2
+    assert [
+        tuple(attempt.task_id for attempt in wave.task_attempts)
+        for wave in result["task_execution_waves"]
+    ] == [
+        ("TASK-001",),
+        ("TASK-002", "TASK-003"),
+        ("TASK-004",),
+    ]
+    assert all(len(wave.task_attempts) <= 2 for wave in result["task_execution_waves"])
+
+
+def test_retryable_parallel_peer_retries_after_successful_peer_settles() -> None:
+    executor = CoordinatedExecutor(
+        outcomes={"TASK-002": ("blank", "valid")}
+    )
+
+    result = _run_approved(_fanout_fanin_proposal(), executor)
+
+    assert result["workflow_status"] == "success"
+    assert [
+        tuple(
+            (attempt.task_id, attempt.attempt_number)
+            for attempt in wave.task_attempts
+        )
+        for wave in result["task_execution_waves"]
+    ] == [
+        (("TASK-001", 1),),
+        (("TASK-002", 1), ("TASK-003", 1)),
+        (("TASK-002", 2),),
+        (("TASK-004", 1),),
+    ]
+    retry_request = next(
+        request
+        for request in result["task_execution_requests"]
+        if request.task_id == "TASK-002" and request.attempt_number == 2
+    )
+    assert retry_request.retry_context is not None
+    assert _statuses(result)["TASK-003"] is TaskExecutionStatus.SUCCEEDED
+    join_request = result["task_execution_requests"][-1]
+    assert tuple(
+        (artifact.task_id, artifact.attempt_number)
+        for artifact in join_request.dependency_artifacts
+    ) == (("TASK-002", 2), ("TASK-003", 1))
+
+
+def test_terminal_parallel_failure_retains_and_settles_successful_peer() -> None:
+    executor = CoordinatedExecutor(
+        outcomes={"TASK-002": ("terminal_error",)}
+    )
+
+    result = _run_approved(_fanout_fanin_proposal(), executor)
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result["task_graph_execution"].status is (
+        TaskGraphExecutionStatus.SAFE_STOPPED
+    )
+    assert _statuses(result) == {
+        "TASK-001": TaskExecutionStatus.SUCCEEDED,
+        "TASK-002": TaskExecutionStatus.FAILED,
+        "TASK-003": TaskExecutionStatus.SUCCEEDED,
+        "TASK-004": TaskExecutionStatus.BLOCKED,
+    }
+    assert tuple(
+        attempt.task_id for attempt in result["task_execution_waves"][1].task_attempts
+    ) == ("TASK-002", "TASK-003")
+    assert any(
+        semantic_result.task_id == "TASK-003"
+        for semantic_result in result["task_execution_results"]
+    )
+    assert any(
+        artifact.task_id == "TASK-003" for artifact in result["engineering_artifacts"]
+    )
+    assert all(
+        state.status is not TaskExecutionStatus.RUNNING
+        for state in result["task_graph_execution"].task_states
+    )
+    assert not any(
+        request.task_id == "TASK-004" for request in result["task_execution_requests"]
+    )
+
+
+def test_retryable_peer_remains_ready_when_terminal_peer_freezes_graph() -> None:
+    executor = CoordinatedExecutor(
+        outcomes={
+            "TASK-002": ("retryable_error",),
+            "TASK-003": ("terminal_error",),
+        }
+    )
+
+    result = _run_approved(_fanout_fanin_proposal(), executor)
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert _statuses(result)["TASK-002"] is TaskExecutionStatus.READY
+    assert _statuses(result)["TASK-003"] is TaskExecutionStatus.FAILED
+    assert [
+        (decision.task_id, decision.action)
+        for decision in result["task_execution_recovery_decisions"]
+    ] == [
+        ("TASK-002", TaskExecutionRecoveryAction.RETRY),
+        ("TASK-003", TaskExecutionRecoveryAction.FAIL_TASK),
+    ]
+    assert [
+        request.task_id for request in result["task_execution_requests"]
+    ].count("TASK-002") == 1
+    assert all(
+        state.status is not TaskExecutionStatus.RUNNING
+        for state in result["task_graph_execution"].task_states
+    )
+
+
+def test_request_build_failure_does_not_abandon_valid_authorized_peer(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task("first", depends_on=[]),
+            _task("second", depends_on=[]),
+        ]
+    )
+    state, _ = _direct_execution_state(proposal)
+    executor = DeterministicExecutor()
+    real_builder = nodes_module.build_task_execution_request
+
+    def controlled_builder(*args: object, **kwargs: object) -> TaskExecutionRequest:
+        if args[3] == "TASK-002":
+            raise TaskExecutionContractError(
+                "Controlled authoritative request-build failure."
+            )
+        return real_builder(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(nodes_module, "build_task_execution_request", controlled_builder)
+
+    update = execute_task_graph_step(state, executor=executor)
+
+    assert update["task_graph_execution"].status is TaskGraphExecutionStatus.FAILED
+    assert _statuses(update) == {
+        "TASK-001": TaskExecutionStatus.SUCCEEDED,
+        "TASK-002": TaskExecutionStatus.FAILED,
+    }
+    assert tuple(
+        attempt.task_id for attempt in update["task_execution_waves"][0].task_attempts
+    ) == ("TASK-001", "TASK-002")
+    assert [request.task_id for request in update["task_execution_requests"]] == [
+        "TASK-001"
+    ]
+    assert update["task_execution_failures"][0].task_id == "TASK-002"
+    assert update["task_execution_failures"][0].phase is (
+        TaskExecutionFailurePhase.REQUEST_BUILD
+    )
+    assert [request.task_id for request in executor.calls] == ["TASK-001"]
+    stopped = safe_stop({**state, **update})
+    assert stopped["task_graph_execution"].status is (
+        TaskGraphExecutionStatus.SAFE_STOPPED
+    )
+
+
+def test_multiple_parallel_failures_are_both_retained_in_canonical_order() -> None:
+    executor = CoordinatedExecutor(
+        outcomes={
+            "TASK-002": ("terminal_error",),
+            "TASK-003": ("terminal_error",),
+        }
+    )
+
+    result = _run_approved(_fanout_fanin_proposal(), executor)
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert [failure.task_id for failure in result["task_execution_failures"]] == [
+        "TASK-002",
+        "TASK-003",
+    ]
+    assert [
+        decision.task_id for decision in result["task_execution_recovery_decisions"]
+    ] == ["TASK-002", "TASK-003"]
+    assert _statuses(result)["TASK-002"] is TaskExecutionStatus.FAILED
+    assert _statuses(result)["TASK-003"] is TaskExecutionStatus.FAILED
+
+
+def test_unexpected_custom_executor_exception_is_sanitized_after_peer_finishes() -> None:
+    executor = CoordinatedExecutor(
+        outcomes={"TASK-002": ("unexpected_error",)}
+    )
+
+    result = _run_approved(_fanout_fanin_proposal(), executor)
+
+    assert result["workflow_status"] == "safe_stopped"
+    failure = next(
+        failure
+        for failure in result["task_execution_failures"]
+        if failure.task_id == "TASK-002"
+    )
+    assert failure.error_type == "TaskExecutorError"
+    assert failure.message == "TaskExecutor raised an unexpected exception."
+    assert "provider-secret-token" not in failure.model_dump_json()
+    assert _statuses(result)["TASK-003"] is TaskExecutionStatus.SUCCEEDED
 
 
 def test_retry_budget_exhaustion_retains_every_failed_validation_attempt() -> None:
@@ -567,12 +908,13 @@ def test_fanout_fanin_retry_preserves_order_and_uses_only_final_artifact() -> No
 
     assert result["workflow_status"] == "success"
     assert [
-        (request.task_id, request.attempt_number) for request in executor.calls
+        (request.task_id, request.attempt_number)
+        for request in result["task_execution_requests"]
     ] == [
         ("TASK-001", 1),
         ("TASK-002", 1),
-        ("TASK-002", 2),
         ("TASK-003", 1),
+        ("TASK-002", 2),
         ("TASK-004", 1),
     ]
     task_two_artifacts = [
@@ -580,7 +922,7 @@ def test_fanout_fanin_retry_preserves_order_and_uses_only_final_artifact() -> No
         for artifact in result["engineering_artifacts"]
         if artifact.task_id == "TASK-002"
     ]
-    join_request = executor.calls[-1]
+    join_request = result["task_execution_requests"][-1]
     assert tuple(
         (artifact.task_id, artifact.attempt_number)
         for artifact in join_request.dependency_artifacts
@@ -633,11 +975,18 @@ def test_execution_audit_artifacts_include_recovery_history(
     task_graph = (tmp_path / "task_graph.md").read_text()
 
     assert len(evidence["requests"]) == 2
+    assert [wave["wave_number"] for wave in evidence["waves"]] == [1, 2]
+    assert [
+        wave["task_attempts"][0]["attempt_number"] for wave in evidence["waves"]
+    ] == [1, 2]
     assert len(evidence["failures"]) == 1
     assert len(evidence["recovery_decisions"]) == 1
     assert evidence["recovery_decisions"][0]["action"] == "RETRY"
     assert evidence["requests"][1]["retry_context"]["prior_attempt_number"] == 1
     assert "Task attempts: 2 across 1 tasks" in summary
     assert "Retries performed: 1" in summary
+    assert "Execution waves: 2" in summary
+    assert "Maximum parallel wave width: 1" in summary
     assert "Runtime status: SUCCEEDED" in task_graph
     assert "Attempts: 2" in task_graph
+    assert "Execution waves: 1 (attempt 1), 2 (attempt 2)" in task_graph

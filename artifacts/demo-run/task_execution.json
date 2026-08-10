@@ -30,6 +30,57 @@
       }
     ]
   },
+  "waves": [
+    {
+      "wave_number": 1,
+      "task_attempts": [
+        {
+          "task_id": "TASK-001",
+          "attempt_number": 1
+        },
+        {
+          "task_id": "TASK-002",
+          "attempt_number": 1
+        }
+      ]
+    },
+    {
+      "wave_number": 2,
+      "task_attempts": [
+        {
+          "task_id": "TASK-003",
+          "attempt_number": 1
+        }
+      ]
+    },
+    {
+      "wave_number": 3,
+      "task_attempts": [
+        {
+          "task_id": "TASK-003",
+          "attempt_number": 2
+        }
+      ]
+    },
+    {
+      "wave_number": 4,
+      "task_attempts": [
+        {
+          "task_id": "TASK-004",
+          "attempt_number": 1
+        }
+      ]
+    },
+    {
+      "wave_number": 5,
+      "task_attempts": [
+        {
+          "task_id": "TASK-005",
+          "attempt_number": 1
+        }
+      ]
+    }
+  ],
   "requests": [
     {
       "request_id": "e5a97d9f-28e4-56d3-9e1a-0fb7f07dd918",

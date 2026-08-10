@@ -10,6 +10,7 @@ from agentic_sdlc.task_graph import TaskGraph
 
 
 MAX_TASK_EXECUTION_ATTEMPTS = 3
+MAX_PARALLEL_TASK_EXECUTIONS = 2
 
 
 class TaskExecutionStatus(StrEnum):
@@ -50,6 +51,27 @@ class TaskGraphExecutionState(BaseModel):
     graph_id: str
     status: TaskGraphExecutionStatus
     task_states: tuple[TaskExecutionState, ...]
+
+
+class TaskExecutionWaveAttempt(BaseModel):
+    """Immutable identity for one task attempt authorized in a wave."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    task_id: str
+    attempt_number: int = Field(ge=1)
+
+
+class TaskExecutionWave(BaseModel):
+    """Immutable audit evidence for one bounded deterministic dispatch wave."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    wave_number: int = Field(ge=1)
+    task_attempts: tuple[TaskExecutionWaveAttempt, ...] = Field(
+        min_length=1,
+        max_length=MAX_PARALLEL_TASK_EXECUTIONS,
+    )
 
 
 class TaskExecutionError(ValueError):
@@ -149,6 +171,51 @@ def ready_task_ids(
         for state in execution.task_states
         if state.status is TaskExecutionStatus.READY
     )
+
+
+def ready_task_wave_ids(
+    graph: TaskGraph, execution: TaskGraphExecutionState
+) -> tuple[str, ...]:
+    """Select one bounded READY wave in canonical TaskGraph order."""
+
+    return ready_task_ids(graph, execution)[:MAX_PARALLEL_TASK_EXECUTIONS]
+
+
+def start_task_wave(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    task_ids: tuple[str, ...],
+) -> TaskGraphExecutionState:
+    """Atomically authorize one canonical wave through governed starts."""
+
+    _validate_dispatchable_execution(graph, execution)
+    expected = ready_task_wave_ids(graph, execution)
+    if not task_ids:
+        raise TaskExecutionError("A task execution wave cannot be empty.")
+    if task_ids != expected:
+        raise TaskExecutionError(
+            "Task execution wave must equal the current canonical bounded READY "
+            f"selection; expected {expected}, found {task_ids}."
+        )
+
+    # Validate every intended member before applying the first immutable transition.
+    for task_id in task_ids:
+        index = _task_state_index(execution, task_id)
+        current = execution.task_states[index]
+        if current.status is not TaskExecutionStatus.READY:
+            raise TaskExecutionError(
+                f"Task {task_id} cannot start from {current.status.value}."
+            )
+        if current.attempt_count >= MAX_TASK_EXECUTION_ATTEMPTS:
+            raise TaskExecutionError(
+                f"Task {task_id} cannot exceed {MAX_TASK_EXECUTION_ATTEMPTS} "
+                "execution attempts."
+            )
+
+    started = execution
+    for task_id in task_ids:
+        started = start_task(graph, started, task_id)
+    return started
 
 
 def start_task(

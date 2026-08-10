@@ -8,6 +8,7 @@ from typing import Annotated, Literal, TypedDict
 from agentic_sdlc.task_execution import (
     TaskExecutionFailure,
     TaskExecutionRecoveryDecision,
+    TaskExecutionWave,
     TaskGraphExecutionState,
 )
 from agentic_sdlc.task_execution_contracts import (
@@ -246,6 +247,7 @@ class WorkflowState(TypedDict, total=False):
     task_execution_recovery_decisions: Annotated[
         list[TaskExecutionRecoveryDecision], operator.add
     ]
+    task_execution_waves: Annotated[list[TaskExecutionWave], operator.add]
     safe_stop_reason: str
     exit_gate_passed: bool
     workflow_status: WorkflowStatus
