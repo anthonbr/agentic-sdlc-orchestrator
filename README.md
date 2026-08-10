@@ -16,11 +16,12 @@ the software-development lifecycle.
   normalization/validation, and human TaskGraph approval.
 - **V0.5 runtime foundation (current slices):** separate execution state, a
   deterministic interpreter for readiness and transitions, and application-owned
-  execution contracts, artifact canonicalization, and structural validation.
+  execution contracts, artifact canonicalization, structural validation, and a
+  bounded OpenAI task-executor adapter.
 
-The current V0.5 slice interprets an approved plan but deliberately does **not
-execute engineering work**, call an LLM task executor, write application code, or
-implement the URL Shortener demonstration service.
+The current V0.5 slices can request one semantic engineering result from an LLM,
+but deliberately do **not execute that work**, write application code, settle
+scheduler state, or implement the URL Shortener demonstration service.
 
 ## Two distinct graphs
 
@@ -106,7 +107,7 @@ work; failure remains sticky, and `SAFE_STOPPED` requires no task to remain
 
 This module is not wired into the LangGraph workflow yet. Multiple tasks can be
 ready at once, representing future parallel execution, but this slice adds no
-concurrency, LLM task executor, repository mutation, or dynamic LangGraph nodes.
+concurrency, repository mutation, or dynamic LangGraph nodes.
 
 ### Execution contract and artifact boundary
 
@@ -159,8 +160,50 @@ names and contents, canonical artifact count, provenance, identity/hash integrit
 and output correspondence. V0.4 `expected_outputs` values are free-form descriptive
 obligations, so this slice requires at least one output when obligations exist but
 does not claim semantic one-to-one matching. A `SOURCE` artifact remains data only;
-it is not written to the repository. No OpenAI task executor or filesystem/shell
-execution exists in this slice.
+it is not written to the repository. No filesystem or shell execution exists in
+this slice.
+
+### Bounded LLM task-executor adapter
+
+The first provider adapter preserves the contract boundary:
+
+```text
+TaskExecutionRequest
+    -> OpenAITaskExecutor
+    -> TaskExecutionResult
+```
+
+`OpenAITaskExecutor` makes one structured-output request using the existing
+`OPENAI_MODEL` configuration. Its fixed instructions and deterministic input are
+derived only from the authoritative request: approved global and task-scoped
+requirement context, the canonical current task, accepted direct-dependency
+artifacts, and correlation IDs. Raw conversation history, unrelated requirements,
+unrelated tasks, and arbitrary workflow state are excluded.
+
+All governed OpenAI Responses calls explicitly set `store=False`, requesting that
+generated Responses objects not be stored for later retrieval through the Responses
+API. This does not disable the orchestrator's own canonical artifacts or audit
+state, and it makes no broader claim about provider-side data handling.
+
+Approved FR/NFR/CON/AC items are authoritative engineering obligations, including
+constraints or acceptance criteria written in imperative form. Approved assumptions
+are authoritative premises; risks are authoritative engineering considerations;
+and ambiguities are authoritative unresolved context. An approved ambiguity is
+preserved unless the governed task or other approved context explicitly resolves
+it. Accepted dependency artifacts remain authoritative engineering input from
+predecessor tasks.
+
+All bounded context remains unchanged. Embedded meta-instructions cannot redefine
+the executor's role, capabilities, application policy, governance authority, output
+contract, or permission for external actions: fixed system instructions define
+executor-control authority, while the canonical task defines work scope.
+
+The returned `TaskExecutionResult` remains a non-authoritative semantic proposal.
+The executor cannot declare success or assign canonical artifact identity,
+lineage, hashes, provenance, or runtime state. Application code still performs
+artifact canonicalization and deterministic validation separately. The adapter
+does not retry, write artifacts to the repository, run commands, or settle task or
+graph state, and it is not wired into the scheduler or LangGraph workflow yet.
 
 ## Governed planning and lineage
 
@@ -286,11 +329,14 @@ approval loops, artifacts, the preserved static parallel branches, and isolated
 deterministic TaskGraph runtime transitions. Execution-contract tests additionally
 cover approved-context filtering, direct dependency artifact flow, canonical
 identity/provenance, executor trust boundaries, and separate validation.
+Bounded-executor tests inject a fake Responses client and cover deterministic
+input, one-call structured parsing, and invocation-failure handling without a
+network connection.
 
 ## Deliberately deferred
 
-The current V0.5 slice does not include actual engineering-task execution, an LLM
-task executor, concurrent execution, retry/recovery policy, code-generation or
+The current V0.5 slice does not include scheduler-integrated engineering-task
+execution, concurrent execution, retry/recovery policy, code-generation or
 repository-writing agents, dynamically generated LangGraph nodes, full dynamic
 replanning, completed-task reconciliation, brownfield impact analysis, rollback,
 a database/audit store, distributed scheduling, deployment, or a web UI.

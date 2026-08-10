@@ -401,6 +401,7 @@ def test_openai_requirement_client_uses_structured_parse_without_network() -> No
     assert isinstance(result, RequirementAnalysis)
     assert calls[0]["model"] == "test-model"
     assert calls[0]["text_format"] is RequirementAnalysis
+    assert calls[0]["store"] is False
     assert "Prior validated analysis" in calls[0]["input"][1]["content"]
     assert "Authoritative human review feedback" in calls[0]["input"][1]["content"]
 
@@ -433,6 +434,7 @@ def test_openai_task_planner_uses_approved_spec_and_schema_without_network() -> 
 
     assert isinstance(result, ProposedTaskGraph)
     assert calls[0]["text_format"] is ProposedTaskGraph
+    assert calls[0]["store"] is False
     content = calls[0]["input"][1]["content"]
     assert "Human-approved requirement specification" in content
     assert spec.spec_id in content

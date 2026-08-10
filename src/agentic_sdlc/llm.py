@@ -99,6 +99,7 @@ class OpenAIRequirementAnalysisClient:
                     },
                 ],
                 text_format=RequirementAnalysis,
+                store=False,
             )
         except ValidationError as error:
             raise RequirementAnalysisClientError(
@@ -226,6 +227,7 @@ class OpenAITaskPlanningClient:
                     },
                 ],
                 text_format=ProposedTaskGraph,
+                store=False,
             )
         except ValidationError as error:
             raise TaskPlanningClientError(
