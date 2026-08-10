@@ -271,6 +271,25 @@ automatic cleanup, TaskGraph settlement integration, filesystem retry, concurren
 filesystem mutation, Git/shell operation, generated-code execution, or promotion
 into an authoritative repository exists yet.
 
+### Governed task-to-workspace integration contracts
+
+The pure, immutable contracts in `workspace_integration_contracts.py` establish
+vocabulary for a later governed integration layer without connecting task execution
+to filesystem authority. A `WorkspaceBinding` identifies the exact workspace and
+snapshot against which an attempt reasoned. A bounded `RepositoryContext` records a
+canonical projection of exact existing-file contents and hashes or explicit
+nonexistence observations; it neither reads nor mutates a workspace.
+
+`ArtifactMaterializationIntent` separately proposes that one canonical engineering
+artifact is the complete desired content for one legal repository-relative regular
+file. Materialization is orthogonal to the artifact's semantic type, confers no
+authority, and carries no operation: trusted workspace logic must still derive
+`CREATE`, `MODIFY`, or `NO_CHANGE`. Finite task materialization policy, task-attempt
+exit disposition, and workspace-integrity vocabularies are also defined for future
+approval and settlement rules. No repository-context provider, governed workspace
+session, wave reconciliation, scheduler transition, task settlement, or automatic
+mutation is implemented by this checkpoint.
+
 ### Bounded LLM task-executor adapter
 
 The first provider adapter preserves the contract boundary:
