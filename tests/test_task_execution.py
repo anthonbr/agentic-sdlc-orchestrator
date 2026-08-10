@@ -25,7 +25,12 @@ from agentic_sdlc.task_execution import (
     start_task,
     start_task_wave,
 )
-from agentic_sdlc.task_graph import Task, TaskGraph, TaskType
+from agentic_sdlc.task_graph import (
+    Task,
+    TaskGraph,
+    TaskMaterializationPolicy,
+    TaskType,
+)
 
 
 def _task(task_id: str, *depends_on: str) -> Task:
@@ -36,6 +41,7 @@ def _task(task_id: str, *depends_on: str) -> Task:
         title=f"Task {task_id}",
         description=f"Deterministic planning data for {task_id}.",
         task_type=TaskType.IMPLEMENTATION,
+        materialization_policy=TaskMaterializationPolicy.REQUIRED,
         depends_on=tuple(depends_on),
         requirement_refs=("FR-001",),
         acceptance_criteria_refs=("AC-001",),

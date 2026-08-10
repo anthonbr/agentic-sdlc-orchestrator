@@ -158,6 +158,10 @@ def _prompt_for_task_graph_decision(payload: dict[str, Any]) -> ApprovalResponse
             print(f"  {task_id}  {task['title']}")
             print(f"    Type: {task['task_type']}")
             print(
+                "    Materialization policy: "
+                f"{task['materialization_policy']}"
+            )
+            print(
                 "    Depends on: "
                 + (", ".join(task["depends_on"]) or "ENTRY")
             )

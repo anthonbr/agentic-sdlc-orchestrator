@@ -17,13 +17,16 @@ from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifactType,
     TaskExecutionValidationResult,
 )
+from agentic_sdlc.task_graph import Task, TaskMaterializationPolicy, TaskType
 from agentic_sdlc.workspace_contracts import (
+    ArtifactMaterializationIntent,
     WorkspaceChangeSet,
     WorkspaceChangeSetIssueCode,
     WorkspaceChangeSetValidationIssue,
     WorkspaceChangeSetValidationResult,
     WorkspaceSnapshot,
     build_workspace_change_set,
+    validate_artifact_materialization,
     validate_workspace_change_set,
     workspace_file_content_hash,
 )
@@ -86,16 +89,49 @@ def _task_validation(
     )
 
 
+def _task(artifact: EngineeringArtifact) -> Task:
+    return Task(
+        task_id=artifact.task_id,
+        lineage_id=f"task-lineage-{artifact.task_id}",
+        source_key=artifact.task_id.casefold().replace("-", "_"),
+        title="Materialize desired files",
+        description="Materialize validated desired repository state.",
+        task_type=TaskType.IMPLEMENTATION,
+        materialization_policy=TaskMaterializationPolicy.REQUIRED,
+        depends_on=(),
+        requirement_refs=artifact.requirement_refs,
+        acceptance_criteria_refs=artifact.acceptance_criteria_refs,
+        risk_refs=artifact.risk_refs,
+        ambiguity_refs=artifact.ambiguity_refs,
+        expected_outputs=("desired files",),
+    )
+
+
 def _change_set_from_snapshot(
     snapshot: WorkspaceSnapshot,
     *artifacts: EngineeringArtifact,
 ) -> tuple[WorkspaceChangeSet, WorkspaceChangeSetValidationResult]:
+    task_validation = _task_validation(*artifacts)
+    intents = tuple(
+        ArtifactMaterializationIntent(
+            artifact_id=artifact.artifact_id,
+            target_path=artifact.logical_name,
+        )
+        for artifact in artifacts
+    )
+    materialization = validate_artifact_materialization(
+        _task(artifacts[0]), task_validation, artifacts, intents
+    )
+    assert materialization.passed
     change_set = build_workspace_change_set(
         snapshot,
-        _task_validation(*artifacts),
+        task_validation,
         artifacts,
+        materialization,
     )
-    validation = validate_workspace_change_set(change_set, snapshot, artifacts)
+    validation = validate_workspace_change_set(
+        change_set, snapshot, artifacts, materialization
+    )
     assert validation.passed
     return change_set, validation
 

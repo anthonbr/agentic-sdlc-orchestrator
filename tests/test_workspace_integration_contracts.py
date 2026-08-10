@@ -9,7 +9,11 @@ from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifact,
     EngineeringArtifactType,
 )
-from agentic_sdlc.workspace_contracts import workspace_file_content_hash
+from agentic_sdlc.task_graph import TaskMaterializationPolicy as GraphTaskPolicy
+from agentic_sdlc.workspace_contracts import (
+    ArtifactMaterializationIntent as WorkspaceArtifactMaterializationIntent,
+    workspace_file_content_hash,
+)
 from agentic_sdlc.workspace_integration_contracts import (
     ArtifactMaterializationIntent,
     RepositoryContext,
@@ -216,6 +220,8 @@ def test_materialization_intent_rejects_invalid_target(path: str) -> None:
 
 
 def test_task_materialization_policy_has_exact_values() -> None:
+    assert TaskMaterializationPolicy is GraphTaskPolicy
+    assert ArtifactMaterializationIntent is WorkspaceArtifactMaterializationIntent
     assert tuple(item.value for item in TaskMaterializationPolicy) == (
         "FORBIDDEN",
         "ALLOWED",

@@ -1,12 +1,12 @@
 {
-  "graph_id": "GRAPH-091DC71B7451-V001",
+  "graph_id": "GRAPH-518F10826DAD-V001",
   "lineage_id": "03342283-0862-5a2e-9749-2aa5c72b3f66",
   "version": 1,
   "requirement_spec_id": "SPEC-79BDBC13BA00-V001",
   "requirement_spec_version": 1,
   "supersedes_graph_id": null,
   "created_at": "2026-08-10T12:00:00+00:00",
-  "content_hash": "091dc71b7451a2206feca5368a4bc6c32a9d302a992460027bbcc0baabf3cfed",
+  "content_hash": "518f10826dadbc5516026a805809a184945f6d479cc27913a1fc3da9f5fcc3af",
   "tasks": [
     {
       "task_id": "TASK-001",
@@ -15,6 +15,7 @@
       "title": "Define API contract v1",
       "description": "Produce the governed define api contract v1 output.",
       "task_type": "DESIGN",
+      "materialization_policy": "FORBIDDEN",
       "depends_on": [],
       "requirement_refs": [
         "FR-001",
@@ -38,6 +39,7 @@
       "title": "Define persistence model",
       "description": "Produce the governed define persistence model output.",
       "task_type": "DESIGN",
+      "materialization_policy": "FORBIDDEN",
       "depends_on": [],
       "requirement_refs": [
         "FR-002",
@@ -59,6 +61,7 @@
       "title": "Implement shortening behavior",
       "description": "Produce the governed implement shortening behavior output.",
       "task_type": "IMPLEMENTATION",
+      "materialization_policy": "FORBIDDEN",
       "depends_on": [
         "TASK-001",
         "TASK-002"
@@ -88,6 +91,7 @@
       "title": "Verify approved behavior",
       "description": "Produce the governed verify approved behavior output.",
       "task_type": "TEST",
+      "materialization_policy": "FORBIDDEN",
       "depends_on": [
         "TASK-003"
       ],
@@ -113,6 +117,7 @@
       "title": "Document service contract",
       "description": "Produce the governed document service contract output.",
       "task_type": "DOCUMENTATION",
+      "materialization_policy": "FORBIDDEN",
       "depends_on": [
         "TASK-004"
       ],

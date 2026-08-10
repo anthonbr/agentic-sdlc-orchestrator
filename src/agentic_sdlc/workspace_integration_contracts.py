@@ -14,7 +14,13 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from agentic_sdlc.task_execution_contracts import TaskExecutionRequest
+from agentic_sdlc.task_graph import TaskMaterializationPolicy
 from agentic_sdlc.workspace_contracts import (
+    ArtifactMaterializationIntent,
+    ArtifactMaterializationIssueCode,
+    ArtifactMaterializationValidationIssue,
+    ArtifactMaterializationValidationResult,
     normalize_repository_path,
     workspace_file_content_hash,
 )
@@ -90,28 +96,6 @@ class RepositoryContext(BaseModel):
         return self
 
 
-class ArtifactMaterializationIntent(BaseModel):
-    """Proposal that one artifact is desired content for one regular-file path."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    artifact_id: str = Field(min_length=1)
-    target_path: str
-
-    @field_validator("target_path")
-    @classmethod
-    def validate_target_path(cls, value: str) -> str:
-        return normalize_repository_path(value)
-
-
-class TaskMaterializationPolicy(StrEnum):
-    """Approved semantic permission for one task to propose materialization."""
-
-    FORBIDDEN = "FORBIDDEN"
-    ALLOWED = "ALLOWED"
-    REQUIRED = "REQUIRED"
-
-
 class TaskAttemptExitDisposition(StrEnum):
     """Finite governed outcomes available to a future task-attempt exit gate."""
 
@@ -153,6 +137,36 @@ class WorkspaceIntegrityStatus(StrEnum):
     UNPROVABLE = "UNPROVABLE"
 
 
+class GovernedWorkspaceSession(BaseModel):
+    """Immutable authority record for one run's isolated workspace state."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    run_id: str = Field(min_length=1)
+    workspace_id: str = Field(min_length=1)
+    baseline_snapshot_id: str = Field(min_length=1)
+    authoritative_snapshot_id: str = Field(min_length=1)
+    integrity_status: WorkspaceIntegrityStatus
+
+
+class WorkspaceBoundTaskExecutionRequest(BaseModel):
+    """Strict request wrapper bound to exact immutable repository evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    request: TaskExecutionRequest
+    workspace_binding: WorkspaceBinding
+    repository_context: RepositoryContext
+
+    @model_validator(mode="after")
+    def validate_binding(self) -> Self:
+        if self.repository_context.binding != self.workspace_binding:
+            raise ValueError(
+                "Repository context and workspace request binding must match."
+            )
+        return self
+
+
 def build_repository_context(
     binding: WorkspaceBinding,
     observations: tuple[RepositoryPathObservation, ...] = (),
@@ -169,6 +183,20 @@ def build_repository_context(
         repository_context_id=_repository_context_id(binding, ordered),
         binding=binding,
         observations=ordered,
+    )
+
+
+def build_workspace_bound_task_execution_request(
+    request: TaskExecutionRequest,
+    workspace_binding: WorkspaceBinding,
+    repository_context: RepositoryContext,
+) -> WorkspaceBoundTaskExecutionRequest:
+    """Bind an unchanged task request to exact repository evidence."""
+
+    return WorkspaceBoundTaskExecutionRequest(
+        request=request,
+        workspace_binding=workspace_binding,
+        repository_context=repository_context,
     )
 
 

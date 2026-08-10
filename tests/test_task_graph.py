@@ -10,6 +10,7 @@ from agentic_sdlc.requirement_spec import build_approved_requirement_spec
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
+    TaskMaterializationPolicy,
     TaskGraphValidationError,
     TaskType,
     normalize_and_validate_task_graph,
@@ -52,12 +53,16 @@ def _task(
     acceptance_refs: list[str] | None = None,
     risk_refs: list[str] | None = None,
     ambiguity_refs: list[str] | None = None,
+    materialization_policy: TaskMaterializationPolicy = (
+        TaskMaterializationPolicy.FORBIDDEN
+    ),
 ) -> ProposedTask:
     return ProposedTask(
         key=key,
         title=key.replace("_", " ").title(),
         description=f"Produce the {key} engineering definition.",
         task_type=TaskType.DESIGN,
+        materialization_policy=materialization_policy,
         depends_on=depends_on if depends_on is not None else [],
         requirement_refs=(
             requirement_refs
@@ -186,6 +191,10 @@ def test_normalization_assigns_task_ids_and_remaps_dependencies() -> None:
     assert [task.task_id for task in graph.tasks] == ["TASK-001", "TASK-002"]
     assert graph.tasks[1].depends_on == ("TASK-001",)
     assert graph.tasks[0].source_key == "define_api"
+    assert (
+        graph.tasks[0].materialization_policy
+        is TaskMaterializationPolicy.FORBIDDEN
+    )
     assert graph.tasks[0].lineage_id
     assert graph.graph_id.startswith("GRAPH-")
     assert graph.requirement_spec_id == _spec().spec_id
@@ -193,6 +202,52 @@ def test_normalization_assigns_task_ids_and_remaps_dependencies() -> None:
     assert semantics.execution_layers == (("TASK-001",), ("TASK-002",))
     assert semantics.entry_ready_tasks == ("TASK-001",)
     assert semantics.exit_predecessor_tasks == ("TASK-002",)
+
+
+def test_materialization_policy_participates_in_graph_identity() -> None:
+    spec = _spec()
+    forbidden, _ = normalize_and_validate_task_graph(
+        _proposal(
+            _task(
+                "same_semantic_task",
+                materialization_policy=TaskMaterializationPolicy.FORBIDDEN,
+            )
+        ),
+        spec,
+        version=1,
+        created_at=FIXED_TIME,
+    )
+    required, _ = normalize_and_validate_task_graph(
+        _proposal(
+            _task(
+                "same_semantic_task",
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            )
+        ),
+        spec,
+        version=1,
+        created_at=FIXED_TIME,
+    )
+
+    assert forbidden.tasks[0].task_type is required.tasks[0].task_type
+    assert (
+        forbidden.tasks[0].materialization_policy
+        is TaskMaterializationPolicy.FORBIDDEN
+    )
+    assert (
+        required.tasks[0].materialization_policy
+        is TaskMaterializationPolicy.REQUIRED
+    )
+    assert forbidden.content_hash != required.content_hash
+    assert forbidden.graph_id != required.graph_id
+
+
+def test_proposed_task_requires_materialization_policy_from_planner_schema() -> None:
+    proposal = _task("explicit_policy").model_dump(mode="json")
+    proposal.pop("materialization_policy")
+
+    with raises(ValidationError):
+        ProposedTask.model_validate(proposal)
 
 
 def test_task_graph_version_has_unique_identity_and_stable_lineage() -> None:

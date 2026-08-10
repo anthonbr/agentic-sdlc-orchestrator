@@ -165,9 +165,10 @@ Initial validation checks correlation, required output presence, nonblank logica
 names and contents, canonical artifact count, provenance, identity/hash integrity,
 and output correspondence. V0.4 `expected_outputs` values are free-form descriptive
 obligations, so this slice requires at least one output when obligations exist but
-does not claim semantic one-to-one matching. A `SOURCE` artifact remains data only;
-it is not written to the repository. No filesystem or shell execution exists in
-this slice.
+does not claim semantic one-to-one matching. Every engineering artifact remains
+semantic data unless a separate validated materialization intent proposes it as
+desired repository state; artifact type and logical name confer no filesystem
+authority.
 
 ### Target-workspace desired-state contracts
 
@@ -178,22 +179,24 @@ snapshot identity, and canonically ordered repository-relative file hashes. A
 snapshot may describe an empty greenfield repository or an existing brownfield
 repository; constructing one performs no filesystem reads.
 
-For a validated canonical `SOURCE` artifact, `logical_name` is interpreted as a
-candidate repository-relative POSIX path and `content` as the complete desired file
-contents. Trusted application code validates the path and derives `CREATE`,
-`MODIFY`, or `NO_CHANGE` by comparing the desired-content SHA-256 with the bound
-snapshot. The executor cannot choose an operation, preimage, workspace identity, or
-change-set identity. An immutable `WorkspaceChangeSet` preserves task-attempt and
-artifact provenance, and a separate `WorkspaceChangeSetValidationResult` checks
-lineage, policy, hashes, operation derivation, ordering, and optimistic preimages.
-`TaskExecutionValidationResult` retains its distinct executor/artifact-validation
-responsibility.
+A validated `ArtifactMaterializationIntent` maps one canonical artifact to one
+repository-relative POSIX path and treats that artifact's content as the complete
+desired file contents. Artifact semantic type is orthogonal to materialization, and
+`logical_name` remains descriptive metadata rather than a destination. Trusted
+application code validates the intent and derives `CREATE`, `MODIFY`, or
+`NO_CHANGE` by comparing the desired-content SHA-256 with the bound snapshot. The
+executor cannot choose an operation, preimage, workspace identity, or change-set
+identity. An immutable `WorkspaceChangeSet` preserves task-attempt, materialization
+validation, and artifact provenance, while `WorkspaceChangeSetValidationResult`
+checks lineage, intent correspondence, hashes, operation derivation, ordering, and
+optimistic preimages. `TaskExecutionValidationResult` retains its distinct
+executor/artifact-validation responsibility.
 
 The initial path policy rejects absolute and drive-qualified paths, backslashes,
 NULs, empty/dot/traversal segments, duplicate destinations, `.git`, exact `.env`,
 `.venv`, and `venv`; `.env.example` remains legal. Logical validation cannot prove
-runtime symlink containment. The future filesystem backend must enforce containment
-against the real workspace immediately before mutation.
+runtime symlink containment. The isolated runtime below enforces that separate
+containment check against the real workspace immediately before mutation.
 
 Parallel change sets remain isolated desired-state records. Same-path proposals are
 sorted and reported deterministically: two `NO_CHANGE` observations are compatible,
@@ -233,9 +236,9 @@ After whole-change-set preflight, changes are applied in canonical path order.
 `CREATE` uses exclusive creation beneath safely created and transaction-tracked
 parents; `MODIFY` rechecks its preimage, preserves prior mode bits, and uses a
 same-directory temporary file plus atomic replacement; `NO_CHANGE` performs no
-write and only verifies state. SOURCE content remains complete desired file data,
-and neither the LLM nor `TaskExecutor` can claim an operation occurred or assign a
-mutation outcome.
+write and only verifies state. Materialized artifact content remains complete
+desired file data, and neither the LLM nor `TaskExecutor` can claim an operation
+occurred or assign a mutation outcome.
 
 Internal MODIFY staging files are transaction-owned effects. A failed staging
 operation is a clean rejection only after staging-file removal and absence are
@@ -271,24 +274,34 @@ automatic cleanup, TaskGraph settlement integration, filesystem retry, concurren
 filesystem mutation, Git/shell operation, generated-code execution, or promotion
 into an authoritative repository exists yet.
 
-### Governed task-to-workspace integration contracts
+### Governed task-to-workspace integration groundwork
 
-The pure, immutable contracts in `workspace_integration_contracts.py` establish
-vocabulary for a later governed integration layer without connecting task execution
-to filesystem authority. A `WorkspaceBinding` identifies the exact workspace and
-snapshot against which an attempt reasoned. A bounded `RepositoryContext` records a
-canonical projection of exact existing-file contents and hashes or explicit
-nonexistence observations; it neither reads nor mutates a workspace.
+Every proposed and canonical task carries an explicit human-approved
+`materialization_policy`: `FORBIDDEN`, `ALLOWED`, or `REQUIRED`. The planner proposes
+that boundary from task semantics rather than task type. REQUIRED means at least one
+valid desired repository-file postcondition is eventually necessary; a verified
+`NO_CHANGE` may satisfy it. The existing TaskGraph approval gate remains the source
+of human authority for this policy.
 
-`ArtifactMaterializationIntent` separately proposes that one canonical engineering
-artifact is the complete desired content for one legal repository-relative regular
-file. Materialization is orthogonal to the artifact's semantic type, confers no
-authority, and carries no operation: trusted workspace logic must still derive
-`CREATE`, `MODIFY`, or `NO_CHANGE`. Finite task materialization policy, task-attempt
-exit disposition, and workspace-integrity vocabularies are also defined for future
-approval and settlement rules. No repository-context provider, governed workspace
-session, wave reconciliation, scheduler transition, task settlement, or automatic
-mutation is implemented by this checkpoint.
+Application code can establish an immutable `GovernedWorkspaceSession` from a
+factory-created `IsolatedWorkspace`. Its baseline and authoritative snapshot IDs
+initially identify the same real snapshot and integrity begins `VERIFIED`; this
+slice does not advance sessions after mutation. A read-only provider accepts only
+explicit repository-relative paths and produces a bounded canonical
+`RepositoryContext` containing exact UTF-8 file contents and hashes or explicit
+nonexistence. It rejects binary requested content, identity mismatch, symlinks,
+unverified integrity, and live drift before binding evidence to the authoritative
+snapshot.
+
+`WorkspaceBoundTaskExecutionRequest` strictly combines an unchanged existing task
+request with one matching `WorkspaceBinding` and `RepositoryContext`, without
+putting nullable workspace fields on today's scheduler request. Separate immutable
+materialization validation proves task policy, canonical artifact correlation,
+unique artifact/path intent mapping, and lineage before generic change-set
+derivation. Materialization remains only a proposal and confers no filesystem
+capability. The current TaskGraph/LangGraph scheduler still uses
+`TaskExecutionRequest`, does not build repository context, does not reconcile
+parallel change sets, and cannot call workspace mutation automatically.
 
 ### Bounded LLM task-executor adapter
 
@@ -450,7 +463,8 @@ lineage UUID connects deliberately related versions.
 
 The task planner receives only this approved specification. It may propose task
 titles, descriptions, types, temporary keys, dependencies, traceability references,
-and expected outputs. It cannot assign `TASK-###`, graph IDs, lineage IDs,
+expected outputs, and an explicit semantic materialization policy. It cannot assign
+`TASK-###`, graph IDs, lineage IDs,
 timestamps, hashes, versions, layers, ENTRY/EXIT tasks, approval state, or execution
 state.
 
@@ -563,9 +577,11 @@ thread-safe fakes to prove true two-task overlap, the concurrency cap, canonical
 evidence ordering despite reversed completion, fan-out/fan-in dependency flow,
 bounded recovery, terminal-peer settlement, and quiescent safe stop through actual
 LangGraph routing. Workspace-contract tests cover deterministic logical snapshots,
-SOURCE desired-state interpretation, conservative path policy, derived operations,
-tamper detection, optimistic preimages, and order-independent parallel conflict
-evidence without filesystem I/O. Workspace-runtime and mutation tests exercise real
+artifact-independent materialization intents, conservative path policy, derived
+operations, tamper detection, optimistic preimages, and order-independent parallel
+conflict evidence without filesystem I/O. Integration tests cover governed session
+establishment, bounded exact repository context, drift/binary rejection, and strict
+request binding. Workspace-runtime and mutation tests exercise real
 isolated files, non-following snapshots, runtime containment, targeted preimages,
 exclusive creation, atomic mode-preserving replacement, postimage verification,
 fault-injected rollback, and explicit rollback-failure evidence.

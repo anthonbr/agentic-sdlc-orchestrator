@@ -12,7 +12,11 @@ from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifactType,
     TaskExecutionValidationResult,
 )
+from agentic_sdlc.task_graph import Task, TaskMaterializationPolicy, TaskType
 from agentic_sdlc.workspace_contracts import (
+    ArtifactMaterializationIntent,
+    ArtifactMaterializationIssueCode,
+    ArtifactMaterializationValidationResult,
     WorkspaceChangeOperation,
     WorkspaceChangeSet,
     WorkspaceChangeSetIssueCode,
@@ -24,6 +28,7 @@ from agentic_sdlc.workspace_contracts import (
     build_workspace_change_set,
     build_workspace_snapshot,
     normalize_repository_path,
+    validate_artifact_materialization,
     validate_workspace_change_set,
     validate_workspace_change_set_preimages,
     workspace_change_set_identity_is_valid,
@@ -89,13 +94,89 @@ def _state(path: str, content: str) -> WorkspaceFileState:
     )
 
 
+def _task(
+    artifact: EngineeringArtifact,
+    policy: TaskMaterializationPolicy = TaskMaterializationPolicy.REQUIRED,
+) -> Task:
+    return Task(
+        task_id=artifact.task_id,
+        lineage_id=f"task-lineage-{artifact.task_id}",
+        source_key=artifact.task_id.casefold().replace("-", "_"),
+        title="Materialize desired repository state",
+        description="Propose complete desired repository file contents.",
+        task_type=TaskType.IMPLEMENTATION,
+        materialization_policy=policy,
+        depends_on=(),
+        requirement_refs=artifact.requirement_refs,
+        acceptance_criteria_refs=artifact.acceptance_criteria_refs,
+        risk_refs=artifact.risk_refs,
+        ambiguity_refs=artifact.ambiguity_refs,
+        expected_outputs=("desired repository state",),
+    )
+
+
+def _intents(
+    artifacts: tuple[EngineeringArtifact, ...],
+) -> tuple[ArtifactMaterializationIntent, ...]:
+    return tuple(
+        ArtifactMaterializationIntent(
+            artifact_id=artifact.artifact_id,
+            target_path=artifact.logical_name,
+        )
+        for artifact in artifacts
+    )
+
+
+def _materialization_validation(
+    validation: TaskExecutionValidationResult,
+    artifacts: tuple[EngineeringArtifact, ...],
+    intents: tuple[ArtifactMaterializationIntent, ...] | None = None,
+    *,
+    policy: TaskMaterializationPolicy = TaskMaterializationPolicy.REQUIRED,
+) -> ArtifactMaterializationValidationResult:
+    return validate_artifact_materialization(
+        _task(artifacts[0], policy),
+        validation,
+        artifacts,
+        _intents(artifacts) if intents is None else intents,
+    )
+
+
+def _build_change_set(
+    snapshot: WorkspaceSnapshot,
+    validation: TaskExecutionValidationResult,
+    artifacts: tuple[EngineeringArtifact, ...],
+    intents: tuple[ArtifactMaterializationIntent, ...] | None = None,
+) -> WorkspaceChangeSet:
+    materialization = _materialization_validation(
+        validation, artifacts, intents
+    )
+    return build_workspace_change_set(
+        snapshot, validation, artifacts, materialization
+    )
+
+
+def _validate_change_set(
+    change_set: WorkspaceChangeSet,
+    snapshot: WorkspaceSnapshot,
+    artifacts: tuple[EngineeringArtifact, ...],
+    intents: tuple[ArtifactMaterializationIntent, ...] | None = None,
+) -> WorkspaceChangeSetValidationResult:
+    materialization = _materialization_validation(
+        _validation(*artifacts), artifacts, intents
+    )
+    return validate_workspace_change_set(
+        change_set, snapshot, artifacts, materialization
+    )
+
+
 def _change_set(
     snapshot_files: tuple[WorkspaceFileState, ...] = (),
     *artifacts: EngineeringArtifact,
 ) -> tuple[WorkspaceChangeSet, WorkspaceSnapshot]:
     selected = artifacts or (_artifact(),)
     snapshot = build_workspace_snapshot("WORKSPACE-001", snapshot_files)
-    change_set = build_workspace_change_set(
+    change_set = _build_change_set(
         snapshot,
         _validation(*selected),
         selected,
@@ -106,6 +187,12 @@ def _change_set(
 def _codes(
     result: WorkspaceChangeSetValidationResult,
 ) -> set[WorkspaceChangeSetIssueCode]:
+    return {issue.code for issue in result.issues}
+
+
+def _materialization_codes(
+    result: ArtifactMaterializationValidationResult,
+) -> set[ArtifactMaterializationIssueCode]:
     return {issue.code for issue in result.issues}
 
 
@@ -189,29 +276,221 @@ def test_snapshot_can_describe_protected_state_without_authorizing_mutation() ->
     )
 
     assert snapshot.file_state(".env") is not None
-    with raises(WorkspaceContractError, match="Protected"):
+    with raises(ValidationError, match="Protected"):
         artifact = _artifact(path=".env")
-        build_workspace_change_set(snapshot, _validation(artifact), (artifact,))
+        _build_change_set(snapshot, _validation(artifact), (artifact,))
 
 
-def test_source_artifact_becomes_complete_desired_file_with_provenance() -> None:
-    artifact = _artifact()
-    change_set, _ = _change_set((), artifact)
+def test_materialization_intent_defines_target_and_preserves_provenance() -> None:
+    artifact = _artifact(path="semantic implementation output")
+    snapshot = build_workspace_snapshot("WORKSPACE-001")
+    intent = ArtifactMaterializationIntent(
+        artifact_id=artifact.artifact_id,
+        target_path="src/url_shortener/service.py",
+    )
+    change_set = _build_change_set(
+        snapshot, _validation(artifact), (artifact,), (intent,)
+    )
     change = change_set.file_changes[0]
 
-    assert change.path == artifact.logical_name
+    assert change.path == intent.target_path
+    assert change.path != artifact.logical_name
     assert change.desired_content == artifact.content
     assert change.artifact_id == artifact.artifact_id
     assert change.artifact_lineage_id == artifact.lineage_id
     assert change.desired_content_hash == workspace_file_content_hash(artifact.content)
+    assert change_set.materialized_artifact_ids == (artifact.artifact_id,)
+    assert "source_artifact_ids" not in change_set.model_dump()
 
 
-def test_non_source_artifact_cannot_become_a_file_change() -> None:
-    artifact = _artifact(artifact_type=EngineeringArtifactType.DESIGN)
+@mark.parametrize(
+    ("artifact_type", "target_path"),
+    (
+        (EngineeringArtifactType.TEST, "tests/test_api.py"),
+        (EngineeringArtifactType.DOCUMENTATION, "README.md"),
+        (EngineeringArtifactType.SCHEMA, "openapi.yaml"),
+    ),
+)
+def test_semantic_artifact_type_does_not_control_materialization(
+    artifact_type: EngineeringArtifactType,
+    target_path: str,
+) -> None:
+    artifact = _artifact(
+        path=f"semantic {artifact_type.value.casefold()} output",
+        artifact_type=artifact_type,
+    )
     snapshot = build_workspace_snapshot("WORKSPACE-001")
+    intent = ArtifactMaterializationIntent(
+        artifact_id=artifact.artifact_id,
+        target_path=target_path,
+    )
 
-    with raises(WorkspaceContractError, match="SOURCE"):
-        build_workspace_change_set(snapshot, _validation(artifact), (artifact,))
+    change_set = _build_change_set(
+        snapshot, _validation(artifact), (artifact,), (intent,)
+    )
+
+    assert change_set.file_changes[0].artifact_id == artifact.artifact_id
+    assert change_set.file_changes[0].path == target_path
+
+
+@mark.parametrize(
+    ("policy", "has_intent", "expected_passed"),
+    (
+        (TaskMaterializationPolicy.FORBIDDEN, False, True),
+        (TaskMaterializationPolicy.FORBIDDEN, True, False),
+        (TaskMaterializationPolicy.ALLOWED, False, True),
+        (TaskMaterializationPolicy.ALLOWED, True, True),
+        (TaskMaterializationPolicy.REQUIRED, False, False),
+        (TaskMaterializationPolicy.REQUIRED, True, True),
+    ),
+)
+def test_materialization_validation_enforces_approved_task_policy(
+    policy: TaskMaterializationPolicy,
+    has_intent: bool,
+    expected_passed: bool,
+) -> None:
+    artifact = _artifact(artifact_type=EngineeringArtifactType.TEST)
+    intents = _intents((artifact,)) if has_intent else ()
+
+    result = _materialization_validation(
+        _validation(artifact), (artifact,), intents, policy=policy
+    )
+
+    assert result.passed is expected_passed
+    assert result.policy is policy
+    if not expected_passed:
+        assert ArtifactMaterializationIssueCode.POLICY in _materialization_codes(
+            result
+        )
+
+
+def test_materialization_rejects_unknown_duplicate_artifact_and_path() -> None:
+    first = _artifact(path="semantic first")
+    second = _artifact(
+        path="semantic second",
+        artifact_id="ARTIFACT-002",
+        lineage_id="artifact-lineage-002",
+        output_index=2,
+    )
+    intents = (
+        ArtifactMaterializationIntent(
+            artifact_id=first.artifact_id, target_path="src/shared.py"
+        ),
+        ArtifactMaterializationIntent(
+            artifact_id=first.artifact_id, target_path="tests/shared.py"
+        ),
+        ArtifactMaterializationIntent(
+            artifact_id=second.artifact_id, target_path="src/shared.py"
+        ),
+        ArtifactMaterializationIntent(
+            artifact_id="ARTIFACT-MISSING", target_path="missing.py"
+        ),
+    )
+
+    result = _materialization_validation(
+        _validation(first, second), (first, second), intents
+    )
+
+    assert result.passed is False
+    assert _materialization_codes(result) == {
+        ArtifactMaterializationIssueCode.ARTIFACT_REFERENCE,
+        ArtifactMaterializationIssueCode.DUPLICATE_ARTIFACT,
+        ArtifactMaterializationIssueCode.DUPLICATE_PATH,
+    }
+
+
+def test_materialization_validation_requires_passed_exact_artifact_evidence() -> None:
+    first = _artifact(path="src/first.py")
+    second = _artifact(
+        path="src/second.py",
+        artifact_id="ARTIFACT-002",
+        lineage_id="artifact-lineage-002",
+        output_index=2,
+    )
+    validation = _validation(first, second)
+
+    failed = validate_artifact_materialization(
+        _task(first),
+        validation.model_copy(update={"passed": False, "errors": ("failed",)}),
+        (first, second),
+        _intents((first, second)),
+    )
+    reordered = validate_artifact_materialization(
+        _task(first),
+        validation,
+        (second, first),
+        _intents((first, second)),
+    )
+
+    assert ArtifactMaterializationIssueCode.TASK_VALIDATION in (
+        _materialization_codes(failed)
+    )
+    assert ArtifactMaterializationIssueCode.ARTIFACT_SET in (
+        _materialization_codes(reordered)
+    )
+
+
+def test_materialization_validation_rejects_artifact_lineage_mismatch() -> None:
+    artifact = _artifact()
+    mismatched = artifact.model_copy(update={"task_id": "TASK-OTHER"})
+
+    result = validate_artifact_materialization(
+        _task(artifact),
+        _validation(artifact),
+        (mismatched,),
+        _intents((artifact,)),
+    )
+
+    assert ArtifactMaterializationIssueCode.LINEAGE in _materialization_codes(result)
+
+
+def test_source_artifact_without_intent_is_evidence_only_when_allowed() -> None:
+    artifact = _artifact(artifact_type=EngineeringArtifactType.SOURCE)
+    materialization = _materialization_validation(
+        _validation(artifact),
+        (artifact,),
+        (),
+        policy=TaskMaterializationPolicy.ALLOWED,
+    )
+
+    assert materialization.passed is True
+    assert materialization.intents == ()
+    with raises(WorkspaceContractError, match="at least one validated intent"):
+        build_workspace_change_set(
+            build_workspace_snapshot("WORKSPACE-001"),
+            _validation(artifact),
+            (artifact,),
+            materialization,
+        )
+
+
+def test_change_set_validation_rejects_tampered_materialization_evidence() -> None:
+    artifact = _artifact(path="semantic output")
+    validation = _validation(artifact)
+    intent = ArtifactMaterializationIntent(
+        artifact_id=artifact.artifact_id, target_path="src/service.py"
+    )
+    materialization = _materialization_validation(
+        validation, (artifact,), (intent,)
+    )
+    snapshot = build_workspace_snapshot("WORKSPACE-001")
+    change_set = build_workspace_change_set(
+        snapshot, validation, (artifact,), materialization
+    )
+    tampered = materialization.model_copy(
+        update={
+            "intents": (
+                intent.model_copy(update={"target_path": "src/other.py"}),
+            )
+        }
+    )
+
+    result = validate_workspace_change_set(
+        change_set, snapshot, (artifact,), tampered
+    )
+
+    assert result.passed is False
+    assert WorkspaceChangeSetIssueCode.MATERIALIZATION_EVIDENCE in _codes(result)
 
 
 def test_change_set_requires_passed_exact_artifact_validation() -> None:
@@ -219,11 +498,11 @@ def test_change_set_requires_passed_exact_artifact_validation() -> None:
     snapshot = build_workspace_snapshot("WORKSPACE-001")
 
     with raises(WorkspaceContractError, match="passed"):
-        build_workspace_change_set(
+        _build_change_set(
             snapshot, _validation(artifact, passed=False), (artifact,)
         )
-    with raises(WorkspaceContractError, match="exactly match"):
-        build_workspace_change_set(
+    with raises(WorkspaceContractError, match="passed materialization"):
+        _build_change_set(
             snapshot,
             _validation(artifact),
             (artifact, _artifact(artifact_id="ARTIFACT-EXTRA", output_index=2)),
@@ -254,7 +533,7 @@ def test_operation_derivation_create_modify_and_no_change() -> None:
         ),
     )
 
-    change_set = build_workspace_change_set(
+    change_set = _build_change_set(
         snapshot,
         _validation(create, modify, unchanged),
         (create, modify, unchanged),
@@ -284,8 +563,8 @@ def test_duplicate_source_destination_is_rejected() -> None:
     )
     snapshot = build_workspace_snapshot("WORKSPACE-001")
 
-    with raises(WorkspaceContractError, match="duplicate"):
-        build_workspace_change_set(
+    with raises(WorkspaceContractError, match="passed materialization"):
+        _build_change_set(
             snapshot, _validation(first, second), (first, second)
         )
 
@@ -301,8 +580,12 @@ def test_change_set_identity_and_order_ignore_artifact_iterable_order() -> None:
     snapshot = build_workspace_snapshot("WORKSPACE-001")
     validation = _validation(source_b, source_a)
 
-    first = build_workspace_change_set(snapshot, validation, (source_b, source_a))
-    second = build_workspace_change_set(snapshot, validation, (source_a, source_b))
+    artifacts = (source_b, source_a)
+    intents = _intents(artifacts)
+    first = _build_change_set(snapshot, validation, artifacts, intents)
+    second = _build_change_set(
+        snapshot, validation, artifacts, tuple(reversed(intents))
+    )
 
     assert first == second
     assert tuple(change.path for change in first.file_changes) == (
@@ -315,8 +598,8 @@ def test_valid_change_set_passes_deterministically() -> None:
     artifact = _artifact()
     change_set, snapshot = _change_set((), artifact)
 
-    first = validate_workspace_change_set(change_set, snapshot, (artifact,))
-    second = validate_workspace_change_set(change_set, snapshot, (artifact,))
+    first = _validate_change_set(change_set, snapshot, (artifact,))
+    second = _validate_change_set(change_set, snapshot, (artifact,))
 
     assert first.passed is True
     assert first.issues == ()
@@ -329,7 +612,7 @@ def test_change_set_validation_rejects_noncanonical_snapshot_identity() -> None:
     change_set, snapshot = _change_set((), artifact)
     tampered_snapshot = snapshot.model_copy(update={"snapshot_id": "TAMPERED"})
 
-    result = validate_workspace_change_set(
+    result = _validate_change_set(
         change_set, tampered_snapshot, (artifact,)
     )
 
@@ -347,18 +630,16 @@ def test_duplicate_artifact_validation_is_independent_of_input_order() -> None:
         }
     )
 
-    forward = validate_workspace_change_set(
+    forward = _validate_change_set(
         change_set, snapshot, (artifact, conflicting_duplicate)
     )
-    reverse = validate_workspace_change_set(
+    reverse = _validate_change_set(
         change_set, snapshot, (conflicting_duplicate, artifact)
     )
 
     assert forward == reverse
     assert forward.passed is False
-    assert len(forward.issues) == 1
-    assert forward.issues[0].code is WorkspaceChangeSetIssueCode.ARTIFACT_REFERENCE
-    assert "ambiguous" in forward.issues[0].detail
+    assert WorkspaceChangeSetIssueCode.ARTIFACT_REFERENCE in _codes(forward)
 
 
 @mark.parametrize(
@@ -413,7 +694,7 @@ def test_change_set_validation_detects_tampering(
             update={"file_changes": (change.model_copy(update=updates),)}
         )
 
-    result = validate_workspace_change_set(
+    result = _validate_change_set(
         change_set, snapshot, (supplied_artifact,)
     )
 
@@ -423,19 +704,26 @@ def test_change_set_validation_detects_tampering(
         assert workspace_change_set_identity_is_valid(change_set) is False
 
 
-def test_change_set_validation_detects_missing_and_non_source_artifacts() -> None:
+def test_change_set_validation_detects_missing_and_tampered_artifacts() -> None:
     artifact = _artifact()
     change_set, snapshot = _change_set((), artifact)
+    execution_validation = _validation(artifact)
+    materialization = _materialization_validation(
+        execution_validation, (artifact,)
+    )
 
-    missing = validate_workspace_change_set(change_set, snapshot, ())
-    wrong_type = validate_workspace_change_set(
+    missing = validate_workspace_change_set(
+        change_set, snapshot, (), materialization
+    )
+    tampered = validate_workspace_change_set(
         change_set,
         snapshot,
         (artifact.model_copy(update={"artifact_type": EngineeringArtifactType.TEST}),),
+        materialization,
     )
 
     assert WorkspaceChangeSetIssueCode.ARTIFACT_REFERENCE in _codes(missing)
-    assert WorkspaceChangeSetIssueCode.ARTIFACT_TYPE in _codes(wrong_type)
+    assert WorkspaceChangeSetIssueCode.ARTIFACT_REFERENCE in _codes(tampered)
 
 
 def test_preimage_validation_accepts_matching_state_and_rejects_stale_modify() -> None:
@@ -529,8 +817,8 @@ def test_parallel_disjoint_paths_do_not_conflict() -> None:
         request_id="REQUEST-002",
         attempt_id="ATTEMPT-002",
     )
-    change_a = build_workspace_change_set(snapshot, _validation(first), (first,))
-    change_b = build_workspace_change_set(snapshot, _validation(second), (second,))
+    change_a = _build_change_set(snapshot, _validation(first), (first,))
+    change_b = _build_change_set(snapshot, _validation(second), (second,))
 
     analysis = analyze_workspace_change_set_conflicts((change_a, change_b))
 
@@ -555,8 +843,8 @@ def test_parallel_same_path_mutations_conflict_even_when_identical(
         request_id="REQUEST-002",
         attempt_id="ATTEMPT-002",
     )
-    change_a = build_workspace_change_set(snapshot, _validation(first), (first,))
-    change_b = build_workspace_change_set(snapshot, _validation(second), (second,))
+    change_a = _build_change_set(snapshot, _validation(first), (first,))
+    change_b = _build_change_set(snapshot, _validation(second), (second,))
 
     analysis = analyze_workspace_change_set_conflicts((change_b, change_a))
 
@@ -579,8 +867,8 @@ def test_parallel_create_create_and_structural_create_modify_conflict() -> None:
         request_id="REQUEST-002",
         attempt_id="ATTEMPT-002",
     )
-    change_a = build_workspace_change_set(snapshot, _validation(first), (first,))
-    change_b = build_workspace_change_set(snapshot, _validation(second), (second,))
+    change_a = _build_change_set(snapshot, _validation(first), (first,))
+    change_b = _build_change_set(snapshot, _validation(second), (second,))
     altered = change_b.model_copy(
         update={
             "file_changes": (
@@ -612,8 +900,8 @@ def test_no_change_pair_is_compatible_but_mutation_overlap_fails_closed() -> Non
         request_id="REQUEST-002",
         attempt_id="ATTEMPT-002",
     )
-    change_a = build_workspace_change_set(snapshot, _validation(first), (first,))
-    change_b = build_workspace_change_set(snapshot, _validation(second), (second,))
+    change_a = _build_change_set(snapshot, _validation(first), (first,))
+    change_b = _build_change_set(snapshot, _validation(second), (second,))
     mutation = change_b.model_copy(
         update={
             "file_changes": (
@@ -644,7 +932,7 @@ def test_conflict_evidence_is_independent_of_input_order() -> None:
         for index in (1, 2, 3)
     )
     change_sets = tuple(
-        build_workspace_change_set(snapshot, _validation(item), (item,))
+        _build_change_set(snapshot, _validation(item), (item,))
         for item in artifacts
     )
 

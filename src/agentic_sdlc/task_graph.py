@@ -28,6 +28,14 @@ class TaskType(StrEnum):
     RELEASE = "RELEASE"
 
 
+class TaskMaterializationPolicy(StrEnum):
+    """Approved semantic permission for one task to propose materialization."""
+
+    FORBIDDEN = "FORBIDDEN"
+    ALLOWED = "ALLOWED"
+    REQUIRED = "REQUIRED"
+
+
 class ProposedTask(BaseModel):
     """Semantic task proposed by the LLM using temporary keys."""
 
@@ -37,6 +45,7 @@ class ProposedTask(BaseModel):
     title: str = Field(min_length=1)
     description: str = Field(min_length=1)
     task_type: TaskType
+    materialization_policy: TaskMaterializationPolicy
     depends_on: list[str]
     requirement_refs: list[str]
     acceptance_criteria_refs: list[str]
@@ -79,6 +88,7 @@ class Task(BaseModel):
     title: str
     description: str
     task_type: TaskType
+    materialization_policy: TaskMaterializationPolicy
     depends_on: tuple[str, ...]
     requirement_refs: tuple[str, ...]
     acceptance_criteria_refs: tuple[str, ...]
@@ -158,6 +168,7 @@ def normalize_and_validate_task_graph(
             title=proposed.title,
             description=proposed.description,
             task_type=proposed.task_type,
+            materialization_policy=proposed.materialization_policy,
             depends_on=tuple(key_to_id[key] for key in proposed.depends_on),
             requirement_refs=tuple(proposed.requirement_refs),
             acceptance_criteria_refs=tuple(proposed.acceptance_criteria_refs),

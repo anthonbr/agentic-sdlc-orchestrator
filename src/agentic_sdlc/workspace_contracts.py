@@ -1,9 +1,9 @@
 """Deterministic contracts for proposed target-workspace desired state.
 
 This module is deliberately free of filesystem I/O.  It interprets validated
-canonical SOURCE artifacts against an explicitly supplied logical snapshot; a
-future mutator must separately enforce real-filesystem containment (including
-symlink containment) immediately before applying any change.
+artifact materialization intents against an explicitly supplied logical snapshot;
+the mutator separately enforces real-filesystem containment (including symlink
+containment) immediately before applying any change.
 """
 
 from __future__ import annotations
@@ -18,9 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifact,
-    EngineeringArtifactType,
     TaskExecutionValidationResult,
 )
+from agentic_sdlc.task_graph import Task, TaskMaterializationPolicy
 
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -30,6 +30,61 @@ _PROTECTED_DIRECTORY_NAMES = frozenset({".git", ".venv", "venv"})
 
 class WorkspaceContractError(ValueError):
     """Raised when authoritative workspace contracts cannot be constructed."""
+
+
+class ArtifactMaterializationIntent(BaseModel):
+    """Proposal that one artifact is desired content for one regular-file path."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    artifact_id: str = Field(min_length=1)
+    target_path: str
+
+    @field_validator("target_path")
+    @classmethod
+    def validate_target_path(cls, value: str) -> str:
+        return normalize_repository_path(value)
+
+
+class ArtifactMaterializationIssueCode(StrEnum):
+    """Stable deterministic categories for materialization validation."""
+
+    TASK_VALIDATION = "TASK_VALIDATION"
+    ARTIFACT_SET = "ARTIFACT_SET"
+    ARTIFACT_REFERENCE = "ARTIFACT_REFERENCE"
+    DUPLICATE_ARTIFACT = "DUPLICATE_ARTIFACT"
+    DUPLICATE_PATH = "DUPLICATE_PATH"
+    PATH_POLICY = "PATH_POLICY"
+    LINEAGE = "LINEAGE"
+    POLICY = "POLICY"
+
+
+class ArtifactMaterializationValidationIssue(BaseModel):
+    """One machine-readable materialization-proposal validation issue."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    code: ArtifactMaterializationIssueCode
+    artifact_id: str | None
+    path: str | None
+    detail: str
+
+
+class ArtifactMaterializationValidationResult(BaseModel):
+    """Application judgment bound to exact artifacts, intents, and task policy."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    materialization_validation_id: str
+    task_id: str
+    request_id: str
+    attempt_id: str
+    policy: TaskMaterializationPolicy
+    artifact_ids: tuple[str, ...]
+    artifact_evidence_digests: tuple[str, ...]
+    intents: tuple[ArtifactMaterializationIntent, ...]
+    passed: bool
+    issues: tuple[ArtifactMaterializationValidationIssue, ...]
 
 
 class WorkspaceChangeOperation(StrEnum):
@@ -47,8 +102,8 @@ class WorkspaceChangeSetIssueCode(StrEnum):
     SNAPSHOT_ID = "SNAPSHOT_ID"
     CHANGE_SET_ID = "CHANGE_SET_ID"
     LINEAGE = "LINEAGE"
+    MATERIALIZATION_EVIDENCE = "MATERIALIZATION_EVIDENCE"
     ARTIFACT_REFERENCE = "ARTIFACT_REFERENCE"
-    ARTIFACT_TYPE = "ARTIFACT_TYPE"
     PROVENANCE = "PROVENANCE"
     PATH_POLICY = "PATH_POLICY"
     DUPLICATE_PATH = "DUPLICATE_PATH"
@@ -127,7 +182,7 @@ class WorkspaceFileChange(BaseModel):
 
 
 class WorkspaceChangeSet(BaseModel):
-    """Authoritative SOURCE desired state for one governed task attempt."""
+    """Authoritative materialized desired state for one governed task attempt."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -140,7 +195,8 @@ class WorkspaceChangeSet(BaseModel):
     request_id: str
     attempt_id: str
     attempt_number: int = Field(ge=1)
-    source_artifact_ids: tuple[str, ...] = Field(min_length=1)
+    materialization_validation_id: str
+    materialized_artifact_ids: tuple[str, ...] = Field(min_length=1)
     file_changes: tuple[WorkspaceFileChange, ...] = Field(min_length=1)
 
 
@@ -238,62 +294,202 @@ def build_workspace_snapshot(
     )
 
 
+def validate_artifact_materialization(
+    task: Task,
+    validation: TaskExecutionValidationResult,
+    artifacts: tuple[EngineeringArtifact, ...],
+    intents: tuple[ArtifactMaterializationIntent, ...] = (),
+) -> ArtifactMaterializationValidationResult:
+    """Validate exact artifact-to-path proposals against approved task policy."""
+
+    issues: list[ArtifactMaterializationValidationIssue] = []
+    if not validation.passed:
+        _add_materialization_issue(
+            issues,
+            ArtifactMaterializationIssueCode.TASK_VALIDATION,
+            "Task-execution validation did not pass.",
+        )
+
+    artifact_counts = Counter(artifact.artifact_id for artifact in artifacts)
+    duplicate_artifacts = {
+        artifact_id for artifact_id, count in artifact_counts.items() if count > 1
+    }
+    for artifact_id in sorted(duplicate_artifacts):
+        _add_materialization_issue(
+            issues,
+            ArtifactMaterializationIssueCode.ARTIFACT_SET,
+            f"Duplicate canonical artifact ID is ambiguous: {artifact_id}.",
+            artifact_id=artifact_id,
+        )
+    supplied_ids = tuple(artifact.artifact_id for artifact in artifacts)
+    if (
+        len(validation.artifact_ids) != len(set(validation.artifact_ids))
+        or supplied_ids != validation.artifact_ids
+    ):
+        _add_materialization_issue(
+            issues,
+            ArtifactMaterializationIssueCode.ARTIFACT_SET,
+            "Canonical artifacts do not exactly match validated artifact order.",
+        )
+
+    artifacts_by_id = {
+        artifact.artifact_id: artifact
+        for artifact in artifacts
+        if artifact.artifact_id not in duplicate_artifacts
+    }
+    for artifact in sorted(
+        artifacts_by_id.values(), key=lambda item: item.artifact_id
+    ):
+        if (
+            artifact.task_id,
+            artifact.request_id,
+            artifact.attempt_id,
+        ) != (task.task_id, validation.request_id, validation.attempt_id):
+            _add_materialization_issue(
+                issues,
+                ArtifactMaterializationIssueCode.LINEAGE,
+                "Canonical artifact lineage differs from task validation.",
+                artifact_id=artifact.artifact_id,
+            )
+    if validation.task_id != task.task_id:
+        _add_materialization_issue(
+            issues,
+            ArtifactMaterializationIssueCode.LINEAGE,
+            "Task-execution validation belongs to a different approved task.",
+        )
+
+    ordered_intents = tuple(
+        sorted(intents, key=lambda item: (item.target_path, item.artifact_id))
+    )
+    intent_artifact_counts = Counter(item.artifact_id for item in intents)
+    for artifact_id, count in sorted(intent_artifact_counts.items()):
+        if count > 1:
+            _add_materialization_issue(
+                issues,
+                ArtifactMaterializationIssueCode.DUPLICATE_ARTIFACT,
+                "One artifact may have at most one materialization intent.",
+                artifact_id=artifact_id,
+            )
+    intent_path_counts = Counter(item.target_path for item in intents)
+    for path, count in sorted(intent_path_counts.items()):
+        if count > 1:
+            _add_materialization_issue(
+                issues,
+                ArtifactMaterializationIssueCode.DUPLICATE_PATH,
+                "One task attempt may target a repository path at most once.",
+                path=path,
+            )
+    for intent in ordered_intents:
+        try:
+            canonical_path = normalize_repository_path(intent.target_path)
+        except (TypeError, WorkspaceContractError):
+            _add_materialization_issue(
+                issues,
+                ArtifactMaterializationIssueCode.PATH_POLICY,
+                "Materialization target violates repository path policy.",
+                artifact_id=intent.artifact_id,
+                path=str(intent.target_path),
+            )
+        else:
+            if canonical_path != intent.target_path:
+                _add_materialization_issue(
+                    issues,
+                    ArtifactMaterializationIssueCode.PATH_POLICY,
+                    "Materialization target is not canonical.",
+                    artifact_id=intent.artifact_id,
+                    path=intent.target_path,
+                )
+        if intent.artifact_id not in artifacts_by_id:
+            _add_materialization_issue(
+                issues,
+                ArtifactMaterializationIssueCode.ARTIFACT_REFERENCE,
+                "Materialization intent references no unambiguous canonical artifact.",
+                artifact_id=intent.artifact_id,
+                path=intent.target_path,
+            )
+
+    if task.materialization_policy is TaskMaterializationPolicy.FORBIDDEN and intents:
+        _add_materialization_issue(
+            issues,
+            ArtifactMaterializationIssueCode.POLICY,
+            "FORBIDDEN task policy requires zero materialization intents.",
+        )
+    if (
+        task.materialization_policy is TaskMaterializationPolicy.REQUIRED
+        and not intents
+    ):
+        _add_materialization_issue(
+            issues,
+            ArtifactMaterializationIssueCode.POLICY,
+            "REQUIRED task policy requires at least one materialization intent.",
+        )
+
+    canonical_issues = tuple(
+        sorted(
+            issues,
+            key=lambda item: (
+                item.code.value,
+                item.path or "",
+                item.artifact_id or "",
+                item.detail,
+            ),
+        )
+    )
+    payload = _materialization_validation_payload(
+        task_id=task.task_id,
+        request_id=validation.request_id,
+        attempt_id=validation.attempt_id,
+        policy=task.materialization_policy,
+        artifact_ids=validation.artifact_ids,
+        artifact_evidence_digests=tuple(
+            sorted(_artifact_evidence_digest(item) for item in artifacts)
+        ),
+        intents=ordered_intents,
+        passed=not canonical_issues,
+        issues=canonical_issues,
+    )
+    return ArtifactMaterializationValidationResult(
+        materialization_validation_id=_materialization_validation_id(payload),
+        **payload,
+    )
+
+
+def artifact_materialization_validation_identity_is_valid(
+    validation: ArtifactMaterializationValidationResult,
+) -> bool:
+    """Return whether materialization evidence still binds its exact contents."""
+
+    return validation.materialization_validation_id == _materialization_validation_id(
+        _materialization_validation_payload_from_result(validation)
+    )
+
+
 def build_workspace_change_set(
     snapshot: WorkspaceSnapshot,
     validation: TaskExecutionValidationResult,
     artifacts: tuple[EngineeringArtifact, ...],
+    materialization_validation: ArtifactMaterializationValidationResult,
 ) -> WorkspaceChangeSet:
-    """Convert validated SOURCE artifacts into authoritative desired file state.
-
-    Artifact iterable order is deliberately non-authoritative here.  Canonical
-    artifact identities retain their existing output ordinal, while file changes
-    and the change-set identity are ordered by normalized destination path.
-    """
+    """Convert validated materialization intents into authoritative desired state."""
 
     _require_valid_snapshot(snapshot)
-    if not validation.passed:
-        raise WorkspaceContractError(
-            "A workspace change set requires passed task-execution validation."
-        )
-    artifact_ids = tuple(artifact.artifact_id for artifact in artifacts)
-    if len(artifact_ids) != len(set(artifact_ids)):
-        raise WorkspaceContractError("Canonical artifact IDs must be unique.")
-    if (
-        len(validation.artifact_ids) != len(set(validation.artifact_ids))
-        or len(artifact_ids) != len(validation.artifact_ids)
-        or set(artifact_ids) != set(validation.artifact_ids)
-    ):
-        raise WorkspaceContractError(
-            "Artifacts must exactly match the validated canonical artifact set."
-        )
-
-    source_artifacts = tuple(
-        artifact
-        for artifact in artifacts
-        if artifact.artifact_type is EngineeringArtifactType.SOURCE
+    _require_valid_materialization_evidence(
+        validation, artifacts, materialization_validation
     )
-    if not source_artifacts:
-        raise WorkspaceContractError(
-            "A workspace change set requires at least one SOURCE artifact."
+    artifacts_by_id = {artifact.artifact_id: artifact for artifact in artifacts}
+    by_path = tuple(
+        (
+            intent.target_path,
+            artifacts_by_id[intent.artifact_id],
         )
-    _require_artifact_lineage(validation, artifacts)
-
-    by_path: list[tuple[str, EngineeringArtifact]] = []
-    for artifact in source_artifacts:
-        by_path.append((normalize_repository_path(artifact.logical_name), artifact))
-    by_path.sort(key=lambda item: item[0])
-    paths = tuple(path for path, _ in by_path)
-    if len(paths) != len(set(paths)):
-        raise WorkspaceContractError(
-            "SOURCE artifacts must not target duplicate canonical paths."
-        )
-
+        for intent in materialization_validation.intents
+    )
     changes = tuple(
         _derive_file_change(snapshot, path, artifact)
         for path, artifact in by_path
     )
     first = by_path[0][1]
-    source_ids = tuple(change.artifact_id for change in changes)
+    materialized_ids = tuple(change.artifact_id for change in changes)
     payload = _change_set_payload(
         workspace_id=snapshot.workspace_id,
         base_snapshot_id=snapshot.snapshot_id,
@@ -303,7 +499,10 @@ def build_workspace_change_set(
         request_id=first.request_id,
         attempt_id=first.attempt_id,
         attempt_number=first.attempt_number,
-        source_artifact_ids=source_ids,
+        materialization_validation_id=(
+            materialization_validation.materialization_validation_id
+        ),
+        materialized_artifact_ids=materialized_ids,
         file_changes=changes,
     )
     return WorkspaceChangeSet(
@@ -316,11 +515,15 @@ def validate_workspace_change_set(
     change_set: WorkspaceChangeSet,
     snapshot: WorkspaceSnapshot,
     artifacts: tuple[EngineeringArtifact, ...],
+    materialization_validation: ArtifactMaterializationValidationResult,
 ) -> WorkspaceChangeSetValidationResult:
-    """Validate lineage, provenance, hashes, operations, policy, and ordering."""
+    """Validate desired-state lineage against exact materialization evidence."""
 
     issues: list[WorkspaceChangeSetValidationIssue] = []
     _validate_snapshot_for_change_set(change_set, snapshot, issues)
+    _validate_materialization_evidence_for_change_set(
+        change_set, materialization_validation, issues
+    )
 
     artifact_id_counts = Counter(artifact.artifact_id for artifact in artifacts)
     duplicate_artifact_ids = {
@@ -340,6 +543,24 @@ def validate_workspace_change_set(
         for artifact in artifacts
         if artifact.artifact_id not in duplicate_artifact_ids
     }
+    if tuple(artifact.artifact_id for artifact in artifacts) != (
+        materialization_validation.artifact_ids
+    ):
+        _add_issue(
+            issues,
+            WorkspaceChangeSetIssueCode.ARTIFACT_REFERENCE,
+            None,
+            "Canonical artifacts do not match materialization evidence.",
+        )
+    if tuple(sorted(_artifact_evidence_digest(item) for item in artifacts)) != (
+        materialization_validation.artifact_evidence_digests
+    ):
+        _add_issue(
+            issues,
+            WorkspaceChangeSetIssueCode.ARTIFACT_REFERENCE,
+            None,
+            "Canonical artifact contents differ from materialization evidence.",
+        )
 
     changes = change_set.file_changes
     paths = tuple(change.path for change in changes)
@@ -358,41 +579,45 @@ def validate_workspace_change_set(
                 path,
                 "Canonical destination occurs more than once.",
             )
-    if change_set.source_artifact_ids != tuple(
+    if change_set.materialized_artifact_ids != tuple(
         change.artifact_id for change in changes
     ):
         _add_issue(
             issues,
             WorkspaceChangeSetIssueCode.ORDERING,
             None,
-            "SOURCE artifact IDs do not match canonical file-change order.",
+            "Materialized artifact IDs do not match canonical file-change order.",
         )
 
-    for change in sorted(
-        changes, key=lambda item: (item.path, item.artifact_id)
-    ):
-        _validate_file_change(change_set, change, snapshot, artifacts_by_id, issues)
-
-    referenced = set(change_set.source_artifact_ids)
-    expected_sources = {
-        artifact.artifact_id
-        for artifact in artifacts
-        if artifact.artifact_type is EngineeringArtifactType.SOURCE
+    intents_by_artifact = {
+        intent.artifact_id: intent for intent in materialization_validation.intents
     }
+    for change in sorted(changes, key=lambda item: (item.path, item.artifact_id)):
+        _validate_file_change(
+            change_set,
+            change,
+            snapshot,
+            artifacts_by_id,
+            intents_by_artifact,
+            issues,
+        )
+
+    referenced = set(change_set.materialized_artifact_ids)
+    expected = {intent.artifact_id for intent in materialization_validation.intents}
     supplied_artifact_ids = set(artifact_id_counts)
     for artifact_id in sorted(referenced - supplied_artifact_ids):
         _add_issue(
             issues,
             WorkspaceChangeSetIssueCode.ARTIFACT_REFERENCE,
             None,
-            f"Referenced SOURCE artifact does not exist: {artifact_id}.",
+            f"Referenced materialized artifact does not exist: {artifact_id}.",
         )
-    if referenced != expected_sources:
+    if referenced != expected:
         _add_issue(
             issues,
             WorkspaceChangeSetIssueCode.ARTIFACT_REFERENCE,
             None,
-            "Referenced SOURCE artifacts do not exactly match the supplied set.",
+            "Materialized artifacts do not exactly match validated intents.",
         )
 
     if not workspace_change_set_identity_is_valid(change_set):
@@ -637,7 +862,7 @@ def _require_artifact_lineage(
         )
         if actual != expected:
             raise WorkspaceContractError(
-                "SOURCE artifacts must share one canonical task-attempt lineage."
+                "Canonical artifacts must share one task-attempt lineage."
             )
     if (
         validation.task_id,
@@ -645,8 +870,125 @@ def _require_artifact_lineage(
         validation.attempt_id,
     ) != (first.task_id, first.request_id, first.attempt_id):
         raise WorkspaceContractError(
-            "Task validation does not match SOURCE artifact lineage."
+            "Task validation does not match canonical artifact lineage."
         )
+
+
+def _require_valid_materialization_evidence(
+    validation: TaskExecutionValidationResult,
+    artifacts: tuple[EngineeringArtifact, ...],
+    materialization: ArtifactMaterializationValidationResult,
+) -> None:
+    if not materialization.passed or materialization.issues:
+        raise WorkspaceContractError(
+            "A workspace change set requires passed materialization validation."
+        )
+    if not artifact_materialization_validation_identity_is_valid(materialization):
+        raise WorkspaceContractError(
+            "Materialization validation identity is not canonical."
+        )
+    artifact_ids = tuple(artifact.artifact_id for artifact in artifacts)
+    if artifact_ids != validation.artifact_ids or artifact_ids != (
+        materialization.artifact_ids
+    ):
+        raise WorkspaceContractError(
+            "Artifacts must exactly match task and materialization validation."
+        )
+    if tuple(sorted(_artifact_evidence_digest(item) for item in artifacts)) != (
+        materialization.artifact_evidence_digests
+    ):
+        raise WorkspaceContractError(
+            "Artifacts differ from materialization validation evidence."
+        )
+    if (
+        materialization.task_id,
+        materialization.request_id,
+        materialization.attempt_id,
+    ) != (validation.task_id, validation.request_id, validation.attempt_id):
+        raise WorkspaceContractError(
+            "Materialization validation does not match task validation lineage."
+        )
+    if not materialization.intents:
+        raise WorkspaceContractError(
+            "A workspace change set requires at least one validated intent."
+        )
+    _require_artifact_lineage(validation, artifacts)
+
+
+def _materialization_validation_payload(
+    *,
+    task_id: str,
+    request_id: str,
+    attempt_id: str,
+    policy: TaskMaterializationPolicy,
+    artifact_ids: tuple[str, ...],
+    artifact_evidence_digests: tuple[str, ...],
+    intents: tuple[ArtifactMaterializationIntent, ...],
+    passed: bool,
+    issues: tuple[ArtifactMaterializationValidationIssue, ...],
+) -> dict[str, object]:
+    return {
+        "task_id": task_id,
+        "request_id": request_id,
+        "attempt_id": attempt_id,
+        "policy": policy,
+        "artifact_ids": artifact_ids,
+        "artifact_evidence_digests": artifact_evidence_digests,
+        "intents": intents,
+        "passed": passed,
+        "issues": issues,
+    }
+
+
+def _materialization_validation_payload_from_result(
+    result: ArtifactMaterializationValidationResult,
+) -> dict[str, object]:
+    return _materialization_validation_payload(
+        task_id=result.task_id,
+        request_id=result.request_id,
+        attempt_id=result.attempt_id,
+        policy=result.policy,
+        artifact_ids=result.artifact_ids,
+        artifact_evidence_digests=result.artifact_evidence_digests,
+        intents=result.intents,
+        passed=result.passed,
+        issues=result.issues,
+    )
+
+
+def _materialization_validation_id(payload: dict[str, object]) -> str:
+    serializable = {
+        key: (
+            [item.model_dump(mode="json") for item in value]
+            if key in {"intents", "issues"}
+            else value
+        )
+        for key, value in payload.items()
+    }
+    digest = _content_hash(serializable)
+    return f"MATERIALIZATION-VALIDATION-{digest[:12].upper()}"
+
+
+def _artifact_evidence_digest(artifact: EngineeringArtifact) -> str:
+    return _content_hash(artifact.model_dump(mode="json"))
+
+
+def _add_materialization_issue(
+    issues: list[ArtifactMaterializationValidationIssue],
+    code: ArtifactMaterializationIssueCode,
+    detail: str,
+    *,
+    artifact_id: str | None = None,
+    path: str | None = None,
+) -> None:
+    issues.append(
+        ArtifactMaterializationValidationIssue(
+            code=code,
+            artifact_id=artifact_id,
+            path=path,
+            detail=detail,
+        )
+    )
 
 
 def _derive_file_change(
@@ -686,7 +1028,8 @@ def _change_set_payload(
     request_id: str,
     attempt_id: str,
     attempt_number: int,
-    source_artifact_ids: tuple[str, ...],
+    materialization_validation_id: str,
+    materialized_artifact_ids: tuple[str, ...],
     file_changes: tuple[WorkspaceFileChange, ...],
 ) -> dict[str, object]:
     return {
@@ -698,7 +1041,8 @@ def _change_set_payload(
         "request_id": request_id,
         "attempt_id": attempt_id,
         "attempt_number": attempt_number,
-        "source_artifact_ids": source_artifact_ids,
+        "materialization_validation_id": materialization_validation_id,
+        "materialized_artifact_ids": materialized_artifact_ids,
         "file_changes": file_changes,
     }
 
@@ -715,7 +1059,8 @@ def _change_set_payload_from_change_set(
         request_id=change_set.request_id,
         attempt_id=change_set.attempt_id,
         attempt_number=change_set.attempt_number,
-        source_artifact_ids=change_set.source_artifact_ids,
+        materialization_validation_id=change_set.materialization_validation_id,
+        materialized_artifact_ids=change_set.materialized_artifact_ids,
         file_changes=change_set.file_changes,
     )
 
@@ -761,11 +1106,50 @@ def _validate_snapshot_for_change_set(
         )
 
 
+def _validate_materialization_evidence_for_change_set(
+    change_set: WorkspaceChangeSet,
+    validation: ArtifactMaterializationValidationResult,
+    issues: list[WorkspaceChangeSetValidationIssue],
+) -> None:
+    if (
+        not validation.passed
+        or validation.issues
+        or not artifact_materialization_validation_identity_is_valid(validation)
+    ):
+        _add_issue(
+            issues,
+            WorkspaceChangeSetIssueCode.MATERIALIZATION_EVIDENCE,
+            None,
+            "Materialization validation is not passed canonical evidence.",
+        )
+    if change_set.materialization_validation_id != (
+        validation.materialization_validation_id
+    ):
+        _add_issue(
+            issues,
+            WorkspaceChangeSetIssueCode.MATERIALIZATION_EVIDENCE,
+            None,
+            "Change set references different materialization validation evidence.",
+        )
+    if (
+        change_set.task_id,
+        change_set.request_id,
+        change_set.attempt_id,
+    ) != (validation.task_id, validation.request_id, validation.attempt_id):
+        _add_issue(
+            issues,
+            WorkspaceChangeSetIssueCode.MATERIALIZATION_EVIDENCE,
+            None,
+            "Materialization validation lineage differs from its change set.",
+        )
+
+
 def _validate_file_change(
     change_set: WorkspaceChangeSet,
     change: WorkspaceFileChange,
     snapshot: WorkspaceSnapshot,
     artifacts_by_id: dict[str, EngineeringArtifact],
+    intents_by_artifact: dict[str, ArtifactMaterializationIntent],
     issues: list[WorkspaceChangeSetValidationIssue],
 ) -> None:
     try:
@@ -790,13 +1174,6 @@ def _validate_file_change(
     artifact = artifacts_by_id.get(change.artifact_id)
     if artifact is None:
         return
-    if artifact.artifact_type is not EngineeringArtifactType.SOURCE:
-        _add_issue(
-            issues,
-            WorkspaceChangeSetIssueCode.ARTIFACT_TYPE,
-            change.path,
-            f"Artifact {artifact.artifact_id} is not SOURCE.",
-        )
     lineage = (
         artifact.requirement_spec_id,
         artifact.graph_id,
@@ -824,31 +1201,29 @@ def _validate_file_change(
             issues,
             WorkspaceChangeSetIssueCode.PROVENANCE,
             change.path,
-            "File-change artifact lineage does not match its SOURCE artifact.",
+            "File-change artifact lineage does not match its canonical artifact.",
         )
-    try:
-        artifact_path = normalize_repository_path(artifact.logical_name)
-    except (TypeError, WorkspaceContractError):
-        artifact_path = None
-        _add_issue(
-            issues,
-            WorkspaceChangeSetIssueCode.PATH_POLICY,
-            artifact.logical_name,
-            "SOURCE artifact logical name violates repository path policy.",
-        )
-    if canonical_path is not None and artifact_path != canonical_path:
+    intent = intents_by_artifact.get(change.artifact_id)
+    if intent is None:
         _add_issue(
             issues,
             WorkspaceChangeSetIssueCode.PROVENANCE,
             change.path,
-            "Destination path does not match its SOURCE artifact logical name.",
+            "File change has no matching validated materialization intent.",
+        )
+    elif canonical_path is not None and intent.target_path != canonical_path:
+        _add_issue(
+            issues,
+            WorkspaceChangeSetIssueCode.PROVENANCE,
+            change.path,
+            "Destination path does not match its validated materialization intent.",
         )
     if change.desired_content != artifact.content:
         _add_issue(
             issues,
             WorkspaceChangeSetIssueCode.DESIRED_CONTENT,
             change.path,
-            "Desired contents do not match the canonical SOURCE artifact.",
+            "Desired contents do not match the canonical artifact.",
         )
     desired_hash = workspace_file_content_hash(artifact.content)
     if change.desired_content_hash != desired_hash:
@@ -856,7 +1231,7 @@ def _validate_file_change(
             issues,
             WorkspaceChangeSetIssueCode.DESIRED_CONTENT_HASH,
             change.path,
-            "Desired content hash does not match the canonical SOURCE artifact.",
+            "Desired content hash does not match the canonical artifact.",
         )
 
     if canonical_path is None:

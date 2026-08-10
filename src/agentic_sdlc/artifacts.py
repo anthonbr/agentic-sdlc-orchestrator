@@ -215,6 +215,7 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
                     f"#### {task_id} — {task['title']}",
                     "",
                     f"- Type: {task['task_type']}",
+                    f"- Materialization policy: {task['materialization_policy']}",
                     f"- Depends on: {depends_on}",
                     "- Runtime status: "
                     + (

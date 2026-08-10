@@ -227,6 +227,29 @@ def snapshot_isolated_workspace(workspace: IsolatedWorkspace) -> WorkspaceSnapsh
     return build_workspace_snapshot(workspace.workspace_id, tuple(file_states))
 
 
+def read_isolated_workspace_file(
+    workspace: IsolatedWorkspace,
+    path: str,
+) -> bytes | None:
+    """Read one explicit contained regular file, or prove that it is absent."""
+
+    inspected = _inspect_workspace_target(workspace, path)
+    if not inspected.exists:
+        return None
+    contents, opened_stat = _read_regular_file(inspected.absolute_path, inspected.path)
+    if (opened_stat.st_dev, opened_stat.st_ino) != (
+        inspected.device,
+        inspected.inode,
+    ) or hashlib.sha256(contents).hexdigest() != inspected.content_hash:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.WORKSPACE_UNAVAILABLE,
+            "Workspace file changed during governed read.",
+            path=inspected.path,
+        )
+    _validated_workspace_root(workspace)
+    return contents
+
+
 def _validated_workspace_root(workspace: object) -> Path:
     if not isinstance(workspace, IsolatedWorkspace):
         raise WorkspaceRuntimeError(

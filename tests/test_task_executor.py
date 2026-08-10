@@ -59,6 +59,7 @@ from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
     TaskGraph,
+    TaskMaterializationPolicy,
     TaskType,
     normalize_and_validate_task_graph,
 )
@@ -102,6 +103,7 @@ def _request_fixture() -> tuple[
                 title="Define mapping input",
                 description="Define the accepted internal mapping input.",
                 task_type=TaskType.DESIGN,
+                materialization_policy=TaskMaterializationPolicy.FORBIDDEN,
                 depends_on=[],
                 requirement_refs=["FR-002"],
                 acceptance_criteria_refs=["AC-002"],
@@ -114,6 +116,7 @@ def _request_fixture() -> tuple[
                 title="Design URL creation API contract",
                 description="Design the bounded API request, response, and errors.",
                 task_type=TaskType.DESIGN,
+                materialization_policy=TaskMaterializationPolicy.FORBIDDEN,
                 depends_on=["define_mapping_input"],
                 requirement_refs=["FR-001", "NFR-001", "CON-001"],
                 acceptance_criteria_refs=["AC-001"],
@@ -308,6 +311,7 @@ def test_execution_input_contains_only_bounded_authoritative_context() -> None:
     task = payload["canonical_task"]
     assert task["task_id"] == "TASK-002"
     assert task["task_type"] == "DESIGN"
+    assert task["materialization_policy"] == "FORBIDDEN"
     assert task["title"] == "Design URL creation API contract"
     assert task["description"] == (
         "Design the bounded API request, response, and errors."

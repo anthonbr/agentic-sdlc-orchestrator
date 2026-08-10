@@ -29,7 +29,7 @@ implement the example application. Return only the requested structured result.
 """
 
 
-TASK_PLANNING_PROMPT_VERSION = "task-planning-v1.1"
+TASK_PLANNING_PROMPT_VERSION = "task-planning-v1.2"
 
 TASK_PLANNING_SYSTEM_PROMPT = """\
 Act as a software engineering task planner. Propose an engineering dependency
@@ -39,7 +39,13 @@ Use short snake_case semantic keys for tasks. Preserve prior semantic keys for
 unchanged tasks when revising a proposal. Express dependencies only with those
 temporary keys. Reference only IDs that exist in the approved specification.
 Create broad SDLC tasks with clear expected outputs; not every task should imply
-writing code.
+writing code. For every task, explicitly propose its repository materialization
+policy from task semantics: FORBIDDEN when repository-file materialization is not
+permitted, REQUIRED when success eventually requires at least one verified desired
+repository-file postcondition, or ALLOWED when materialization is genuinely
+optional. Do not derive this policy mechanically from task type. A verified
+NO_CHANGE may eventually satisfy REQUIRED because the desired file postcondition
+already exists.
 
 Cover every FR, NFR, CON, and AC item with at least one task reference. Risk and
 ambiguity references remain optional, but every reference you do make must exist

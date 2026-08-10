@@ -52,6 +52,7 @@ from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
     TaskGraph,
+    TaskMaterializationPolicy,
     TaskType,
 )
 from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
@@ -139,6 +140,7 @@ def _proposed_task(
         title=title,
         description=f"Produce the governed {title.lower()} output.",
         task_type=task_type,
+        materialization_policy=TaskMaterializationPolicy.FORBIDDEN,
         depends_on=depends_on or [],
         requirement_refs=requirement_refs or ["FR-001"],
         acceptance_criteria_refs=acceptance_refs or [],
@@ -509,11 +511,13 @@ def test_openai_task_planner_uses_approved_spec_and_schema_without_network() -> 
 
 def test_task_planning_prompt_reserves_authoritative_metadata() -> None:
     prompt = " ".join(TASK_PLANNING_SYSTEM_PROMPT.casefold().split())
-    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.1"
+    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.2"
     assert "cover every fr, nfr, con, and ac item" in prompt
     assert "deterministic application validation is authoritative" in prompt
     assert "do not assign task-### ids" in prompt
     assert "do not silently choose an implementation outcome" in prompt
+    assert "do not derive this policy mechanically from task type" in prompt
+    assert "no_change may eventually satisfy required" in prompt
     assert "do not execute tasks" in prompt
 
 

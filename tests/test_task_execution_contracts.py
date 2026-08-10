@@ -43,6 +43,7 @@ from agentic_sdlc.task_graph import (
     ProposedTaskGraph,
     Task,
     TaskGraph,
+    TaskMaterializationPolicy,
     TaskType,
     normalize_and_validate_task_graph,
 )
@@ -99,6 +100,7 @@ def _proposed_task(
         title=key.replace("_", " ").title(),
         description=f"Produce the {key} engineering definition.",
         task_type=TaskType.DESIGN,
+        materialization_policy=TaskMaterializationPolicy.FORBIDDEN,
         depends_on=list(depends_on),
         requirement_refs=list(requirement_refs),
         acceptance_criteria_refs=list(acceptance_refs),

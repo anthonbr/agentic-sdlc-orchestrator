@@ -1,9 +1,9 @@
 # Engineering Task Dependency Graph
 
-- Graph: GRAPH-091DC71B7451-V001
+- Graph: GRAPH-518F10826DAD-V001
 - Version: 1
 - Requirement specification: SPEC-79BDBC13BA00-V001
-- Content hash: `091dc71b7451a2206feca5368a4bc6c32a9d302a992460027bbcc0baabf3cfed`
+- Content hash: `518f10826dadbc5516026a805809a184945f6d479cc27913a1fc3da9f5fcc3af`
 - Execution status: SUCCEEDED
 
 ## Derived execution layers
@@ -13,6 +13,7 @@
 #### TASK-001 — Define API contract v1
 
 - Type: DESIGN
+- Materialization policy: FORBIDDEN
 - Depends on: ENTRY
 - Runtime status: SUCCEEDED
 - Attempts: 1
@@ -27,6 +28,7 @@
 #### TASK-002 — Define persistence model
 
 - Type: DESIGN
+- Materialization policy: FORBIDDEN
 - Depends on: ENTRY
 - Runtime status: SUCCEEDED
 - Attempts: 1
@@ -43,6 +45,7 @@
 #### TASK-003 — Implement shortening behavior
 
 - Type: IMPLEMENTATION
+- Materialization policy: FORBIDDEN
 - Depends on: TASK-001, TASK-002
 - Runtime status: SUCCEEDED
 - Attempts: 2
@@ -59,6 +62,7 @@
 #### TASK-004 — Verify approved behavior
 
 - Type: TEST
+- Materialization policy: FORBIDDEN
 - Depends on: TASK-003
 - Runtime status: SUCCEEDED
 - Attempts: 1
@@ -75,6 +79,7 @@
 #### TASK-005 — Document service contract
 
 - Type: DOCUMENTATION
+- Materialization policy: FORBIDDEN
 - Depends on: TASK-004
 - Runtime status: SUCCEEDED
 - Attempts: 1

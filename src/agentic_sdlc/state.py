@@ -119,6 +119,7 @@ class ApprovedRequirementSpecData(TypedDict):
 TaskTypeData = Literal[
     "DESIGN", "IMPLEMENTATION", "TEST", "DOCUMENTATION", "VALIDATION", "RELEASE"
 ]
+TaskMaterializationPolicyData = Literal["FORBIDDEN", "ALLOWED", "REQUIRED"]
 TaskPlanningStatus = Literal["pending", "candidate", "validated", "failed"]
 
 
@@ -131,6 +132,7 @@ class TaskData(TypedDict):
     title: str
     description: str
     task_type: TaskTypeData
+    materialization_policy: TaskMaterializationPolicyData
     depends_on: list[str]
     requirement_refs: list[str]
     acceptance_criteria_refs: list[str]
