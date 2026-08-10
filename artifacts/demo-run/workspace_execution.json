@@ -3,7 +3,7 @@
     "run_id": "deterministic-v05-slice6-demo",
     "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
     "baseline_snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
-    "authoritative_snapshot_id": "WORKSPACE-SNAPSHOT-CD18A89365E2",
+    "authoritative_snapshot_id": "WORKSPACE-SNAPSHOT-26BDAA45EE33",
     "integrity_status": "VERIFIED"
   },
   "snapshots": [
@@ -13,44 +13,80 @@
       "files": []
     },
     {
-      "snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "snapshot_id": "WORKSPACE-SNAPSHOT-6A64506F3ADA",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
       "files": [
         {
+          "path": "pyproject.toml",
+          "content_hash": "556cde48e45fa84d7643bb2eee1a98ed4c16848cda8794192b8800368e61ac5a"
+        },
+        {
+          "path": "src/url_shortener/__init__.py",
+          "content_hash": "963f04540aec0d8b045dabf85032425fd30806ee53bb6bb0b49e21c50a8ec187"
+        },
+        {
+          "path": "src/url_shortener/app.py",
+          "content_hash": "c19bc87abdea1704307115b073ac265ffb80b62bdebe9716d527247b7efe40ad"
+        },
+        {
           "path": "src/url_shortener/service.py",
-          "content_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e"
+          "content_hash": "1f2746d67b7f0a392886334e67ef5298619970acb38f0d2a6d55ce275891fb64"
         }
       ]
     },
     {
-      "snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "snapshot_id": "WORKSPACE-SNAPSHOT-54A070A0E91B",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
       "files": [
         {
+          "path": "pyproject.toml",
+          "content_hash": "556cde48e45fa84d7643bb2eee1a98ed4c16848cda8794192b8800368e61ac5a"
+        },
+        {
+          "path": "src/url_shortener/__init__.py",
+          "content_hash": "963f04540aec0d8b045dabf85032425fd30806ee53bb6bb0b49e21c50a8ec187"
+        },
+        {
+          "path": "src/url_shortener/app.py",
+          "content_hash": "c19bc87abdea1704307115b073ac265ffb80b62bdebe9716d527247b7efe40ad"
+        },
+        {
           "path": "src/url_shortener/service.py",
-          "content_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e"
+          "content_hash": "1f2746d67b7f0a392886334e67ef5298619970acb38f0d2a6d55ce275891fb64"
         },
         {
           "path": "tests/test_service.py",
-          "content_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0"
+          "content_hash": "9a677eef639d3c42187059c3b9a4026b4163e1baa8f82fa0d24cbaf4144ed29e"
         }
       ]
     },
     {
-      "snapshot_id": "WORKSPACE-SNAPSHOT-CD18A89365E2",
+      "snapshot_id": "WORKSPACE-SNAPSHOT-26BDAA45EE33",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
       "files": [
         {
           "path": "README.md",
-          "content_hash": "159fcf96ce5819767d505a8100f9d3a85cea2934f9436387d81db8f4fe81e566"
+          "content_hash": "91a82a5c66ce0f72fbd536552dbdcd08ac8984c943b6bb5d8f3d7d229767170f"
+        },
+        {
+          "path": "pyproject.toml",
+          "content_hash": "556cde48e45fa84d7643bb2eee1a98ed4c16848cda8794192b8800368e61ac5a"
+        },
+        {
+          "path": "src/url_shortener/__init__.py",
+          "content_hash": "963f04540aec0d8b045dabf85032425fd30806ee53bb6bb0b49e21c50a8ec187"
+        },
+        {
+          "path": "src/url_shortener/app.py",
+          "content_hash": "c19bc87abdea1704307115b073ac265ffb80b62bdebe9716d527247b7efe40ad"
         },
         {
           "path": "src/url_shortener/service.py",
-          "content_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e"
+          "content_hash": "1f2746d67b7f0a392886334e67ef5298619970acb38f0d2a6d55ce275891fb64"
         },
         {
           "path": "tests/test_service.py",
-          "content_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0"
+          "content_hash": "9a677eef639d3c42187059c3b9a4026b4163e1baa8f82fa0d24cbaf4144ed29e"
         }
       ]
     }
@@ -85,7 +121,7 @@
       "dispatch_mode": "PARALLEL",
       "binding": {
         "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-        "snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75"
+        "snapshot_id": "WORKSPACE-SNAPSHOT-6A64506F3ADA"
       }
     },
     {
@@ -93,7 +129,7 @@
       "dispatch_mode": "PARALLEL",
       "binding": {
         "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-        "snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84"
+        "snapshot_id": "WORKSPACE-SNAPSHOT-54A070A0E91B"
       }
     }
   ],
@@ -354,12 +390,12 @@
         },
         "dependency_artifacts": [
           {
-            "artifact_id": "ARTIFACT-EFB55182ECD7-O001",
-            "lineage_id": "c70c9c5a-1247-5893-aacf-ce749af6ba07",
+            "artifact_id": "ARTIFACT-6F6787AB28ED-O001",
+            "lineage_id": "9c2b6766-9ab1-5961-affe-50e675e7e924",
             "artifact_type": "DESIGN",
-            "logical_name": "define_api.md",
-            "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0.",
-            "content_hash": "efb55182ecd71cf1537e57516b7da3514ab456fba31090ae204b051802bfe7bb",
+            "logical_name": "url-shortener-api-design",
+            "content": "# URL Shortener API Design\n\n## Shorten a URL\n\n`POST /shorten` accepts JSON containing a valid absolute `http://` or `https://`\nURL. A successful request returns `201 Created` with a unique short code and a\nshort URL. Repeating the same URL may return its existing code.\n\nMalformed JSON, missing URLs, relative URLs, and unsupported schemes return\n`400 Bad Request` with a stable JSON error category.\n\n## Resolve a short code\n\n`GET /{code}` redirects a known code to its original URL with `302 Found`. An\nunknown code returns `404 Not Found` with a stable JSON error category.\n\nURL expiration remains unresolved by the approved specification and is not part\nof this prototype contract.\n",
+            "content_hash": "6f6787ab28ed0c4a3be3a42f3e357421d3a84fcec3b06911dc62a32ba3adae48",
             "output_index": 1,
             "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
             "graph_id": "GRAPH-34C2DB80991E-V001",
@@ -381,12 +417,12 @@
             "created_at": "2026-08-10T12:00:00+00:00"
           },
           {
-            "artifact_id": "ARTIFACT-A93891D011A8-O001",
-            "lineage_id": "abf02d56-20b7-5a06-83c1-c7e1365ea986",
+            "artifact_id": "ARTIFACT-0490125BDE85-O001",
+            "lineage_id": "371e0d6f-b1f4-5d36-87f5-37dbeab715c5",
             "artifact_type": "DESIGN",
-            "logical_name": "define_storage.md",
-            "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0.",
-            "content_hash": "a93891d011a8d0e7c82b509930ffc81dcdd60b6962523705f79100b28e1e15a8",
+            "logical_name": "url-shortener-storage-design",
+            "content": "# URL Shortener Storage Design\n\nThe runnable demonstration uses a process-local in-memory repository because the\napproved specification does not select a persistent storage technology.\n\nThe repository retains both `code -> original URL` and `original URL -> code`\nmappings. The reverse mapping makes repeated shortening idempotent. Codes are\nderived from a deterministic SHA-256 digest and a collision nonce; a candidate is\naccepted only when it is unused or already belongs to the same URL.\n\nThis choice is intentionally nonpersistent: restarting the process loses every\nmapping. A production design would replace the repository behind the domain\nservice while retaining uniqueness and lookup behavior.\n",
+            "content_hash": "0490125bde85cac38698edc80916904f869bda12cfc0d8b7a9c69a60aabf5b12",
             "output_index": 1,
             "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
             "graph_id": "GRAPH-34C2DB80991E-V001",
@@ -512,12 +548,12 @@
         },
         "dependency_artifacts": [
           {
-            "artifact_id": "ARTIFACT-EFB55182ECD7-O001",
-            "lineage_id": "c70c9c5a-1247-5893-aacf-ce749af6ba07",
+            "artifact_id": "ARTIFACT-6F6787AB28ED-O001",
+            "lineage_id": "9c2b6766-9ab1-5961-affe-50e675e7e924",
             "artifact_type": "DESIGN",
-            "logical_name": "define_api.md",
-            "content": "Canonical proposal for Define API contract v1. Dependency artifacts: 0.",
-            "content_hash": "efb55182ecd71cf1537e57516b7da3514ab456fba31090ae204b051802bfe7bb",
+            "logical_name": "url-shortener-api-design",
+            "content": "# URL Shortener API Design\n\n## Shorten a URL\n\n`POST /shorten` accepts JSON containing a valid absolute `http://` or `https://`\nURL. A successful request returns `201 Created` with a unique short code and a\nshort URL. Repeating the same URL may return its existing code.\n\nMalformed JSON, missing URLs, relative URLs, and unsupported schemes return\n`400 Bad Request` with a stable JSON error category.\n\n## Resolve a short code\n\n`GET /{code}` redirects a known code to its original URL with `302 Found`. An\nunknown code returns `404 Not Found` with a stable JSON error category.\n\nURL expiration remains unresolved by the approved specification and is not part\nof this prototype contract.\n",
+            "content_hash": "6f6787ab28ed0c4a3be3a42f3e357421d3a84fcec3b06911dc62a32ba3adae48",
             "output_index": 1,
             "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
             "graph_id": "GRAPH-34C2DB80991E-V001",
@@ -539,12 +575,12 @@
             "created_at": "2026-08-10T12:00:00+00:00"
           },
           {
-            "artifact_id": "ARTIFACT-A93891D011A8-O001",
-            "lineage_id": "abf02d56-20b7-5a06-83c1-c7e1365ea986",
+            "artifact_id": "ARTIFACT-0490125BDE85-O001",
+            "lineage_id": "371e0d6f-b1f4-5d36-87f5-37dbeab715c5",
             "artifact_type": "DESIGN",
-            "logical_name": "define_storage.md",
-            "content": "Canonical proposal for Define persistence model. Dependency artifacts: 0.",
-            "content_hash": "a93891d011a8d0e7c82b509930ffc81dcdd60b6962523705f79100b28e1e15a8",
+            "logical_name": "url-shortener-storage-design",
+            "content": "# URL Shortener Storage Design\n\nThe runnable demonstration uses a process-local in-memory repository because the\napproved specification does not select a persistent storage technology.\n\nThe repository retains both `code -> original URL` and `original URL -> code`\nmappings. The reverse mapping makes repeated shortening idempotent. Codes are\nderived from a deterministic SHA-256 digest and a collision nonce; a candidate is\naccepted only when it is unused or already belongs to the same URL.\n\nThis choice is intentionally nonpersistent: restarting the process loses every\nmapping. A production design would replace the repository behind the domain\nservice while retaining uniqueness and lookup behavior.\n",
+            "content_hash": "0490125bde85cac38698edc80916904f869bda12cfc0d8b7a9c69a60aabf5b12",
             "output_index": 1,
             "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
             "graph_id": "GRAPH-34C2DB80991E-V001",
@@ -657,13 +693,103 @@
         },
         "dependency_artifacts": [
           {
-            "artifact_id": "ARTIFACT-E4159CAF9047-O001",
-            "lineage_id": "516fc198-6b00-5dd6-82e9-1c6d4c725804",
-            "artifact_type": "SOURCE",
-            "logical_name": "build_service.md",
-            "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2.",
-            "content_hash": "e4159caf9047c0190839665317fcfa098e62daf30146a70ca086bb341c747251",
+            "artifact_id": "ARTIFACT-818B3C2F8594-O001",
+            "lineage_id": "f7879aea-381c-5719-893c-e29aa91dda18",
+            "artifact_type": "OTHER",
+            "logical_name": "generated-project-metadata",
+            "content": "[build-system]\nrequires = [\"setuptools>=68\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"governed-url-shortener-demo\"\nversion = \"0.1.0\"\ndescription = \"Dependency-free URL shortener generated by a governed SDLC demo\"\nrequires-python = \">=3.11\"\ndependencies = []\n\n[tool.setuptools.packages.find]\nwhere = [\"src\"]\n",
+            "content_hash": "818b3c2f8594e9b0a6889e1d688840ac38562613c09df2205705ee0849184bc6",
             "output_index": 1,
+            "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+            "graph_id": "GRAPH-34C2DB80991E-V001",
+            "task_id": "TASK-003",
+            "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+            "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
+            "attempt_number": 2,
+            "requirement_refs": [
+              "FR-001",
+              "FR-002",
+              "FR-003",
+              "FR-004"
+            ],
+            "acceptance_criteria_refs": [
+              "AC-001",
+              "AC-002"
+            ],
+            "risk_refs": [],
+            "ambiguity_refs": [
+              "AMB-001"
+            ],
+            "created_at": "2026-08-10T12:00:00+00:00"
+          },
+          {
+            "artifact_id": "ARTIFACT-538A207B6594-O002",
+            "lineage_id": "60086d81-32e0-5594-8f44-c17885670739",
+            "artifact_type": "SOURCE",
+            "logical_name": "url-shortener-package",
+            "content": "\"\"\"Runnable URL-shortener domain and WSGI application.\"\"\"\n\nfrom url_shortener.service import (\n    InvalidURLError,\n    UnknownShortCodeError,\n    URLShortener,\n)\n\n__all__ = [\"InvalidURLError\", \"UnknownShortCodeError\", \"URLShortener\"]\n",
+            "content_hash": "538a207b6594abaf7383a7b0d3b16bcd89cb0b9512f1932fd922719a56a56ab1",
+            "output_index": 2,
+            "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+            "graph_id": "GRAPH-34C2DB80991E-V001",
+            "task_id": "TASK-003",
+            "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+            "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
+            "attempt_number": 2,
+            "requirement_refs": [
+              "FR-001",
+              "FR-002",
+              "FR-003",
+              "FR-004"
+            ],
+            "acceptance_criteria_refs": [
+              "AC-001",
+              "AC-002"
+            ],
+            "risk_refs": [],
+            "ambiguity_refs": [
+              "AMB-001"
+            ],
+            "created_at": "2026-08-10T12:00:00+00:00"
+          },
+          {
+            "artifact_id": "ARTIFACT-D5F9812EA156-O003",
+            "lineage_id": "6ded08b1-ca83-539c-8f09-d6739685811c",
+            "artifact_type": "SOURCE",
+            "logical_name": "url-shortener-domain-service",
+            "content": "\"\"\"In-memory URL-shortening domain service.\"\"\"\n\nfrom __future__ import annotations\n\nimport base64\nimport hashlib\nfrom threading import Lock\nfrom urllib.parse import urlsplit\n\n\nclass URLShortenerError(Exception):\n    \"\"\"Base class for domain-level URL-shortener failures.\"\"\"\n\n\nclass InvalidURLError(URLShortenerError):\n    \"\"\"Raised when a submitted URL is not an absolute HTTP(S) URL.\"\"\"\n\n\nclass UnknownShortCodeError(URLShortenerError):\n    \"\"\"Raised when no original URL exists for a short code.\"\"\"\n\n\nclass URLShortener:\n    \"\"\"Deterministic, collision-safe, process-local URL repository.\"\"\"\n\n    def __init__(self) -> None:\n        self._url_by_code: dict[str, str] = {}\n        self._code_by_url: dict[str, str] = {}\n        self._lock = Lock()\n\n    def shorten(self, url: str) -> str:\n        \"\"\"Return a stable unique code for one valid absolute HTTP(S) URL.\"\"\"\n\n        validated = _validate_url(url)\n        with self._lock:\n            existing = self._code_by_url.get(validated)\n            if existing is not None:\n                return existing\n\n            nonce = 0\n            while True:\n                code = _candidate_code(validated, nonce)\n                owner = self._url_by_code.get(code)\n                if owner is None or owner == validated:\n                    self._url_by_code[code] = validated\n                    self._code_by_url[validated] = code\n                    return code\n                nonce += 1\n\n    def resolve(self, code: str) -> str:\n        \"\"\"Return the original URL for a known code.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                return self._url_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n\n\ndef _validate_url(url: str) -> str:\n    if not isinstance(url, str) or not url or url != url.strip():\n        raise InvalidURLError(\"URL must be a non-empty absolute HTTP(S) URL.\")\n    if any(character.isspace() for character in url):\n        raise InvalidURLError(\"URL must not contain whitespace.\")\n    try:\n        parsed = urlsplit(url)\n        port = parsed.port\n    except ValueError as error:\n        raise InvalidURLError(\"URL authority is malformed.\") from error\n    if (\n        parsed.scheme.lower() not in {\"http\", \"https\"}\n        or not parsed.netloc\n        or parsed.hostname is None\n        or (port is not None and not 1 <= port <= 65535)\n    ):\n        raise InvalidURLError(\"URL must be an absolute HTTP(S) URL.\")\n    return url\n\n\ndef _candidate_code(url: str, nonce: int) -> str:\n    digest = hashlib.sha256(f\"{url}\\0{nonce}\".encode(\"utf-8\")).digest()\n    return base64.urlsafe_b64encode(digest[:6]).decode(\"ascii\").rstrip(\"=\")\n",
+            "content_hash": "d5f9812ea156376c8468b474381c06259507b6473d674c2d40a81a25aec41ef8",
+            "output_index": 3,
+            "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
+            "graph_id": "GRAPH-34C2DB80991E-V001",
+            "task_id": "TASK-003",
+            "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
+            "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
+            "attempt_number": 2,
+            "requirement_refs": [
+              "FR-001",
+              "FR-002",
+              "FR-003",
+              "FR-004"
+            ],
+            "acceptance_criteria_refs": [
+              "AC-001",
+              "AC-002"
+            ],
+            "risk_refs": [],
+            "ambiguity_refs": [
+              "AMB-001"
+            ],
+            "created_at": "2026-08-10T12:00:00+00:00"
+          },
+          {
+            "artifact_id": "ARTIFACT-D6E6E41847E4-O004",
+            "lineage_id": "15305ac2-590e-567b-8912-e6ed37d99ba6",
+            "artifact_type": "SOURCE",
+            "logical_name": "url-shortener-wsgi-application",
+            "content": "\"\"\"Thin dependency-free WSGI adapter for the URL-shortener service.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport os\nfrom collections.abc import Callable, Iterable\nfrom typing import Any\nfrom urllib.parse import unquote\nfrom wsgiref.simple_server import make_server\n\nfrom url_shortener.service import InvalidURLError, UnknownShortCodeError, URLShortener\n\nStartResponse = Callable[[str, list[tuple[str, str]]], Any]\n\n\nclass URLShortenerApplication:\n    \"\"\"WSGI application exposing shorten and resolve operations.\"\"\"\n\n    def __init__(\n        self,\n        service: URLShortener | None = None,\n        *,\n        base_url: str = \"http://127.0.0.1:8000\",\n    ) -> None:\n        self.service = service or URLShortener()\n        self.base_url = base_url.rstrip(\"/\")\n\n    def __call__(\n        self, environ: dict[str, Any], start_response: StartResponse\n    ) -> Iterable[bytes]:\n        method = str(environ.get(\"REQUEST_METHOD\", \"GET\")).upper()\n        path = str(environ.get(\"PATH_INFO\", \"/\"))\n        if path == \"/shorten\":\n            if method == \"POST\":\n                return self._shorten(environ, start_response)\n            return _json_response(\n                start_response,\n                \"405 Method Not Allowed\",\n                {\"error\": \"method_not_allowed\"},\n            )\n        if method == \"GET\" and path.startswith(\"/\") and path != \"/\":\n            return self._resolve(unquote(path[1:]), start_response)\n        return _json_response(\n            start_response, \"404 Not Found\", {\"error\": \"not_found\"}\n        )\n\n    def _shorten(\n        self, environ: dict[str, Any], start_response: StartResponse\n    ) -> Iterable[bytes]:\n        try:\n            length = int(environ.get(\"CONTENT_LENGTH\") or \"0\")\n            if length < 1 or length > 1_000_000:\n                raise ValueError\n            stream = environ[\"wsgi.input\"]\n            payload = json.loads(stream.read(length).decode(\"utf-8\"))\n            if not isinstance(payload, dict) or not isinstance(payload.get(\"url\"), str):\n                raise ValueError\n        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):\n            return _json_response(\n                start_response,\n                \"400 Bad Request\",\n                {\"error\": \"invalid_request\", \"message\": \"Expected JSON with a URL.\"},\n            )\n        try:\n            code = self.service.shorten(payload[\"url\"])\n        except InvalidURLError as error:\n            return _json_response(\n                start_response,\n                \"400 Bad Request\",\n                {\"error\": \"invalid_url\", \"message\": str(error)},\n            )\n        return _json_response(\n            start_response,\n            \"201 Created\",\n            {\"code\": code, \"short_url\": f\"{self.base_url}/{code}\"},\n        )\n\n    def _resolve(self, code: str, start_response: StartResponse) -> Iterable[bytes]:\n        try:\n            original_url = self.service.resolve(code)\n        except UnknownShortCodeError:\n            return _json_response(\n                start_response,\n                \"404 Not Found\",\n                {\"error\": \"unknown_code\", \"code\": code},\n            )\n        start_response(\n            \"302 Found\",\n            [(\"Location\", original_url), (\"Content-Length\", \"0\")],\n        )\n        return [b\"\"]\n\n\ndef _json_response(\n    start_response: StartResponse, status: str, payload: dict[str, object]\n) -> list[bytes]:\n    body = json.dumps(payload, sort_keys=True).encode(\"utf-8\")\n    start_response(\n        status,\n        [\n            (\"Content-Type\", \"application/json; charset=utf-8\"),\n            (\"Content-Length\", str(len(body))),\n        ],\n    )\n    return [body]\n\n\ndef main() -> None:\n    host = os.environ.get(\"URL_SHORTENER_HOST\", \"127.0.0.1\")\n    port = int(os.environ.get(\"URL_SHORTENER_PORT\", \"8000\"))\n    application = URLShortenerApplication(base_url=f\"http://{host}:{port}\")\n    with make_server(host, port, application) as server:\n        print(f\"URL shortener listening on http://{host}:{port}\")\n        server.serve_forever()\n\n\nif __name__ == \"__main__\":\n    main()\n",
+            "content_hash": "d6e6e41847e4949d3aa46f46e87e65c8658000023a37e5565d3c6c0c3bd79d23",
+            "output_index": 4,
             "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
             "graph_id": "GRAPH-34C2DB80991E-V001",
             "task_id": "TASK-003",
@@ -691,20 +817,38 @@
       },
       "workspace_binding": {
         "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-        "snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75"
+        "snapshot_id": "WORKSPACE-SNAPSHOT-6A64506F3ADA"
       },
       "repository_context": {
-        "repository_context_id": "REPOSITORY-CONTEXT-076941855B89",
+        "repository_context_id": "REPOSITORY-CONTEXT-EDCE529A01AB",
         "binding": {
           "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-          "snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75"
+          "snapshot_id": "WORKSPACE-SNAPSHOT-6A64506F3ADA"
         },
         "observations": [
           {
+            "path": "pyproject.toml",
+            "exists": true,
+            "content": "[build-system]\nrequires = [\"setuptools>=68\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"governed-url-shortener-demo\"\nversion = \"0.1.0\"\ndescription = \"Dependency-free URL shortener generated by a governed SDLC demo\"\nrequires-python = \">=3.11\"\ndependencies = []\n\n[tool.setuptools.packages.find]\nwhere = [\"src\"]\n",
+            "content_hash": "556cde48e45fa84d7643bb2eee1a98ed4c16848cda8794192b8800368e61ac5a"
+          },
+          {
+            "path": "src/url_shortener/__init__.py",
+            "exists": true,
+            "content": "\"\"\"Runnable URL-shortener domain and WSGI application.\"\"\"\n\nfrom url_shortener.service import (\n    InvalidURLError,\n    UnknownShortCodeError,\n    URLShortener,\n)\n\n__all__ = [\"InvalidURLError\", \"UnknownShortCodeError\", \"URLShortener\"]\n",
+            "content_hash": "963f04540aec0d8b045dabf85032425fd30806ee53bb6bb0b49e21c50a8ec187"
+          },
+          {
+            "path": "src/url_shortener/app.py",
+            "exists": true,
+            "content": "\"\"\"Thin dependency-free WSGI adapter for the URL-shortener service.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport os\nfrom collections.abc import Callable, Iterable\nfrom typing import Any\nfrom urllib.parse import unquote\nfrom wsgiref.simple_server import make_server\n\nfrom url_shortener.service import InvalidURLError, UnknownShortCodeError, URLShortener\n\nStartResponse = Callable[[str, list[tuple[str, str]]], Any]\n\n\nclass URLShortenerApplication:\n    \"\"\"WSGI application exposing shorten and resolve operations.\"\"\"\n\n    def __init__(\n        self,\n        service: URLShortener | None = None,\n        *,\n        base_url: str = \"http://127.0.0.1:8000\",\n    ) -> None:\n        self.service = service or URLShortener()\n        self.base_url = base_url.rstrip(\"/\")\n\n    def __call__(\n        self, environ: dict[str, Any], start_response: StartResponse\n    ) -> Iterable[bytes]:\n        method = str(environ.get(\"REQUEST_METHOD\", \"GET\")).upper()\n        path = str(environ.get(\"PATH_INFO\", \"/\"))\n        if path == \"/shorten\":\n            if method == \"POST\":\n                return self._shorten(environ, start_response)\n            return _json_response(\n                start_response,\n                \"405 Method Not Allowed\",\n                {\"error\": \"method_not_allowed\"},\n            )\n        if method == \"GET\" and path.startswith(\"/\") and path != \"/\":\n            return self._resolve(unquote(path[1:]), start_response)\n        return _json_response(\n            start_response, \"404 Not Found\", {\"error\": \"not_found\"}\n        )\n\n    def _shorten(\n        self, environ: dict[str, Any], start_response: StartResponse\n    ) -> Iterable[bytes]:\n        try:\n            length = int(environ.get(\"CONTENT_LENGTH\") or \"0\")\n            if length < 1 or length > 1_000_000:\n                raise ValueError\n            stream = environ[\"wsgi.input\"]\n            payload = json.loads(stream.read(length).decode(\"utf-8\"))\n            if not isinstance(payload, dict) or not isinstance(payload.get(\"url\"), str):\n                raise ValueError\n        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):\n            return _json_response(\n                start_response,\n                \"400 Bad Request\",\n                {\"error\": \"invalid_request\", \"message\": \"Expected JSON with a URL.\"},\n            )\n        try:\n            code = self.service.shorten(payload[\"url\"])\n        except InvalidURLError as error:\n            return _json_response(\n                start_response,\n                \"400 Bad Request\",\n                {\"error\": \"invalid_url\", \"message\": str(error)},\n            )\n        return _json_response(\n            start_response,\n            \"201 Created\",\n            {\"code\": code, \"short_url\": f\"{self.base_url}/{code}\"},\n        )\n\n    def _resolve(self, code: str, start_response: StartResponse) -> Iterable[bytes]:\n        try:\n            original_url = self.service.resolve(code)\n        except UnknownShortCodeError:\n            return _json_response(\n                start_response,\n                \"404 Not Found\",\n                {\"error\": \"unknown_code\", \"code\": code},\n            )\n        start_response(\n            \"302 Found\",\n            [(\"Location\", original_url), (\"Content-Length\", \"0\")],\n        )\n        return [b\"\"]\n\n\ndef _json_response(\n    start_response: StartResponse, status: str, payload: dict[str, object]\n) -> list[bytes]:\n    body = json.dumps(payload, sort_keys=True).encode(\"utf-8\")\n    start_response(\n        status,\n        [\n            (\"Content-Type\", \"application/json; charset=utf-8\"),\n            (\"Content-Length\", str(len(body))),\n        ],\n    )\n    return [body]\n\n\ndef main() -> None:\n    host = os.environ.get(\"URL_SHORTENER_HOST\", \"127.0.0.1\")\n    port = int(os.environ.get(\"URL_SHORTENER_PORT\", \"8000\"))\n    application = URLShortenerApplication(base_url=f\"http://{host}:{port}\")\n    with make_server(host, port, application) as server:\n        print(f\"URL shortener listening on http://{host}:{port}\")\n        server.serve_forever()\n\n\nif __name__ == \"__main__\":\n    main()\n",
+            "content_hash": "c19bc87abdea1704307115b073ac265ffb80b62bdebe9716d527247b7efe40ad"
+          },
+          {
             "path": "src/url_shortener/service.py",
             "exists": true,
-            "content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2.",
-            "content_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e"
+            "content": "\"\"\"In-memory URL-shortening domain service.\"\"\"\n\nfrom __future__ import annotations\n\nimport base64\nimport hashlib\nfrom threading import Lock\nfrom urllib.parse import urlsplit\n\n\nclass URLShortenerError(Exception):\n    \"\"\"Base class for domain-level URL-shortener failures.\"\"\"\n\n\nclass InvalidURLError(URLShortenerError):\n    \"\"\"Raised when a submitted URL is not an absolute HTTP(S) URL.\"\"\"\n\n\nclass UnknownShortCodeError(URLShortenerError):\n    \"\"\"Raised when no original URL exists for a short code.\"\"\"\n\n\nclass URLShortener:\n    \"\"\"Deterministic, collision-safe, process-local URL repository.\"\"\"\n\n    def __init__(self) -> None:\n        self._url_by_code: dict[str, str] = {}\n        self._code_by_url: dict[str, str] = {}\n        self._lock = Lock()\n\n    def shorten(self, url: str) -> str:\n        \"\"\"Return a stable unique code for one valid absolute HTTP(S) URL.\"\"\"\n\n        validated = _validate_url(url)\n        with self._lock:\n            existing = self._code_by_url.get(validated)\n            if existing is not None:\n                return existing\n\n            nonce = 0\n            while True:\n                code = _candidate_code(validated, nonce)\n                owner = self._url_by_code.get(code)\n                if owner is None or owner == validated:\n                    self._url_by_code[code] = validated\n                    self._code_by_url[validated] = code\n                    return code\n                nonce += 1\n\n    def resolve(self, code: str) -> str:\n        \"\"\"Return the original URL for a known code.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                return self._url_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n\n\ndef _validate_url(url: str) -> str:\n    if not isinstance(url, str) or not url or url != url.strip():\n        raise InvalidURLError(\"URL must be a non-empty absolute HTTP(S) URL.\")\n    if any(character.isspace() for character in url):\n        raise InvalidURLError(\"URL must not contain whitespace.\")\n    try:\n        parsed = urlsplit(url)\n        port = parsed.port\n    except ValueError as error:\n        raise InvalidURLError(\"URL authority is malformed.\") from error\n    if (\n        parsed.scheme.lower() not in {\"http\", \"https\"}\n        or not parsed.netloc\n        or parsed.hostname is None\n        or (port is not None and not 1 <= port <= 65535)\n    ):\n        raise InvalidURLError(\"URL must be an absolute HTTP(S) URL.\")\n    return url\n\n\ndef _candidate_code(url: str, nonce: int) -> str:\n    digest = hashlib.sha256(f\"{url}\\0{nonce}\".encode(\"utf-8\")).digest()\n    return base64.urlsafe_b64encode(digest[:6]).decode(\"ascii\").rstrip(\"=\")\n",
+            "content_hash": "1f2746d67b7f0a392886334e67ef5298619970acb38f0d2a6d55ce275891fb64"
           }
         ]
       }
@@ -759,12 +903,12 @@
         },
         "dependency_artifacts": [
           {
-            "artifact_id": "ARTIFACT-2C49357CABB6-O001",
-            "lineage_id": "b8ec0eed-4909-50fe-b75d-bac456aa9b6a",
+            "artifact_id": "ARTIFACT-A9E50C0F5CAB-O001",
+            "lineage_id": "a1d40a12-f5d4-5464-9268-970d9ea609e7",
             "artifact_type": "TEST",
-            "logical_name": "verify_service.md",
-            "content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1.",
-            "content_hash": "2c49357cabb658848eb3fdf5449b8accfd5f03c3369b1dab1c04b738f2dab42d",
+            "logical_name": "url-shortener-executable-tests",
+            "content": "\"\"\"Executable tests for the generated URL-shortener project.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport unittest\nfrom io import BytesIO\nfrom typing import Any\n\nfrom url_shortener.app import URLShortenerApplication\nfrom url_shortener.service import InvalidURLError, UnknownShortCodeError, URLShortener\n\n\ndef invoke_wsgi(\n    application: URLShortenerApplication,\n    method: str,\n    path: str,\n    payload: dict[str, object] | None = None,\n) -> tuple[str, dict[str, str], bytes]:\n    body = b\"\" if payload is None else json.dumps(payload).encode(\"utf-8\")\n    environ: dict[str, Any] = {\n        \"REQUEST_METHOD\": method,\n        \"PATH_INFO\": path,\n        \"CONTENT_LENGTH\": str(len(body)),\n        \"wsgi.input\": BytesIO(body),\n    }\n    captured: dict[str, object] = {}\n\n    def start_response(status: str, headers: list[tuple[str, str]]) -> None:\n        captured[\"status\"] = status\n        captured[\"headers\"] = dict(headers)\n\n    response = b\"\".join(application(environ, start_response))\n    return (\n        str(captured[\"status\"]),\n        dict(captured[\"headers\"]),  # type: ignore[arg-type]\n        response,\n    )\n\n\nclass URLShortenerServiceTests(unittest.TestCase):\n    def setUp(self) -> None:\n        self.service = URLShortener()\n\n    def test_shortening_valid_url_returns_code(self) -> None:\n        code = self.service.shorten(\"https://example.com/path\")\n        self.assertRegex(code, r\"^[A-Za-z0-9_-]{8}$\")\n\n    def test_different_urls_receive_distinct_codes(self) -> None:\n        first = self.service.shorten(\"https://example.com/first\")\n        second = self.service.shorten(\"https://example.com/second\")\n        self.assertNotEqual(first, second)\n\n    def test_repeated_shortening_is_idempotent(self) -> None:\n        url = \"https://example.com/repeated\"\n        self.assertEqual(self.service.shorten(url), self.service.shorten(url))\n\n    def test_known_code_resolves_to_original_url(self) -> None:\n        url = \"https://example.com/original\"\n        self.assertEqual(self.service.resolve(self.service.shorten(url)), url)\n\n    def test_unknown_code_raises_domain_error(self) -> None:\n        with self.assertRaises(UnknownShortCodeError):\n            self.service.resolve(\"missing\")\n\n    def test_invalid_urls_are_rejected(self) -> None:\n        for url in (\"\", \"example.com\", \"/relative\", \"ftp://example.com\", \"https://bad host\"):\n            with self.subTest(url=url), self.assertRaises(InvalidURLError):\n                self.service.shorten(url)\n\n\nclass URLShortenerHTTPTests(unittest.TestCase):\n    def setUp(self) -> None:\n        self.application = URLShortenerApplication(\n            URLShortener(), base_url=\"http://short.test\"\n        )\n\n    def test_post_shorten_returns_created_response(self) -> None:\n        status, _, body = invoke_wsgi(\n            self.application,\n            \"POST\",\n            \"/shorten\",\n            {\"url\": \"https://example.com/http\"},\n        )\n        payload = json.loads(body)\n        self.assertEqual(status, \"201 Created\")\n        self.assertEqual(payload[\"short_url\"], f\"http://short.test/{payload['code']}\")\n\n    def test_post_shorten_rejects_invalid_url(self) -> None:\n        status, _, body = invoke_wsgi(\n            self.application,\n            \"POST\",\n            \"/shorten\",\n            {\"url\": \"ftp://example.com/not-supported\"},\n        )\n        self.assertEqual(status, \"400 Bad Request\")\n        self.assertEqual(json.loads(body)[\"error\"], \"invalid_url\")\n\n    def test_get_shorten_rejects_wrong_method(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/shorten\")\n        self.assertEqual(status, \"405 Method Not Allowed\")\n        self.assertEqual(json.loads(body)[\"error\"], \"method_not_allowed\")\n\n    def test_get_known_code_redirects(self) -> None:\n        url = \"https://example.com/redirect\"\n        code = self.application.service.shorten(url)\n        status, headers, body = invoke_wsgi(self.application, \"GET\", f\"/{code}\")\n        self.assertEqual(status, \"302 Found\")\n        self.assertEqual(headers[\"Location\"], url)\n        self.assertEqual(body, b\"\")\n\n    def test_get_unknown_code_returns_not_found(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/unknown\")\n        self.assertEqual(status, \"404 Not Found\")\n        self.assertEqual(json.loads(body)[\"error\"], \"unknown_code\")\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n",
+            "content_hash": "a9e50c0f5cab2b196c29be6019740855221a723a359245f1617befb60da38cee",
             "output_index": 1,
             "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
             "graph_id": "GRAPH-34C2DB80991E-V001",
@@ -790,20 +934,20 @@
       },
       "workspace_binding": {
         "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-        "snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84"
+        "snapshot_id": "WORKSPACE-SNAPSHOT-54A070A0E91B"
       },
       "repository_context": {
-        "repository_context_id": "REPOSITORY-CONTEXT-FFF9A9DC65FE",
+        "repository_context_id": "REPOSITORY-CONTEXT-6A2DCCB59375",
         "binding": {
           "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-          "snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84"
+          "snapshot_id": "WORKSPACE-SNAPSHOT-54A070A0E91B"
         },
         "observations": [
           {
             "path": "tests/test_service.py",
             "exists": true,
-            "content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1.",
-            "content_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0"
+            "content": "\"\"\"Executable tests for the generated URL-shortener project.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport unittest\nfrom io import BytesIO\nfrom typing import Any\n\nfrom url_shortener.app import URLShortenerApplication\nfrom url_shortener.service import InvalidURLError, UnknownShortCodeError, URLShortener\n\n\ndef invoke_wsgi(\n    application: URLShortenerApplication,\n    method: str,\n    path: str,\n    payload: dict[str, object] | None = None,\n) -> tuple[str, dict[str, str], bytes]:\n    body = b\"\" if payload is None else json.dumps(payload).encode(\"utf-8\")\n    environ: dict[str, Any] = {\n        \"REQUEST_METHOD\": method,\n        \"PATH_INFO\": path,\n        \"CONTENT_LENGTH\": str(len(body)),\n        \"wsgi.input\": BytesIO(body),\n    }\n    captured: dict[str, object] = {}\n\n    def start_response(status: str, headers: list[tuple[str, str]]) -> None:\n        captured[\"status\"] = status\n        captured[\"headers\"] = dict(headers)\n\n    response = b\"\".join(application(environ, start_response))\n    return (\n        str(captured[\"status\"]),\n        dict(captured[\"headers\"]),  # type: ignore[arg-type]\n        response,\n    )\n\n\nclass URLShortenerServiceTests(unittest.TestCase):\n    def setUp(self) -> None:\n        self.service = URLShortener()\n\n    def test_shortening_valid_url_returns_code(self) -> None:\n        code = self.service.shorten(\"https://example.com/path\")\n        self.assertRegex(code, r\"^[A-Za-z0-9_-]{8}$\")\n\n    def test_different_urls_receive_distinct_codes(self) -> None:\n        first = self.service.shorten(\"https://example.com/first\")\n        second = self.service.shorten(\"https://example.com/second\")\n        self.assertNotEqual(first, second)\n\n    def test_repeated_shortening_is_idempotent(self) -> None:\n        url = \"https://example.com/repeated\"\n        self.assertEqual(self.service.shorten(url), self.service.shorten(url))\n\n    def test_known_code_resolves_to_original_url(self) -> None:\n        url = \"https://example.com/original\"\n        self.assertEqual(self.service.resolve(self.service.shorten(url)), url)\n\n    def test_unknown_code_raises_domain_error(self) -> None:\n        with self.assertRaises(UnknownShortCodeError):\n            self.service.resolve(\"missing\")\n\n    def test_invalid_urls_are_rejected(self) -> None:\n        for url in (\"\", \"example.com\", \"/relative\", \"ftp://example.com\", \"https://bad host\"):\n            with self.subTest(url=url), self.assertRaises(InvalidURLError):\n                self.service.shorten(url)\n\n\nclass URLShortenerHTTPTests(unittest.TestCase):\n    def setUp(self) -> None:\n        self.application = URLShortenerApplication(\n            URLShortener(), base_url=\"http://short.test\"\n        )\n\n    def test_post_shorten_returns_created_response(self) -> None:\n        status, _, body = invoke_wsgi(\n            self.application,\n            \"POST\",\n            \"/shorten\",\n            {\"url\": \"https://example.com/http\"},\n        )\n        payload = json.loads(body)\n        self.assertEqual(status, \"201 Created\")\n        self.assertEqual(payload[\"short_url\"], f\"http://short.test/{payload['code']}\")\n\n    def test_post_shorten_rejects_invalid_url(self) -> None:\n        status, _, body = invoke_wsgi(\n            self.application,\n            \"POST\",\n            \"/shorten\",\n            {\"url\": \"ftp://example.com/not-supported\"},\n        )\n        self.assertEqual(status, \"400 Bad Request\")\n        self.assertEqual(json.loads(body)[\"error\"], \"invalid_url\")\n\n    def test_get_shorten_rejects_wrong_method(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/shorten\")\n        self.assertEqual(status, \"405 Method Not Allowed\")\n        self.assertEqual(json.loads(body)[\"error\"], \"method_not_allowed\")\n\n    def test_get_known_code_redirects(self) -> None:\n        url = \"https://example.com/redirect\"\n        code = self.application.service.shorten(url)\n        status, headers, body = invoke_wsgi(self.application, \"GET\", f\"/{code}\")\n        self.assertEqual(status, \"302 Found\")\n        self.assertEqual(headers[\"Location\"], url)\n        self.assertEqual(body, b\"\")\n\n    def test_get_unknown_code_returns_not_found(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/unknown\")\n        self.assertEqual(status, \"404 Not Found\")\n        self.assertEqual(json.loads(body)[\"error\"], \"unknown_code\")\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n",
+            "content_hash": "9a677eef639d3c42187059c3b9a4026b4163e1baa8f82fa0d24cbaf4144ed29e"
           }
         ]
       }
@@ -811,66 +955,96 @@
   ],
   "materialization_intents": [
     {
-      "artifact_id": "ARTIFACT-E4159CAF9047-O001",
+      "artifact_id": "ARTIFACT-818B3C2F8594-O001",
+      "target_path": "pyproject.toml"
+    },
+    {
+      "artifact_id": "ARTIFACT-538A207B6594-O002",
+      "target_path": "src/url_shortener/__init__.py"
+    },
+    {
+      "artifact_id": "ARTIFACT-D6E6E41847E4-O004",
+      "target_path": "src/url_shortener/app.py"
+    },
+    {
+      "artifact_id": "ARTIFACT-D5F9812EA156-O003",
       "target_path": "src/url_shortener/service.py"
     },
     {
-      "artifact_id": "ARTIFACT-2C49357CABB6-O001",
+      "artifact_id": "ARTIFACT-A9E50C0F5CAB-O001",
       "target_path": "tests/test_service.py"
     },
     {
-      "artifact_id": "ARTIFACT-8D35FF562FBC-O001",
+      "artifact_id": "ARTIFACT-B3445E6DFF59-O001",
       "target_path": "README.md"
     }
   ],
   "materialization_validations": [
     {
-      "materialization_validation_id": "MATERIALIZATION-VALIDATION-95385A3A9186",
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-06D07B38A288",
       "task_id": "TASK-001",
       "request_id": "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
       "attempt_id": "c13ed220-3835-50cf-9947-0d4ba6adff9f",
       "policy": "FORBIDDEN",
       "artifact_ids": [
-        "ARTIFACT-EFB55182ECD7-O001"
+        "ARTIFACT-6F6787AB28ED-O001"
       ],
       "artifact_evidence_digests": [
-        "bd68c0148d07c1b3fa41b51bb727c5158e884446d0bc7e108aeba0030718627f"
+        "aa0516ed41dd3587939cb7631bc981923c15ae6408969390d1a8952289690ecc"
       ],
       "intents": [],
       "passed": true,
       "issues": []
     },
     {
-      "materialization_validation_id": "MATERIALIZATION-VALIDATION-1D9BBAFA59BE",
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-26E301F5E78B",
       "task_id": "TASK-002",
       "request_id": "ad9eba06-548f-5aaf-abe6-5855f2977e6a",
       "attempt_id": "2e7066ac-bf0d-50fe-bb90-892bbaba03cb",
       "policy": "FORBIDDEN",
       "artifact_ids": [
-        "ARTIFACT-A93891D011A8-O001"
+        "ARTIFACT-0490125BDE85-O001"
       ],
       "artifact_evidence_digests": [
-        "d8df897983efa6b24fc05c23832a2ad08f9c2bf6bbf50be793f005fa08cae303"
+        "38f4b81c3c610772e97f47cc23d450402bc24585a82b76e332a307ff89956cab"
       ],
       "intents": [],
       "passed": true,
       "issues": []
     },
     {
-      "materialization_validation_id": "MATERIALIZATION-VALIDATION-E637830B5757",
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-43E0EB8D5E26",
       "task_id": "TASK-003",
       "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
       "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
       "policy": "REQUIRED",
       "artifact_ids": [
-        "ARTIFACT-E4159CAF9047-O001"
+        "ARTIFACT-818B3C2F8594-O001",
+        "ARTIFACT-538A207B6594-O002",
+        "ARTIFACT-D5F9812EA156-O003",
+        "ARTIFACT-D6E6E41847E4-O004"
       ],
       "artifact_evidence_digests": [
-        "e9fce4ae9ff4df31fa884ff18a69a8c6fda723923a14672ee01b0a93ec3dde24"
+        "26f64c6450bf8f9951440b4966cd673a250209400dac4c6d50cfff10ef38379e",
+        "937b5da415896fd8172138a769b5b4e4b6c484377c30f38ea41bf16a36a73363",
+        "9b6ff89771637b8aa45ac5dc3edba6d20c8a785cff23403d6e8f188306cc008b",
+        "c192fb1783f340af405cf60c8c6a5871f403fbdb9d122eb0149d4140c5ddb6a9"
       ],
       "intents": [
         {
-          "artifact_id": "ARTIFACT-E4159CAF9047-O001",
+          "artifact_id": "ARTIFACT-818B3C2F8594-O001",
+          "target_path": "pyproject.toml"
+        },
+        {
+          "artifact_id": "ARTIFACT-538A207B6594-O002",
+          "target_path": "src/url_shortener/__init__.py"
+        },
+        {
+          "artifact_id": "ARTIFACT-D6E6E41847E4-O004",
+          "target_path": "src/url_shortener/app.py"
+        },
+        {
+          "artifact_id": "ARTIFACT-D5F9812EA156-O003",
           "target_path": "src/url_shortener/service.py"
         }
       ],
@@ -878,20 +1052,20 @@
       "issues": []
     },
     {
-      "materialization_validation_id": "MATERIALIZATION-VALIDATION-C37FA2D4C5D7",
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-79A965C54F02",
       "task_id": "TASK-004",
       "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
       "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
       "policy": "REQUIRED",
       "artifact_ids": [
-        "ARTIFACT-2C49357CABB6-O001"
+        "ARTIFACT-A9E50C0F5CAB-O001"
       ],
       "artifact_evidence_digests": [
-        "66820f03b479430307d9eb6840585952734af1c1ff5ccd91219e84f3c11167ca"
+        "6b41c82af0e147d4d299143bbe9e90f09531654f19b88858027642c6da29dc21"
       ],
       "intents": [
         {
-          "artifact_id": "ARTIFACT-2C49357CABB6-O001",
+          "artifact_id": "ARTIFACT-A9E50C0F5CAB-O001",
           "target_path": "tests/test_service.py"
         }
       ],
@@ -899,20 +1073,20 @@
       "issues": []
     },
     {
-      "materialization_validation_id": "MATERIALIZATION-VALIDATION-6125C54993B6",
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-D1E37878394E",
       "task_id": "TASK-005",
       "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
       "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
       "policy": "REQUIRED",
       "artifact_ids": [
-        "ARTIFACT-8D35FF562FBC-O001"
+        "ARTIFACT-B3445E6DFF59-O001"
       ],
       "artifact_evidence_digests": [
-        "0cbfbbf128236945c2bc34d97cf5da0447a9eac7b18e45af63c0e7d0ab3342ce"
+        "8b618fbaefad7877d5422d99104e6754a0116f58bdb8cb81d1d577a2ad9e3020"
       ],
       "intents": [
         {
-          "artifact_id": "ARTIFACT-8D35FF562FBC-O001",
+          "artifact_id": "ARTIFACT-B3445E6DFF59-O001",
           "target_path": "README.md"
         }
       ],
@@ -922,7 +1096,7 @@
   ],
   "change_sets": [
     {
-      "change_set_id": "WORKSPACE-CHANGESET-B86E8AFFE3A0",
+      "change_set_id": "WORKSPACE-CHANGESET-93C3CA49D408",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
       "base_snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
       "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
@@ -931,94 +1105,124 @@
       "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
       "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
       "attempt_number": 2,
-      "materialization_validation_id": "MATERIALIZATION-VALIDATION-E637830B5757",
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-43E0EB8D5E26",
       "materialized_artifact_ids": [
-        "ARTIFACT-E4159CAF9047-O001"
+        "ARTIFACT-818B3C2F8594-O001",
+        "ARTIFACT-538A207B6594-O002",
+        "ARTIFACT-D6E6E41847E4-O004",
+        "ARTIFACT-D5F9812EA156-O003"
       ],
       "file_changes": [
         {
-          "artifact_id": "ARTIFACT-E4159CAF9047-O001",
-          "artifact_lineage_id": "516fc198-6b00-5dd6-82e9-1c6d4c725804",
+          "artifact_id": "ARTIFACT-818B3C2F8594-O001",
+          "artifact_lineage_id": "f7879aea-381c-5719-893c-e29aa91dda18",
+          "path": "pyproject.toml",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "desired_content_hash": "556cde48e45fa84d7643bb2eee1a98ed4c16848cda8794192b8800368e61ac5a",
+          "desired_content": "[build-system]\nrequires = [\"setuptools>=68\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"governed-url-shortener-demo\"\nversion = \"0.1.0\"\ndescription = \"Dependency-free URL shortener generated by a governed SDLC demo\"\nrequires-python = \">=3.11\"\ndependencies = []\n\n[tool.setuptools.packages.find]\nwhere = [\"src\"]\n"
+        },
+        {
+          "artifact_id": "ARTIFACT-538A207B6594-O002",
+          "artifact_lineage_id": "60086d81-32e0-5594-8f44-c17885670739",
+          "path": "src/url_shortener/__init__.py",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "desired_content_hash": "963f04540aec0d8b045dabf85032425fd30806ee53bb6bb0b49e21c50a8ec187",
+          "desired_content": "\"\"\"Runnable URL-shortener domain and WSGI application.\"\"\"\n\nfrom url_shortener.service import (\n    InvalidURLError,\n    UnknownShortCodeError,\n    URLShortener,\n)\n\n__all__ = [\"InvalidURLError\", \"UnknownShortCodeError\", \"URLShortener\"]\n"
+        },
+        {
+          "artifact_id": "ARTIFACT-D6E6E41847E4-O004",
+          "artifact_lineage_id": "15305ac2-590e-567b-8912-e6ed37d99ba6",
+          "path": "src/url_shortener/app.py",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "desired_content_hash": "c19bc87abdea1704307115b073ac265ffb80b62bdebe9716d527247b7efe40ad",
+          "desired_content": "\"\"\"Thin dependency-free WSGI adapter for the URL-shortener service.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport os\nfrom collections.abc import Callable, Iterable\nfrom typing import Any\nfrom urllib.parse import unquote\nfrom wsgiref.simple_server import make_server\n\nfrom url_shortener.service import InvalidURLError, UnknownShortCodeError, URLShortener\n\nStartResponse = Callable[[str, list[tuple[str, str]]], Any]\n\n\nclass URLShortenerApplication:\n    \"\"\"WSGI application exposing shorten and resolve operations.\"\"\"\n\n    def __init__(\n        self,\n        service: URLShortener | None = None,\n        *,\n        base_url: str = \"http://127.0.0.1:8000\",\n    ) -> None:\n        self.service = service or URLShortener()\n        self.base_url = base_url.rstrip(\"/\")\n\n    def __call__(\n        self, environ: dict[str, Any], start_response: StartResponse\n    ) -> Iterable[bytes]:\n        method = str(environ.get(\"REQUEST_METHOD\", \"GET\")).upper()\n        path = str(environ.get(\"PATH_INFO\", \"/\"))\n        if path == \"/shorten\":\n            if method == \"POST\":\n                return self._shorten(environ, start_response)\n            return _json_response(\n                start_response,\n                \"405 Method Not Allowed\",\n                {\"error\": \"method_not_allowed\"},\n            )\n        if method == \"GET\" and path.startswith(\"/\") and path != \"/\":\n            return self._resolve(unquote(path[1:]), start_response)\n        return _json_response(\n            start_response, \"404 Not Found\", {\"error\": \"not_found\"}\n        )\n\n    def _shorten(\n        self, environ: dict[str, Any], start_response: StartResponse\n    ) -> Iterable[bytes]:\n        try:\n            length = int(environ.get(\"CONTENT_LENGTH\") or \"0\")\n            if length < 1 or length > 1_000_000:\n                raise ValueError\n            stream = environ[\"wsgi.input\"]\n            payload = json.loads(stream.read(length).decode(\"utf-8\"))\n            if not isinstance(payload, dict) or not isinstance(payload.get(\"url\"), str):\n                raise ValueError\n        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):\n            return _json_response(\n                start_response,\n                \"400 Bad Request\",\n                {\"error\": \"invalid_request\", \"message\": \"Expected JSON with a URL.\"},\n            )\n        try:\n            code = self.service.shorten(payload[\"url\"])\n        except InvalidURLError as error:\n            return _json_response(\n                start_response,\n                \"400 Bad Request\",\n                {\"error\": \"invalid_url\", \"message\": str(error)},\n            )\n        return _json_response(\n            start_response,\n            \"201 Created\",\n            {\"code\": code, \"short_url\": f\"{self.base_url}/{code}\"},\n        )\n\n    def _resolve(self, code: str, start_response: StartResponse) -> Iterable[bytes]:\n        try:\n            original_url = self.service.resolve(code)\n        except UnknownShortCodeError:\n            return _json_response(\n                start_response,\n                \"404 Not Found\",\n                {\"error\": \"unknown_code\", \"code\": code},\n            )\n        start_response(\n            \"302 Found\",\n            [(\"Location\", original_url), (\"Content-Length\", \"0\")],\n        )\n        return [b\"\"]\n\n\ndef _json_response(\n    start_response: StartResponse, status: str, payload: dict[str, object]\n) -> list[bytes]:\n    body = json.dumps(payload, sort_keys=True).encode(\"utf-8\")\n    start_response(\n        status,\n        [\n            (\"Content-Type\", \"application/json; charset=utf-8\"),\n            (\"Content-Length\", str(len(body))),\n        ],\n    )\n    return [body]\n\n\ndef main() -> None:\n    host = os.environ.get(\"URL_SHORTENER_HOST\", \"127.0.0.1\")\n    port = int(os.environ.get(\"URL_SHORTENER_PORT\", \"8000\"))\n    application = URLShortenerApplication(base_url=f\"http://{host}:{port}\")\n    with make_server(host, port, application) as server:\n        print(f\"URL shortener listening on http://{host}:{port}\")\n        server.serve_forever()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+        },
+        {
+          "artifact_id": "ARTIFACT-D5F9812EA156-O003",
+          "artifact_lineage_id": "6ded08b1-ca83-539c-8f09-d6739685811c",
           "path": "src/url_shortener/service.py",
           "operation": "CREATE",
           "expected_preimage_hash": null,
-          "desired_content_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e",
-          "desired_content": "Canonical proposal for Implement shortening behavior. Dependency artifacts: 2."
+          "desired_content_hash": "1f2746d67b7f0a392886334e67ef5298619970acb38f0d2a6d55ce275891fb64",
+          "desired_content": "\"\"\"In-memory URL-shortening domain service.\"\"\"\n\nfrom __future__ import annotations\n\nimport base64\nimport hashlib\nfrom threading import Lock\nfrom urllib.parse import urlsplit\n\n\nclass URLShortenerError(Exception):\n    \"\"\"Base class for domain-level URL-shortener failures.\"\"\"\n\n\nclass InvalidURLError(URLShortenerError):\n    \"\"\"Raised when a submitted URL is not an absolute HTTP(S) URL.\"\"\"\n\n\nclass UnknownShortCodeError(URLShortenerError):\n    \"\"\"Raised when no original URL exists for a short code.\"\"\"\n\n\nclass URLShortener:\n    \"\"\"Deterministic, collision-safe, process-local URL repository.\"\"\"\n\n    def __init__(self) -> None:\n        self._url_by_code: dict[str, str] = {}\n        self._code_by_url: dict[str, str] = {}\n        self._lock = Lock()\n\n    def shorten(self, url: str) -> str:\n        \"\"\"Return a stable unique code for one valid absolute HTTP(S) URL.\"\"\"\n\n        validated = _validate_url(url)\n        with self._lock:\n            existing = self._code_by_url.get(validated)\n            if existing is not None:\n                return existing\n\n            nonce = 0\n            while True:\n                code = _candidate_code(validated, nonce)\n                owner = self._url_by_code.get(code)\n                if owner is None or owner == validated:\n                    self._url_by_code[code] = validated\n                    self._code_by_url[validated] = code\n                    return code\n                nonce += 1\n\n    def resolve(self, code: str) -> str:\n        \"\"\"Return the original URL for a known code.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                return self._url_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n\n\ndef _validate_url(url: str) -> str:\n    if not isinstance(url, str) or not url or url != url.strip():\n        raise InvalidURLError(\"URL must be a non-empty absolute HTTP(S) URL.\")\n    if any(character.isspace() for character in url):\n        raise InvalidURLError(\"URL must not contain whitespace.\")\n    try:\n        parsed = urlsplit(url)\n        port = parsed.port\n    except ValueError as error:\n        raise InvalidURLError(\"URL authority is malformed.\") from error\n    if (\n        parsed.scheme.lower() not in {\"http\", \"https\"}\n        or not parsed.netloc\n        or parsed.hostname is None\n        or (port is not None and not 1 <= port <= 65535)\n    ):\n        raise InvalidURLError(\"URL must be an absolute HTTP(S) URL.\")\n    return url\n\n\ndef _candidate_code(url: str, nonce: int) -> str:\n    digest = hashlib.sha256(f\"{url}\\0{nonce}\".encode(\"utf-8\")).digest()\n    return base64.urlsafe_b64encode(digest[:6]).decode(\"ascii\").rstrip(\"=\")\n"
         }
       ]
     },
     {
-      "change_set_id": "WORKSPACE-CHANGESET-3E47DD8DB0B3",
+      "change_set_id": "WORKSPACE-CHANGESET-FE1390A9F7DF",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-      "base_snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "base_snapshot_id": "WORKSPACE-SNAPSHOT-6A64506F3ADA",
       "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
       "graph_id": "GRAPH-34C2DB80991E-V001",
       "task_id": "TASK-004",
       "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
       "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
       "attempt_number": 1,
-      "materialization_validation_id": "MATERIALIZATION-VALIDATION-C37FA2D4C5D7",
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-79A965C54F02",
       "materialized_artifact_ids": [
-        "ARTIFACT-2C49357CABB6-O001"
+        "ARTIFACT-A9E50C0F5CAB-O001"
       ],
       "file_changes": [
         {
-          "artifact_id": "ARTIFACT-2C49357CABB6-O001",
-          "artifact_lineage_id": "b8ec0eed-4909-50fe-b75d-bac456aa9b6a",
+          "artifact_id": "ARTIFACT-A9E50C0F5CAB-O001",
+          "artifact_lineage_id": "a1d40a12-f5d4-5464-9268-970d9ea609e7",
           "path": "tests/test_service.py",
           "operation": "CREATE",
           "expected_preimage_hash": null,
-          "desired_content_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0",
-          "desired_content": "Canonical proposal for Verify approved behavior. Dependency artifacts: 1."
+          "desired_content_hash": "9a677eef639d3c42187059c3b9a4026b4163e1baa8f82fa0d24cbaf4144ed29e",
+          "desired_content": "\"\"\"Executable tests for the generated URL-shortener project.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport unittest\nfrom io import BytesIO\nfrom typing import Any\n\nfrom url_shortener.app import URLShortenerApplication\nfrom url_shortener.service import InvalidURLError, UnknownShortCodeError, URLShortener\n\n\ndef invoke_wsgi(\n    application: URLShortenerApplication,\n    method: str,\n    path: str,\n    payload: dict[str, object] | None = None,\n) -> tuple[str, dict[str, str], bytes]:\n    body = b\"\" if payload is None else json.dumps(payload).encode(\"utf-8\")\n    environ: dict[str, Any] = {\n        \"REQUEST_METHOD\": method,\n        \"PATH_INFO\": path,\n        \"CONTENT_LENGTH\": str(len(body)),\n        \"wsgi.input\": BytesIO(body),\n    }\n    captured: dict[str, object] = {}\n\n    def start_response(status: str, headers: list[tuple[str, str]]) -> None:\n        captured[\"status\"] = status\n        captured[\"headers\"] = dict(headers)\n\n    response = b\"\".join(application(environ, start_response))\n    return (\n        str(captured[\"status\"]),\n        dict(captured[\"headers\"]),  # type: ignore[arg-type]\n        response,\n    )\n\n\nclass URLShortenerServiceTests(unittest.TestCase):\n    def setUp(self) -> None:\n        self.service = URLShortener()\n\n    def test_shortening_valid_url_returns_code(self) -> None:\n        code = self.service.shorten(\"https://example.com/path\")\n        self.assertRegex(code, r\"^[A-Za-z0-9_-]{8}$\")\n\n    def test_different_urls_receive_distinct_codes(self) -> None:\n        first = self.service.shorten(\"https://example.com/first\")\n        second = self.service.shorten(\"https://example.com/second\")\n        self.assertNotEqual(first, second)\n\n    def test_repeated_shortening_is_idempotent(self) -> None:\n        url = \"https://example.com/repeated\"\n        self.assertEqual(self.service.shorten(url), self.service.shorten(url))\n\n    def test_known_code_resolves_to_original_url(self) -> None:\n        url = \"https://example.com/original\"\n        self.assertEqual(self.service.resolve(self.service.shorten(url)), url)\n\n    def test_unknown_code_raises_domain_error(self) -> None:\n        with self.assertRaises(UnknownShortCodeError):\n            self.service.resolve(\"missing\")\n\n    def test_invalid_urls_are_rejected(self) -> None:\n        for url in (\"\", \"example.com\", \"/relative\", \"ftp://example.com\", \"https://bad host\"):\n            with self.subTest(url=url), self.assertRaises(InvalidURLError):\n                self.service.shorten(url)\n\n\nclass URLShortenerHTTPTests(unittest.TestCase):\n    def setUp(self) -> None:\n        self.application = URLShortenerApplication(\n            URLShortener(), base_url=\"http://short.test\"\n        )\n\n    def test_post_shorten_returns_created_response(self) -> None:\n        status, _, body = invoke_wsgi(\n            self.application,\n            \"POST\",\n            \"/shorten\",\n            {\"url\": \"https://example.com/http\"},\n        )\n        payload = json.loads(body)\n        self.assertEqual(status, \"201 Created\")\n        self.assertEqual(payload[\"short_url\"], f\"http://short.test/{payload['code']}\")\n\n    def test_post_shorten_rejects_invalid_url(self) -> None:\n        status, _, body = invoke_wsgi(\n            self.application,\n            \"POST\",\n            \"/shorten\",\n            {\"url\": \"ftp://example.com/not-supported\"},\n        )\n        self.assertEqual(status, \"400 Bad Request\")\n        self.assertEqual(json.loads(body)[\"error\"], \"invalid_url\")\n\n    def test_get_shorten_rejects_wrong_method(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/shorten\")\n        self.assertEqual(status, \"405 Method Not Allowed\")\n        self.assertEqual(json.loads(body)[\"error\"], \"method_not_allowed\")\n\n    def test_get_known_code_redirects(self) -> None:\n        url = \"https://example.com/redirect\"\n        code = self.application.service.shorten(url)\n        status, headers, body = invoke_wsgi(self.application, \"GET\", f\"/{code}\")\n        self.assertEqual(status, \"302 Found\")\n        self.assertEqual(headers[\"Location\"], url)\n        self.assertEqual(body, b\"\")\n\n    def test_get_unknown_code_returns_not_found(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/unknown\")\n        self.assertEqual(status, \"404 Not Found\")\n        self.assertEqual(json.loads(body)[\"error\"], \"unknown_code\")\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
         }
       ]
     },
     {
-      "change_set_id": "WORKSPACE-CHANGESET-86BCEBF4C9C0",
+      "change_set_id": "WORKSPACE-CHANGESET-8BE579C1E1B6",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-      "base_snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "base_snapshot_id": "WORKSPACE-SNAPSHOT-54A070A0E91B",
       "requirement_spec_id": "SPEC-8D5D9B661E30-V001",
       "graph_id": "GRAPH-34C2DB80991E-V001",
       "task_id": "TASK-005",
       "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
       "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
       "attempt_number": 1,
-      "materialization_validation_id": "MATERIALIZATION-VALIDATION-6125C54993B6",
+      "materialization_validation_id": "MATERIALIZATION-VALIDATION-D1E37878394E",
       "materialized_artifact_ids": [
-        "ARTIFACT-8D35FF562FBC-O001"
+        "ARTIFACT-B3445E6DFF59-O001"
       ],
       "file_changes": [
         {
-          "artifact_id": "ARTIFACT-8D35FF562FBC-O001",
-          "artifact_lineage_id": "aa2a41a3-32d1-54c8-91da-bfe3953fec9d",
+          "artifact_id": "ARTIFACT-B3445E6DFF59-O001",
+          "artifact_lineage_id": "98576731-a4e1-55a6-9a74-3eefd6bd7168",
           "path": "README.md",
           "operation": "CREATE",
           "expected_preimage_hash": null,
-          "desired_content_hash": "159fcf96ce5819767d505a8100f9d3a85cea2934f9436387d81db8f4fe81e566",
-          "desired_content": "Canonical proposal for Document service contract. Dependency artifacts: 1."
+          "desired_content_hash": "91a82a5c66ce0f72fbd536552dbdcd08ac8984c943b6bb5d8f3d7d229767170f",
+          "desired_content": "# Governed URL Shortener Demo\n\nThis dependency-free Python URL shortener is engineering output generated by the\ngoverned Agentic SDLC demonstration. The approved workflow produced semantic\nartifacts, validated file-materialization intents, derived change sets, and\ntransactionally created this project inside a disposable isolated workspace.\n\n## Architecture\n\n`URLShortener` contains the domain rules and process-local in-memory mappings.\n`URLShortenerApplication` is a thin WSGI adapter. The service accepts absolute\nHTTP(S) URLs, generates stable collision-checked short codes, resolves known\ncodes, and reports typed errors for invalid URLs and unknown codes.\n\nStorage is deliberately in-memory and is lost when the process exits. URL\nexpiration remains unresolved by the approved specification and is not\nimplemented.\n\n## Run\n\nPython 3.11 or newer is required. No third-party runtime dependency is needed.\n\n```bash\nPYTHONPATH=src python -m url_shortener.app\n```\n\nThe server binds to `127.0.0.1:8000` by default. Override it with\n`URL_SHORTENER_HOST` and `URL_SHORTENER_PORT`.\n\n## Test\n\n```bash\nPYTHONPATH=src python -m unittest discover -s tests -v\n```\n\nTests run entirely in-process and require no network access.\n\n## HTTP API\n\nShorten a URL:\n\n```bash\ncurl -i -X POST http://127.0.0.1:8000/shorten \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"url\":\"https://example.com/path\"}'\n```\n\nThe `201 Created` JSON response contains `code` and `short_url`. Resolve the code:\n\n```bash\ncurl -i http://127.0.0.1:8000/<code>\n```\n\nA known code returns `302 Found`; an unknown code returns `404 Not Found`.\n\n## Assumptions and trade-offs\n\n- Repeated shortening of the same URL returns the existing code.\n- SHA-256-derived candidates plus collision checking provide deterministic codes.\n- Persistence, expiration, analytics, authentication, and repository promotion\n  remain outside this prototype.\n- The orchestrator does not execute this generated source or its tests. Execution\n  commands above are manual reviewer/development actions against the exported copy.\n"
         }
       ]
     }
   ],
   "change_set_validations": [
     {
-      "change_set_id": "WORKSPACE-CHANGESET-B86E8AFFE3A0",
+      "change_set_id": "WORKSPACE-CHANGESET-93C3CA49D408",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
       "snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
       "passed": true,
       "issues": []
     },
     {
-      "change_set_id": "WORKSPACE-CHANGESET-3E47DD8DB0B3",
+      "change_set_id": "WORKSPACE-CHANGESET-FE1390A9F7DF",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-      "snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "snapshot_id": "WORKSPACE-SNAPSHOT-6A64506F3ADA",
       "passed": true,
       "issues": []
     },
     {
-      "change_set_id": "WORKSPACE-CHANGESET-86BCEBF4C9C0",
+      "change_set_id": "WORKSPACE-CHANGESET-8BE579C1E1B6",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-      "snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "snapshot_id": "WORKSPACE-SNAPSHOT-54A070A0E91B",
       "passed": true,
       "issues": []
     }
@@ -1026,25 +1230,37 @@
   "conflicts": [],
   "mutations": [
     {
-      "mutation_id": "WORKSPACE-MUTATION-C12B3B286F7F",
+      "mutation_id": "WORKSPACE-MUTATION-3D7C3F4FC90D",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-      "change_set_id": "WORKSPACE-CHANGESET-B86E8AFFE3A0",
+      "change_set_id": "WORKSPACE-CHANGESET-93C3CA49D408",
       "base_snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
       "task_id": "TASK-003",
       "request_id": "d535de6a-4ad4-5676-baab-d07a60710d24",
       "attempt_id": "133d840c-47fa-5626-8520-476745c75fc6",
       "pre_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-3A95EAF000D4",
-      "post_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "post_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-6A64506F3ADA",
       "rollback_snapshot_id": null,
       "status": "APPLIED",
       "file_evidence": [
         {
-          "path": "src/url_shortener/service.py",
+          "path": "pyproject.toml",
           "operation": "CREATE",
           "expected_preimage_hash": null,
           "observed_preimage_hash": null,
-          "desired_postimage_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e",
-          "observed_postimage_hash": "4d3beeb5b06cbd6cd4603bff48c44ebc6f49e9c2ab1b462cc2670ba9a263418e",
+          "desired_postimage_hash": "556cde48e45fa84d7643bb2eee1a98ed4c16848cda8794192b8800368e61ac5a",
+          "observed_postimage_hash": "556cde48e45fa84d7643bb2eee1a98ed4c16848cda8794192b8800368e61ac5a",
+          "write_performed": true,
+          "created_parent_paths": [],
+          "rollback_attempted": false,
+          "rollback_verified": false
+        },
+        {
+          "path": "src/url_shortener/__init__.py",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "observed_preimage_hash": null,
+          "desired_postimage_hash": "963f04540aec0d8b045dabf85032425fd30806ee53bb6bb0b49e21c50a8ec187",
+          "observed_postimage_hash": "963f04540aec0d8b045dabf85032425fd30806ee53bb6bb0b49e21c50a8ec187",
           "write_performed": true,
           "created_parent_paths": [
             "src",
@@ -1052,20 +1268,44 @@
           ],
           "rollback_attempted": false,
           "rollback_verified": false
+        },
+        {
+          "path": "src/url_shortener/app.py",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "observed_preimage_hash": null,
+          "desired_postimage_hash": "c19bc87abdea1704307115b073ac265ffb80b62bdebe9716d527247b7efe40ad",
+          "observed_postimage_hash": "c19bc87abdea1704307115b073ac265ffb80b62bdebe9716d527247b7efe40ad",
+          "write_performed": true,
+          "created_parent_paths": [],
+          "rollback_attempted": false,
+          "rollback_verified": false
+        },
+        {
+          "path": "src/url_shortener/service.py",
+          "operation": "CREATE",
+          "expected_preimage_hash": null,
+          "observed_preimage_hash": null,
+          "desired_postimage_hash": "1f2746d67b7f0a392886334e67ef5298619970acb38f0d2a6d55ce275891fb64",
+          "observed_postimage_hash": "1f2746d67b7f0a392886334e67ef5298619970acb38f0d2a6d55ce275891fb64",
+          "write_performed": true,
+          "created_parent_paths": [],
+          "rollback_attempted": false,
+          "rollback_verified": false
         }
       ],
       "issues": []
     },
     {
-      "mutation_id": "WORKSPACE-MUTATION-3720FB353A21",
+      "mutation_id": "WORKSPACE-MUTATION-4D50271D8DCE",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-      "change_set_id": "WORKSPACE-CHANGESET-3E47DD8DB0B3",
-      "base_snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
+      "change_set_id": "WORKSPACE-CHANGESET-FE1390A9F7DF",
+      "base_snapshot_id": "WORKSPACE-SNAPSHOT-6A64506F3ADA",
       "task_id": "TASK-004",
       "request_id": "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
       "attempt_id": "cfdee2f6-ad60-5df0-9e1d-2966c177604b",
-      "pre_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-1DC711029A75",
-      "post_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "pre_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-6A64506F3ADA",
+      "post_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-54A070A0E91B",
       "rollback_snapshot_id": null,
       "status": "APPLIED",
       "file_evidence": [
@@ -1074,8 +1314,8 @@
           "operation": "CREATE",
           "expected_preimage_hash": null,
           "observed_preimage_hash": null,
-          "desired_postimage_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0",
-          "observed_postimage_hash": "14a1bdeaa4344d7b9346a9fdba2b0150144eac39ec7d6e7956ac461e9b9e07b0",
+          "desired_postimage_hash": "9a677eef639d3c42187059c3b9a4026b4163e1baa8f82fa0d24cbaf4144ed29e",
+          "observed_postimage_hash": "9a677eef639d3c42187059c3b9a4026b4163e1baa8f82fa0d24cbaf4144ed29e",
           "write_performed": true,
           "created_parent_paths": [
             "tests"
@@ -1087,15 +1327,15 @@
       "issues": []
     },
     {
-      "mutation_id": "WORKSPACE-MUTATION-AA65AAD84DB4",
+      "mutation_id": "WORKSPACE-MUTATION-F40C637DBC16",
       "workspace_id": "WORKSPACE-cea9a700-5241-5f5a-9f2a-fc619b495d23",
-      "change_set_id": "WORKSPACE-CHANGESET-86BCEBF4C9C0",
-      "base_snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
+      "change_set_id": "WORKSPACE-CHANGESET-8BE579C1E1B6",
+      "base_snapshot_id": "WORKSPACE-SNAPSHOT-54A070A0E91B",
       "task_id": "TASK-005",
       "request_id": "6a012676-2131-5286-a4f8-c2f6d2c2a430",
       "attempt_id": "7ad14f46-01b3-5d45-b3e4-6b5566d31722",
-      "pre_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-5F7A17CEEE84",
-      "post_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-CD18A89365E2",
+      "pre_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-54A070A0E91B",
+      "post_mutation_snapshot_id": "WORKSPACE-SNAPSHOT-26BDAA45EE33",
       "rollback_snapshot_id": null,
       "status": "APPLIED",
       "file_evidence": [
@@ -1104,8 +1344,8 @@
           "operation": "CREATE",
           "expected_preimage_hash": null,
           "observed_preimage_hash": null,
-          "desired_postimage_hash": "159fcf96ce5819767d505a8100f9d3a85cea2934f9436387d81db8f4fe81e566",
-          "observed_postimage_hash": "159fcf96ce5819767d505a8100f9d3a85cea2934f9436387d81db8f4fe81e566",
+          "desired_postimage_hash": "91a82a5c66ce0f72fbd536552dbdcd08ac8984c943b6bb5d8f3d7d229767170f",
+          "observed_postimage_hash": "91a82a5c66ce0f72fbd536552dbdcd08ac8984c943b6bb5d8f3d7d229767170f",
           "write_performed": true,
           "created_parent_paths": [],
           "rollback_attempted": false,
@@ -1125,7 +1365,7 @@
       "reason_code": "GOVERNED_EXIT_PASSED",
       "evidence_ids": [
         "62d257ef-483a-55d0-ac2a-e1c4b9cb5df2",
-        "MATERIALIZATION-VALIDATION-95385A3A9186"
+        "MATERIALIZATION-VALIDATION-06D07B38A288"
       ]
     },
     {
@@ -1136,7 +1376,7 @@
       "disposition": "SUCCEED_TASK",
       "reason_code": "GOVERNED_EXIT_PASSED",
       "evidence_ids": [
-        "MATERIALIZATION-VALIDATION-1D9BBAFA59BE",
+        "MATERIALIZATION-VALIDATION-26E301F5E78B",
         "ad9eba06-548f-5aaf-abe6-5855f2977e6a"
       ]
     },
@@ -1159,9 +1399,9 @@
       "disposition": "SUCCEED_TASK",
       "reason_code": "GOVERNED_EXIT_PASSED",
       "evidence_ids": [
-        "MATERIALIZATION-VALIDATION-E637830B5757",
-        "WORKSPACE-CHANGESET-B86E8AFFE3A0",
-        "WORKSPACE-MUTATION-C12B3B286F7F",
+        "MATERIALIZATION-VALIDATION-43E0EB8D5E26",
+        "WORKSPACE-CHANGESET-93C3CA49D408",
+        "WORKSPACE-MUTATION-3D7C3F4FC90D",
         "d535de6a-4ad4-5676-baab-d07a60710d24"
       ]
     },
@@ -1174,9 +1414,9 @@
       "reason_code": "GOVERNED_EXIT_PASSED",
       "evidence_ids": [
         "65d540f7-feaa-5bef-b9c8-f5b75759dffa",
-        "MATERIALIZATION-VALIDATION-C37FA2D4C5D7",
-        "WORKSPACE-CHANGESET-3E47DD8DB0B3",
-        "WORKSPACE-MUTATION-3720FB353A21"
+        "MATERIALIZATION-VALIDATION-79A965C54F02",
+        "WORKSPACE-CHANGESET-FE1390A9F7DF",
+        "WORKSPACE-MUTATION-4D50271D8DCE"
       ]
     },
     {
@@ -1188,9 +1428,9 @@
       "reason_code": "GOVERNED_EXIT_PASSED",
       "evidence_ids": [
         "6a012676-2131-5286-a4f8-c2f6d2c2a430",
-        "MATERIALIZATION-VALIDATION-6125C54993B6",
-        "WORKSPACE-CHANGESET-86BCEBF4C9C0",
-        "WORKSPACE-MUTATION-AA65AAD84DB4"
+        "MATERIALIZATION-VALIDATION-D1E37878394E",
+        "WORKSPACE-CHANGESET-8BE579C1E1B6",
+        "WORKSPACE-MUTATION-F40C637DBC16"
       ]
     }
   ]

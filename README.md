@@ -604,8 +604,38 @@ concurrency-safe deterministic task executor with a fixed demonstration timestam
 It includes an actual two-task executor wave, one controlled retryable local
 executor failure followed by a successful later attempt, governed file
 materialization, and authoritative snapshot progression without a provider call.
-The generated files are audit data only; the demo never executes the materialized
-source or tests. The generated
+The materialized outputs form a real dependency-free Python URL-shortener project:
+
+```text
+artifacts/demo-run/generated-project/
+├── pyproject.toml
+├── README.md
+├── src/url_shortener/
+│   ├── __init__.py
+│   ├── service.py
+│   └── app.py
+└── tests/test_service.py
+```
+
+The governed workflow transactionally creates these files only inside its
+factory-created disposable workspace. After the graph succeeds with verified
+workspace integrity, deterministic demo tooling copies the final regular-file set
+to `generated-project/` for reviewer inspection. This export is not promotion into
+an authoritative repository and grants the scheduler no additional filesystem
+authority.
+
+The orchestrator never executes the materialized source or tests. Reviewers and
+development tooling may validate the exported copy manually, outside workflow
+authority:
+
+```bash
+cd artifacts/demo-run/generated-project
+PYTHONPATH=src python -m unittest discover -s tests -v
+PYTHONPATH=src python -m url_shortener.app
+```
+
+The generated application uses the standard library, process-local in-memory
+storage, a thin WSGI HTTP adapter, and executable `unittest` coverage. The generated
 `artifacts/workflow_diagram.png` documents the static LangGraph control plane, not
 the per-run engineering TaskGraph.
 

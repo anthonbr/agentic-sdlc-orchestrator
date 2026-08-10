@@ -42,12 +42,7 @@ from agentic_sdlc.state import (
     demo_input,
 )
 from agentic_sdlc.task_execution import TaskGraphExecutionStatus
-from agentic_sdlc.task_execution_contracts import (
-    ArtifactMaterializationProposal,
-    ArtifactOutput,
-    EngineeringArtifactType,
-    TaskExecutionResult,
-)
+from agentic_sdlc.task_execution_contracts import TaskExecutionResult
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
@@ -59,6 +54,7 @@ from agentic_sdlc.workspace_integration_contracts import (
     WorkspaceBoundTaskExecutionRequest,
 )
 from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
+from tests.demo_url_shortener_project import deterministic_demo_result
 
 
 class RecordingTaskExecutor:
@@ -73,47 +69,7 @@ class RecordingTaskExecutor:
         self, request: WorkspaceBoundTaskExecutionRequest
     ) -> TaskExecutionResult:
         self.calls.append(request)
-        artifact_types = {
-            TaskType.DESIGN: EngineeringArtifactType.DESIGN,
-            TaskType.IMPLEMENTATION: EngineeringArtifactType.SOURCE,
-            TaskType.TEST: EngineeringArtifactType.TEST,
-            TaskType.DOCUMENTATION: EngineeringArtifactType.DOCUMENTATION,
-            TaskType.VALIDATION: EngineeringArtifactType.VALIDATION,
-            TaskType.RELEASE: EngineeringArtifactType.OTHER,
-        }
-        return TaskExecutionResult(
-            request_id=request.request_id,
-            attempt_id=request.attempt_id,
-            task_id=request.task_id,
-            summary=f"Produced governed output for {request.task_id}.",
-            outputs=(
-                ArtifactOutput(
-                    artifact_type=artifact_types[request.task.task_type],
-                    logical_name=request.task.expected_outputs[0],
-                    content=(
-                        f"Canonical proposal for {request.task.title}. "
-                        f"Dependency artifacts: {len(request.dependency_artifacts)}."
-                    ),
-                ),
-            ),
-            materialization_proposals=(
-                (
-                    ArtifactMaterializationProposal(
-                        output_index=1,
-                        target_path={
-                            "build_service": "src/url_shortener/service.py",
-                            "verify_service": "tests/test_service.py",
-                            "document_service": "README.md",
-                        }[request.task.source_key],
-                    ),
-                )
-                if request.task.materialization_policy
-                is TaskMaterializationPolicy.REQUIRED
-                else ()
-            ),
-            assumptions=(),
-            risks=(),
-        )
+        return deterministic_demo_result(request)
 
 
 def _analysis(version: str = "v1") -> RequirementAnalysis:
@@ -703,7 +659,7 @@ def test_task_graph_approval_runs_the_authoritative_task_graph_to_completion() -
         "TASK-004",
         "TASK-005",
     ]
-    assert len(result["engineering_artifacts"]) == 5
+    assert len(result["engineering_artifacts"]) == 8
     assert all(
         validation.passed
         for validation in result["task_execution_validations"]
@@ -871,6 +827,9 @@ def test_successful_run_writes_canonical_artifact_set(tmp_path: Path) -> None:
     engineering_artifacts = json.loads(
         (artifact_dir / "engineering_artifacts.json").read_text()
     )
+    workspace_execution = json.loads(
+        (artifact_dir / "workspace_execution.json").read_text()
+    )
     graph_markdown = (artifact_dir / "task_graph.md").read_text()
     summary = (artifact_dir / "summary.md").read_text()
     assert spec["functional_requirements"][0]["item_id"] == "FR-001"
@@ -885,7 +844,45 @@ def test_successful_run_writes_canonical_artifact_set(tmp_path: Path) -> None:
         "TASK-004",
         "TASK-005",
     ]
-    assert len(engineering_artifacts) == 5
+    assert len(engineering_artifacts) == 8
+    assert {item["logical_name"] for item in engineering_artifacts} == {
+        "url-shortener-api-design",
+        "url-shortener-storage-design",
+        "generated-project-metadata",
+        "url-shortener-package",
+        "url-shortener-domain-service",
+        "url-shortener-wsgi-application",
+        "url-shortener-executable-tests",
+        "generated-project-readme",
+    }
+    assert sorted(
+        item["target_path"]
+        for item in workspace_execution["materialization_intents"]
+    ) == [
+        "README.md",
+        "pyproject.toml",
+        "src/url_shortener/__init__.py",
+        "src/url_shortener/app.py",
+        "src/url_shortener/service.py",
+        "tests/test_service.py",
+    ]
+    assert [item["status"] for item in workspace_execution["mutations"]] == [
+        "APPLIED",
+        "APPLIED",
+        "APPLIED",
+    ]
+    contents_by_name = {
+        item["logical_name"]: item["content"] for item in engineering_artifacts
+    }
+    assert "class URLShortener:" in contents_by_name[
+        "url-shortener-domain-service"
+    ]
+    assert "class URLShortenerApplication:" in contents_by_name[
+        "url-shortener-wsgi-application"
+    ]
+    assert "class URLShortenerHTTPTests" in contents_by_name[
+        "url-shortener-executable-tests"
+    ]
     assert "Required specification coverage: complete (FR/NFR/CON/AC)" in (
         graph_markdown
     )

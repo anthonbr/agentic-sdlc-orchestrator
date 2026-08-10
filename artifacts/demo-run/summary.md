@@ -14,12 +14,12 @@
 - Execution waves: 5
 - Maximum parallel wave width: 2
 - Workspace integrity: VERIFIED
-- Final authoritative workspace snapshot: WORKSPACE-SNAPSHOT-CD18A89365E2
+- Final authoritative workspace snapshot: WORKSPACE-SNAPSHOT-26BDAA45EE33
 - Workspace mutations: 3
 - Workspace mutation outcomes: APPLIED, APPLIED, APPLIED
 - Conflicting wave reconciliations: 0
 - Rollback outcomes: 0
-- Materialized desired paths: README.md (CREATE), src/url_shortener/service.py (CREATE), tests/test_service.py (CREATE)
+- Materialized desired paths: README.md (CREATE), pyproject.toml (CREATE), src/url_shortener/__init__.py (CREATE), src/url_shortener/app.py (CREATE), src/url_shortener/service.py (CREATE), tests/test_service.py (CREATE)
 - Generated code/tests executed: no
 - Exit gate: passed
 
