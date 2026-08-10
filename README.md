@@ -14,9 +14,13 @@ the software-development lifecycle.
 - **V0.4 — Governed LLM task planning:** a human-approved requirement
   specification, LLM-proposed engineering task dependencies, deterministic graph
   normalization/validation, and human TaskGraph approval.
+- **V0.5 runtime foundation (current slice):** separate execution state and a
+  deterministic interpreter for readiness, task transitions, dependency
+  unlocking, failure, and safe stop.
 
-V0.4 plans engineering work but deliberately does **not execute tasks**, write
-application code, or implement the URL Shortener demonstration service.
+The current V0.5 slice interprets an approved plan but deliberately does **not
+execute engineering work**, call an LLM task executor, write application code, or
+implement the URL Shortener demonstration service.
 
 ## Two distinct graphs
 
@@ -80,6 +84,29 @@ Connectivity is represented once through `Task.depends_on`. Topological order,
 execution layers, naturally parallel tasks, ENTRY-ready tasks, EXIT predecessors,
 and synchronization points are derived rather than stored as competing
 authoritative graph copies.
+
+### Deterministic execution runtime foundation
+
+The execution runtime keeps mutable progress separate from the immutable approved
+plan:
+
+```text
+approved TaskGraph
+    -> TaskGraphExecutionState
+    -> deterministic readiness and synchronization transitions
+```
+
+Tasks without dependencies initialize as `READY`; dependent tasks initialize as
+`BLOCKED`. Starting a ready task moves it to `RUNNING` and increments its attempt
+count. Successful completion unlocks a blocked task only after every declared
+dependency has succeeded. A task failure marks the graph execution `FAILED` and
+freezes new dispatch. Already-running peers may settle without unlocking more
+work; failure remains sticky, and `SAFE_STOPPED` requires no task to remain
+`RUNNING`. Retry policy is deferred.
+
+This module is not wired into the LangGraph workflow yet. Multiple tasks can be
+ready at once, representing future parallel execution, but this slice adds no
+concurrency, LLM task executor, repository mutation, or dynamic LangGraph nodes.
 
 ## Governed planning and lineage
 
@@ -201,11 +228,13 @@ Tests inject scripted `FakeRequirementAnalysisClient` and
 `FakeTaskPlanningClient` instances. They require no API key or network access and
 cover structured parsing, retries, safe stops, identity assignment, lineage,
 reference integrity, DAG validation, derived parallel/join semantics, both human
-approval loops, artifacts, and the preserved static parallel branches.
+approval loops, artifacts, the preserved static parallel branches, and isolated
+deterministic TaskGraph runtime transitions.
 
 ## Deliberately deferred
 
-V0.4 does not include task execution, code-generation or repository-writing
-agents, dynamically generated LangGraph nodes, full dynamic replanning, completed
-task reconciliation, brownfield impact analysis, rollback, a database/audit store,
-distributed scheduling, deployment, or a web UI.
+The current V0.5 slice does not include actual engineering-task execution, an LLM
+task executor, concurrent execution, retry/recovery policy, code-generation or
+repository-writing agents, dynamically generated LangGraph nodes, full dynamic
+replanning, completed-task reconciliation, brownfield impact analysis, rollback,
+a database/audit store, distributed scheduling, deployment, or a web UI.

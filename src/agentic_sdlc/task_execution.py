@@ -1,0 +1,295 @@
+"""Deterministic runtime state and scheduling for an approved TaskGraph."""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from agentic_sdlc.task_graph import TaskGraph
+
+
+class TaskExecutionStatus(StrEnum):
+    """Runtime status of one canonical engineering task."""
+
+    BLOCKED = "BLOCKED"
+    READY = "READY"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+
+
+class TaskGraphExecutionStatus(StrEnum):
+    """Runtime status of one attempt to interpret an approved TaskGraph."""
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    SAFE_STOPPED = "SAFE_STOPPED"
+
+
+class TaskExecutionState(BaseModel):
+    """Runtime state for one task; planning fields remain on the canonical Task."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    task_id: str
+    status: TaskExecutionStatus
+    attempt_count: int = Field(default=0, ge=0)
+
+
+class TaskGraphExecutionState(BaseModel):
+    """Immutable runtime snapshot for one approved TaskGraph execution attempt."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    graph_id: str
+    status: TaskGraphExecutionStatus
+    task_states: tuple[TaskExecutionState, ...]
+
+
+class TaskExecutionError(ValueError):
+    """Raised when runtime state or a requested transition is invalid."""
+
+
+def initialize_task_graph_execution(graph: TaskGraph) -> TaskGraphExecutionState:
+    """Create a side-effect-free runtime snapshot from canonical dependencies."""
+
+    if not graph.tasks:
+        raise TaskExecutionError("Cannot initialize an empty TaskGraph.")
+    return TaskGraphExecutionState(
+        graph_id=graph.graph_id,
+        status=TaskGraphExecutionStatus.PENDING,
+        task_states=tuple(
+            TaskExecutionState(
+                task_id=task.task_id,
+                status=(
+                    TaskExecutionStatus.BLOCKED
+                    if task.depends_on
+                    else TaskExecutionStatus.READY
+                ),
+            )
+            for task in graph.tasks
+        ),
+    )
+
+
+def ready_task_ids(
+    graph: TaskGraph, execution: TaskGraphExecutionState
+) -> tuple[str, ...]:
+    """Return runnable task IDs in canonical TaskGraph order."""
+
+    _validate_execution_matches_graph(graph, execution)
+    if execution.status not in {
+        TaskGraphExecutionStatus.PENDING,
+        TaskGraphExecutionStatus.RUNNING,
+    }:
+        return ()
+    return tuple(
+        state.task_id
+        for state in execution.task_states
+        if state.status is TaskExecutionStatus.READY
+    )
+
+
+def start_task(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    task_id: str,
+) -> TaskGraphExecutionState:
+    """Apply the controlled READY to RUNNING transition."""
+
+    _validate_dispatchable_execution(graph, execution)
+    index = _task_state_index(execution, task_id)
+    current = execution.task_states[index]
+    if current.status is not TaskExecutionStatus.READY:
+        raise TaskExecutionError(
+            f"Task {task_id} cannot start from {current.status.value}."
+        )
+    updated = TaskExecutionState(
+        task_id=task_id,
+        status=TaskExecutionStatus.RUNNING,
+        attempt_count=current.attempt_count + 1,
+    )
+    return _replace_task_state(
+        execution,
+        index,
+        updated,
+        graph_status=TaskGraphExecutionStatus.RUNNING,
+    )
+
+
+def mark_task_succeeded(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    task_id: str,
+) -> TaskGraphExecutionState:
+    """Mark a running task successful and unlock fully satisfied dependents."""
+
+    index, current = _settleable_task(
+        graph, execution, task_id, transition="succeed"
+    )
+
+    task_states = list(execution.task_states)
+    task_states[index] = TaskExecutionState(
+        task_id=task_id,
+        status=TaskExecutionStatus.SUCCEEDED,
+        attempt_count=current.attempt_count,
+    )
+    if execution.status is not TaskGraphExecutionStatus.FAILED:
+        statuses = {state.task_id: state.status for state in task_states}
+        for task_index, task in enumerate(graph.tasks):
+            state = task_states[task_index]
+            if state.status is not TaskExecutionStatus.BLOCKED:
+                continue
+            if all(
+                statuses[dependency] is TaskExecutionStatus.SUCCEEDED
+                for dependency in task.depends_on
+            ):
+                task_states[task_index] = TaskExecutionState(
+                    task_id=state.task_id,
+                    status=TaskExecutionStatus.READY,
+                    attempt_count=state.attempt_count,
+                )
+
+    if execution.status is TaskGraphExecutionStatus.FAILED:
+        graph_status = TaskGraphExecutionStatus.FAILED
+    elif all(
+        state.status is TaskExecutionStatus.SUCCEEDED for state in task_states
+    ):
+        graph_status = TaskGraphExecutionStatus.SUCCEEDED
+    else:
+        graph_status = TaskGraphExecutionStatus.RUNNING
+    return TaskGraphExecutionState(
+        graph_id=execution.graph_id,
+        status=graph_status,
+        task_states=tuple(task_states),
+    )
+
+
+def mark_task_failed(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    task_id: str,
+) -> TaskGraphExecutionState:
+    """Mark a running task failed without unlocking dependent work."""
+
+    index, current = _settleable_task(
+        graph, execution, task_id, transition="fail"
+    )
+    failed = TaskExecutionState(
+        task_id=task_id,
+        status=TaskExecutionStatus.FAILED,
+        attempt_count=current.attempt_count,
+    )
+    return _replace_task_state(
+        execution,
+        index,
+        failed,
+        graph_status=TaskGraphExecutionStatus.FAILED,
+    )
+
+
+def safe_stop_task_graph_execution(
+    graph: TaskGraph, execution: TaskGraphExecutionState
+) -> TaskGraphExecutionState:
+    """Convert a failed execution attempt into an explicit safe-stop outcome."""
+
+    _validate_execution_matches_graph(graph, execution)
+    if execution.status is not TaskGraphExecutionStatus.FAILED:
+        raise TaskExecutionError(
+            "Only a FAILED TaskGraph execution can transition to SAFE_STOPPED."
+        )
+    running_task_ids = tuple(
+        state.task_id
+        for state in execution.task_states
+        if state.status is TaskExecutionStatus.RUNNING
+    )
+    if running_task_ids:
+        raise TaskExecutionError(
+            "Cannot safe-stop TaskGraph execution while tasks are still running: "
+            f"{', '.join(running_task_ids)}."
+        )
+    return TaskGraphExecutionState(
+        graph_id=execution.graph_id,
+        status=TaskGraphExecutionStatus.SAFE_STOPPED,
+        task_states=execution.task_states,
+    )
+
+
+def _validate_dispatchable_execution(
+    graph: TaskGraph, execution: TaskGraphExecutionState
+) -> None:
+    _validate_execution_matches_graph(graph, execution)
+    if execution.status not in {
+        TaskGraphExecutionStatus.PENDING,
+        TaskGraphExecutionStatus.RUNNING,
+    }:
+        raise TaskExecutionError(
+            "TaskGraph execution does not permit new task dispatch: "
+            f"{execution.status.value}."
+        )
+
+
+def _settleable_task(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    task_id: str,
+    *,
+    transition: str,
+) -> tuple[int, TaskExecutionState]:
+    _validate_execution_matches_graph(graph, execution)
+    index = _task_state_index(execution, task_id)
+    current = execution.task_states[index]
+    if current.status is not TaskExecutionStatus.RUNNING:
+        raise TaskExecutionError(
+            f"Task {task_id} cannot {transition} from {current.status.value}."
+        )
+    if execution.status not in {
+        TaskGraphExecutionStatus.RUNNING,
+        TaskGraphExecutionStatus.FAILED,
+    }:
+        raise TaskExecutionError(
+            "TaskGraph execution does not permit running task settlement: "
+            f"{execution.status.value}."
+        )
+    return index, current
+
+
+def _validate_execution_matches_graph(
+    graph: TaskGraph, execution: TaskGraphExecutionState
+) -> None:
+    if execution.graph_id != graph.graph_id:
+        raise TaskExecutionError(
+            f"Execution graph {execution.graph_id} does not match {graph.graph_id}."
+        )
+    expected_task_ids = tuple(task.task_id for task in graph.tasks)
+    actual_task_ids = tuple(state.task_id for state in execution.task_states)
+    if actual_task_ids != expected_task_ids:
+        raise TaskExecutionError(
+            "Execution task identities/order do not match the canonical TaskGraph."
+        )
+
+
+def _task_state_index(execution: TaskGraphExecutionState, task_id: str) -> int:
+    for index, state in enumerate(execution.task_states):
+        if state.task_id == task_id:
+            return index
+    raise TaskExecutionError(f"Unknown task ID: {task_id}.")
+
+
+def _replace_task_state(
+    execution: TaskGraphExecutionState,
+    index: int,
+    updated: TaskExecutionState,
+    *,
+    graph_status: TaskGraphExecutionStatus,
+) -> TaskGraphExecutionState:
+    task_states = list(execution.task_states)
+    task_states[index] = updated
+    return TaskGraphExecutionState(
+        graph_id=execution.graph_id,
+        status=graph_status,
+        task_states=tuple(task_states),
+    )
