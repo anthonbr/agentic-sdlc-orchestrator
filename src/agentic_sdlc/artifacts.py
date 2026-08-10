@@ -117,6 +117,11 @@ def _write_json(path: Path, value: object) -> None:
 
 def _requirement_analysis_markdown(state: WorkflowState) -> str:
     analysis = state["requirement_analysis"]
+    readiness = state.get("requirement_planning_readiness")
+    readiness_status = readiness["status"] if readiness else "not determined"
+    readiness_reason = (
+        readiness["reason_code"] or "None" if readiness else "not determined"
+    )
     lines = [
         "# Requirement Analysis",
         "",
@@ -128,6 +133,8 @@ def _requirement_analysis_markdown(state: WorkflowState) -> str:
         "",
         f"- Requirement type: {analysis['requirement_type']}",
         f"- Needs clarification: {str(analysis['needs_clarification']).lower()}",
+        f"- Planning readiness: {readiness_status}",
+        f"- Readiness reason: {readiness_reason}",
         f"- Confidence: {analysis['confidence']:.2f}",
         "",
         "### Normalized problem",
@@ -151,12 +158,23 @@ def _requirement_analysis_markdown(state: WorkflowState) -> str:
 
     lines.extend(["", "## Analysis lineage", ""])
     for record in state.get("requirement_analysis_history", []):
+        record_readiness = record.get("planning_readiness")
+        record_readiness_status = (
+            record_readiness["status"] if record_readiness else "not recorded"
+        )
+        record_readiness_reason = (
+            record_readiness["reason_code"] or "None"
+            if record_readiness
+            else "not recorded"
+        )
         lines.extend(
             [
                 f"{record['sequence']}. Revision {record['revision_number']}",
                 f"   - Attempt: {record['attempt_number']}",
                 f"   - Prompt: {record['prompt_version']}",
                 f"   - Model: {record['model_name']}",
+                f"   - Planning readiness: {record_readiness_status}",
+                f"   - Readiness reason: {record_readiness_reason}",
                 "   - Normalized problem: "
                 + record["analysis"]["normalized_problem_statement"],
                 "   - Ambiguities: "
@@ -398,6 +416,10 @@ def _summary_markdown(
         f"- Entry gate: {'passed' if state['entry_gate_passed'] else 'failed'}",
         "- Requirement analysis: "
         + state.get("requirement_analysis_status", "not reached"),
+        "- Requirement planning readiness: "
+        + state.get("requirement_planning_readiness", {}).get(
+            "status", "not reached"
+        ),
         "- Requirement review: "
         + (state.get("requirement_review_decision") or "not reached"),
         "- Approved requirement spec: "

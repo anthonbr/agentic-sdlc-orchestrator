@@ -28,7 +28,13 @@ from agentic_sdlc.prompts import (
     TASK_PLANNING_PROMPT_VERSION,
     TASK_PLANNING_SYSTEM_PROMPT,
 )
-from agentic_sdlc.requirement_analysis import RequirementAnalysis
+from agentic_sdlc.requirement_analysis import (
+    RequirementAnalysis,
+    RequirementPlanningReadinessError,
+    RequirementPlanningReadinessReasonCode,
+    RequirementPlanningReadinessStatus,
+    determine_requirement_planning_readiness,
+)
 from agentic_sdlc.requirement_spec import ApprovedRequirementSpec
 from agentic_sdlc.state import (
     MAX_REQUIREMENT_ANALYSIS_ATTEMPTS,
@@ -95,9 +101,24 @@ def _analysis(version: str = "v1") -> RequirementAnalysis:
             "An unknown short code returns a defined error.",
         ],
         risks=["Short-code collisions could produce incorrect redirects."],
-        needs_clarification=True,
+        needs_clarification=False,
         confidence=0.85,
     )
+
+
+def _blocked_analysis(version: str = "v1") -> RequirementAnalysis:
+    return _analysis(version).model_copy(
+        update={
+            "ambiguities": [
+                "Whether API clients must authenticate is unspecified."
+            ],
+            "needs_clarification": True,
+        }
+    )
+
+
+def _clarified_analysis(version: str = "v2") -> RequirementAnalysis:
+    return _analysis(version).model_copy(update={"ambiguities": []})
 
 
 def _proposed_task(
@@ -176,6 +197,18 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
     )
 
 
+def _proposal_without_ambiguity(version: str = "v1") -> ProposedTaskGraph:
+    proposal = _proposal(version)
+    return proposal.model_copy(
+        update={
+            "tasks": [
+                task.model_copy(update={"ambiguity_refs": []})
+                for task in proposal.tasks
+            ]
+        }
+    )
+
+
 def _interrupt_stage(state: WorkflowState) -> str:
     return state["__interrupt__"][0].value["stage"]
 
@@ -245,6 +278,153 @@ def test_valid_analysis_is_json_safe_before_requirement_review() -> None:
     assert len(analyst.calls) == 1
     assert planner.calls == []
     assert "approved_requirement_spec" not in paused
+
+
+def test_planning_readiness_is_deterministic_and_ambiguities_may_be_nonblocking(
+) -> None:
+    blocked = determine_requirement_planning_readiness(
+        _blocked_analysis(), analysis_revision=0
+    )
+    ready = determine_requirement_planning_readiness(_analysis(), analysis_revision=1)
+
+    assert blocked.status is RequirementPlanningReadinessStatus.BLOCKED
+    assert blocked.needs_clarification is True
+    assert blocked.blocking_ambiguities == (
+        "Whether API clients must authenticate is unspecified.",
+    )
+    assert blocked.reason_code is (
+        RequirementPlanningReadinessReasonCode.UNRESOLVED_REQUIREMENT_AMBIGUITY
+    )
+    assert ready.status is RequirementPlanningReadinessStatus.READY
+    assert ready.needs_clarification is False
+    assert ready.blocking_ambiguities == ()
+    assert ready.reason_code is None
+    assert _analysis().ambiguities
+
+
+def test_clarification_signal_requires_actionable_ambiguity_information() -> None:
+    invalid = _analysis().model_dump(mode="json")
+    invalid.update(needs_clarification=True, ambiguities=[])
+
+    with raises(
+        ValidationError,
+        match="needs_clarification=true requires at least one ambiguity item",
+    ):
+        RequirementAnalysis.model_validate(invalid)
+
+
+def test_blocked_requirement_review_hides_and_rejects_approval_before_planning(
+) -> None:
+    analyst = FakeRequirementAnalysisClient([_blocked_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+    workflow, thread_id, paused, _, _ = _start_demo(
+        analyst=analyst, planner=planner
+    )
+    interrupt_payload = paused["__interrupt__"][0].value
+
+    assert paused["requirement_planning_readiness"]["status"] == "BLOCKED"
+    assert interrupt_payload["allowed_decisions"] == ["REQUEST_CHANGES", "REJECT"]
+    assert interrupt_payload["planning_readiness"]["reason_code"] == (
+        "UNRESOLVED_REQUIREMENT_AMBIGUITY"
+    )
+
+    with raises(
+        RequirementPlanningReadinessError,
+        match="UNRESOLVED_REQUIREMENT_AMBIGUITY",
+    ):
+        resume_workflow(
+            thread_id,
+            {"decision": "APPROVE", "feedback": ""},
+            workflow=workflow,
+        )
+
+    assert planner.calls == []
+    assert "approved_requirement_spec" not in paused
+    assert "candidate_task_graph" not in paused
+
+
+def test_blocked_requirement_review_still_allows_rejection() -> None:
+    planner = FakeTaskPlanningClient([_proposal()])
+    workflow, thread_id, _, _, _ = _start_demo(
+        analyst=FakeRequirementAnalysisClient([_blocked_analysis()]),
+        planner=planner,
+    )
+
+    result = resume_workflow(
+        thread_id,
+        {"decision": "REJECT", "feedback": "Product direction is not viable."},
+        workflow=workflow,
+    )
+
+    assert result["workflow_status"] == "safe_stopped"
+    assert result["safe_stop_reason"] == REQUIREMENT_ANALYSIS_REJECTED_REASON
+    assert planner.calls == []
+    assert "approved_requirement_spec" not in result
+
+
+def test_blocked_revision_loop_preserves_lineage_and_plans_only_revised_authority(
+) -> None:
+    blocked = _blocked_analysis("ambiguous-v0")
+    clarified = _clarified_analysis("clarified-v1")
+    analyst = FakeRequirementAnalysisClient([blocked, clarified])
+    planner = FakeTaskPlanningClient([_proposal_without_ambiguity("clarified")])
+    workflow, thread_id, paused, _, _ = _start_demo(
+        analyst=analyst, planner=planner
+    )
+    original = paused["requirement_analysis"].copy()
+    feedback = (
+        "API clients do not authenticate in the initial scope; remove authentication "
+        "as a blocking ambiguity."
+    )
+
+    revised = resume_workflow(
+        thread_id,
+        {"decision": "REQUEST_CHANGES", "feedback": feedback},
+        workflow=workflow,
+    )
+
+    assert _interrupt_stage(revised) == "requirement_analysis_review"
+    assert revised["requirement_planning_readiness"]["status"] == "READY"
+    assert revised["requirement_analysis_revision_count"] == 1
+    assert revised["requirement_analysis_history"][0]["analysis"] == original
+    assert revised["requirement_analysis_history"][0]["planning_readiness"][
+        "status"
+    ] == "BLOCKED"
+    assert revised["requirement_analysis_history"][1]["planning_readiness"][
+        "status"
+    ] == "READY"
+    assert revised["requirement_review_history"] == [
+        {
+            "sequence": 1,
+            "checkpoint": "requirement_analysis",
+            "decision": "REQUEST_CHANGES",
+            "feedback": feedback,
+            "revision_number": 0,
+        }
+    ]
+    assert analyst.calls[1]["prior_analysis"] == blocked
+    assert analyst.calls[1]["human_feedback"] == feedback
+    assert planner.calls == []
+    assert "approved_requirement_spec" not in revised
+
+    graph_review = resume_workflow(
+        thread_id,
+        {"decision": "APPROVE", "feedback": ""},
+        workflow=workflow,
+    )
+
+    spec_data = graph_review["approved_requirement_spec"]
+    supplied_spec = planner.calls[0]["approved_spec"]
+    assert spec_data["source_analysis_revision"] == 1
+    assert spec_data["normalized_problem_statement"] == (
+        clarified.normalized_problem_statement
+    )
+    assert spec_data["ambiguities"] == []
+    assert isinstance(supplied_spec, ApprovedRequirementSpec)
+    assert supplied_spec.model_dump(mode="json") == spec_data
+    assert blocked.normalized_problem_statement not in json.dumps(
+        supplied_spec.model_dump(mode="json")
+    )
 
 
 def test_requirement_approval_builds_spec_and_reaches_task_graph_review() -> None:
@@ -457,9 +637,10 @@ def test_openai_requirement_client_uses_structured_parse_without_network() -> No
 
 def test_requirement_prompt_preserves_authoritative_feedback_contract() -> None:
     prompt = " ".join(REQUIREMENT_ANALYSIS_SYSTEM_PROMPT.casefold().split())
-    assert REQUIREMENT_ANALYSIS_PROMPT_VERSION == "requirement-analysis-v1.1"
+    assert REQUIREMENT_ANALYSIS_PROMPT_VERSION == "requirement-analysis-v1.2"
     assert "authoritative revision instruction" in prompt
     assert "represent it as an ambiguity" in prompt
+    assert "include at least one actionable ambiguity" in prompt
 
 
 def test_openai_task_planner_uses_approved_spec_and_schema_without_network() -> None:
@@ -907,6 +1088,19 @@ def test_empty_revision_feedback_reprompts_and_one_line_still_works(
         "feedback": "Add explicit validation coverage.",
     }
     assert "Feedback is required" in capsys.readouterr().out
+
+
+def test_cli_decision_prompt_does_not_offer_blocked_approval(
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    responses = iter(["a", "r"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
+
+    response = cli._prompt_for_decision(["REQUEST_CHANGES", "REJECT"])
+
+    assert response == {"decision": "REJECT", "feedback": ""}
+    assert "Please enter C or R." in capsys.readouterr().out
 
 
 def test_cli_preserves_multiline_requirement_feedback_and_reaches_graph_review(

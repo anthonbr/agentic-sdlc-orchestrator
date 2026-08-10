@@ -1,0 +1,1076 @@
+{
+  "task_graph_execution": {
+    "graph_id": "GRAPH-63884C17DACC-V001",
+    "status": "SUCCEEDED",
+    "task_states": [
+      {
+        "task_id": "TASK-001",
+        "status": "SUCCEEDED",
+        "attempt_count": 1
+      },
+      {
+        "task_id": "TASK-002",
+        "status": "SUCCEEDED",
+        "attempt_count": 1
+      },
+      {
+        "task_id": "TASK-003",
+        "status": "SUCCEEDED",
+        "attempt_count": 1
+      },
+      {
+        "task_id": "TASK-004",
+        "status": "SUCCEEDED",
+        "attempt_count": 1
+      }
+    ]
+  },
+  "waves": [
+    {
+      "wave_number": 1,
+      "task_attempts": [
+        {
+          "task_id": "TASK-001",
+          "attempt_number": 1
+        }
+      ]
+    },
+    {
+      "wave_number": 2,
+      "task_attempts": [
+        {
+          "task_id": "TASK-002",
+          "attempt_number": 1
+        }
+      ]
+    },
+    {
+      "wave_number": 3,
+      "task_attempts": [
+        {
+          "task_id": "TASK-003",
+          "attempt_number": 1
+        },
+        {
+          "task_id": "TASK-004",
+          "attempt_number": 1
+        }
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "request_id": "2e54e001-43b0-542b-b674-daec8c65724a",
+      "attempt_id": "28ee4e77-750c-53d8-ac30-feb48b000d46",
+      "graph_id": "GRAPH-63884C17DACC-V001",
+      "requirement_spec_id": "SPEC-0C11DA4A975F-V001",
+      "task_id": "TASK-001",
+      "attempt_number": 1,
+      "task": {
+        "task_id": "TASK-001",
+        "lineage_id": "5b3a0330-6329-555d-8c3d-5094326c306a",
+        "source_key": "expiration_impact",
+        "title": "Analyze expiration impact",
+        "description": "Produce the governed analyze expiration impact output.",
+        "task_type": "DESIGN",
+        "materialization_policy": "FORBIDDEN",
+        "depends_on": [],
+        "requirement_refs": [
+          "FR-001",
+          "FR-002",
+          "FR-003",
+          "NFR-001",
+          "CON-001",
+          "CON-002",
+          "CON-003",
+          "CON-004",
+          "CON-005",
+          "CON-006",
+          "CON-007",
+          "CON-008"
+        ],
+        "acceptance_criteria_refs": [
+          "AC-001",
+          "AC-002",
+          "AC-003",
+          "AC-004",
+          "AC-005",
+          "AC-006"
+        ],
+        "risk_refs": [
+          "RISK-001"
+        ],
+        "ambiguity_refs": [],
+        "expected_outputs": [
+          "expiration-impact-analysis"
+        ]
+      },
+      "requirement_context": {
+        "normalized_problem_statement": "Add fixed process-local 24-hour expiration to the existing URL shortener, returning HTTP 404 for expired redirect and analytics access.",
+        "requirement_type": "brownfield",
+        "assumptions": [
+          "Existing shortening, analytics counting, and active-code behavior remain unchanged."
+        ],
+        "functional_requirements": [
+          {
+            "item_id": "FR-001",
+            "lineage_id": "a0d9474a-c9ca-5885-bb98-decb1f0d3dad",
+            "text": "Short URLs expire 24 hours after creation."
+          },
+          {
+            "item_id": "FR-002",
+            "lineage_id": "7f25c1c1-ee3b-5414-99b3-2b1933febd2f",
+            "text": "Resolving an expired short code returns HTTP 404."
+          },
+          {
+            "item_id": "FR-003",
+            "lineage_id": "a084066a-3bca-563b-8f33-9d00158780f8",
+            "text": "Requesting analytics for an expired short code returns HTTP 404."
+          }
+        ],
+        "nonfunctional_requirements": [
+          {
+            "item_id": "NFR-001",
+            "lineage_id": "2edfec4e-e79f-5f31-a577-4fb6576515c1",
+            "text": "Expiration boundary behavior must be deterministically testable without waiting for wall-clock time."
+          }
+        ],
+        "constraints": [
+          {
+            "item_id": "CON-001",
+            "lineage_id": "b81a2432-ca04-597c-8ae3-e3eb78d1fc5f",
+            "text": "The TTL is fixed at 24 hours and is not configurable."
+          },
+          {
+            "item_id": "CON-002",
+            "lineage_id": "72315342-d33e-5a50-849e-aeee42fb8465",
+            "text": "The TTL begins when the short URL is created."
+          },
+          {
+            "item_id": "CON-003",
+            "lineage_id": "9472c9d3-b8cb-5d4a-bf21-92ee7697bb46",
+            "text": "Expiration state is process-local and in-memory."
+          },
+          {
+            "item_id": "CON-004",
+            "lineage_id": "0b67fca2-3fba-5b13-b585-4036103e779a",
+            "text": "Expiration does not need to survive application restart."
+          },
+          {
+            "item_id": "CON-005",
+            "lineage_id": "d10dc0b5-e03d-57b3-aa37-d2958349f0b0",
+            "text": "Expiration is checked only when a code is accessed."
+          },
+          {
+            "item_id": "CON-006",
+            "lineage_id": "3a593803-0dca-5dfa-a8ac-0521ef63aab2",
+            "text": "No background expiration job or scheduler is required."
+          },
+          {
+            "item_id": "CON-007",
+            "lineage_id": "8c922005-de79-5ea7-afd7-7cb1253a5f12",
+            "text": "No migration or preservation of pre-existing runtime codes is required."
+          },
+          {
+            "item_id": "CON-008",
+            "lineage_id": "7f5f9ead-f767-5c8b-a7c9-b94016358cc2",
+            "text": "No database or persistent storage is required."
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "item_id": "AC-001",
+            "lineage_id": "b00df682-8dce-5ea1-9cc4-fe96bcf79d01",
+            "text": "A code resolves successfully before 24 hours have elapsed."
+          },
+          {
+            "item_id": "AC-002",
+            "lineage_id": "90e026a9-515d-5718-a563-ebddecd05411",
+            "text": "Analytics remains available before 24 hours have elapsed."
+          },
+          {
+            "item_id": "AC-003",
+            "lineage_id": "251f391c-39b0-5247-bc55-2bb2d6358f23",
+            "text": "At exactly 24 hours after creation, resolution returns HTTP 404."
+          },
+          {
+            "item_id": "AC-004",
+            "lineage_id": "804b3df2-708d-59f1-b800-d6d9580e2a94",
+            "text": "At exactly 24 hours after creation, analytics returns HTTP 404."
+          },
+          {
+            "item_id": "AC-005",
+            "lineage_id": "aeb48e83-ce3d-5385-9065-216ab63038f9",
+            "text": "Resolution and analytics continue to return HTTP 404 after 24 hours."
+          },
+          {
+            "item_id": "AC-006",
+            "lineage_id": "371b7d6f-f598-53f0-a3de-cc8105986b10",
+            "text": "Expiration tests complete without waiting 24 real hours."
+          }
+        ],
+        "risks": [
+          {
+            "item_id": "RISK-001",
+            "lineage_id": "311f7a6b-5129-5846-b462-f7dfe85f86f0",
+            "text": "An incorrect boundary comparison could keep codes active at exactly 24 hours or hide analytics too early."
+          }
+        ],
+        "ambiguities": []
+      },
+      "dependency_artifacts": [],
+      "retry_context": null
+    },
+    {
+      "request_id": "8765086b-3a6d-5ace-bc42-37f861c48380",
+      "attempt_id": "c7cb17cc-612a-54df-af77-417de04d9839",
+      "graph_id": "GRAPH-63884C17DACC-V001",
+      "requirement_spec_id": "SPEC-0C11DA4A975F-V001",
+      "task_id": "TASK-002",
+      "attempt_number": 1,
+      "task": {
+        "task_id": "TASK-002",
+        "lineage_id": "33905726-4fdf-573a-9f50-5033bbbfd334",
+        "source_key": "expiration_implementation",
+        "title": "Implement clarified expiration behavior",
+        "description": "Produce the governed implement clarified expiration behavior output.",
+        "task_type": "IMPLEMENTATION",
+        "materialization_policy": "REQUIRED",
+        "depends_on": [
+          "TASK-001"
+        ],
+        "requirement_refs": [
+          "FR-001",
+          "FR-002",
+          "FR-003",
+          "CON-001",
+          "CON-002",
+          "CON-003",
+          "CON-004",
+          "CON-005",
+          "CON-006",
+          "CON-007",
+          "CON-008"
+        ],
+        "acceptance_criteria_refs": [
+          "AC-001",
+          "AC-002",
+          "AC-003",
+          "AC-004",
+          "AC-005"
+        ],
+        "risk_refs": [
+          "RISK-001"
+        ],
+        "ambiguity_refs": [],
+        "expected_outputs": [
+          "url-shortener-expiration-service"
+        ]
+      },
+      "requirement_context": {
+        "normalized_problem_statement": "Add fixed process-local 24-hour expiration to the existing URL shortener, returning HTTP 404 for expired redirect and analytics access.",
+        "requirement_type": "brownfield",
+        "assumptions": [
+          "Existing shortening, analytics counting, and active-code behavior remain unchanged."
+        ],
+        "functional_requirements": [
+          {
+            "item_id": "FR-001",
+            "lineage_id": "a0d9474a-c9ca-5885-bb98-decb1f0d3dad",
+            "text": "Short URLs expire 24 hours after creation."
+          },
+          {
+            "item_id": "FR-002",
+            "lineage_id": "7f25c1c1-ee3b-5414-99b3-2b1933febd2f",
+            "text": "Resolving an expired short code returns HTTP 404."
+          },
+          {
+            "item_id": "FR-003",
+            "lineage_id": "a084066a-3bca-563b-8f33-9d00158780f8",
+            "text": "Requesting analytics for an expired short code returns HTTP 404."
+          }
+        ],
+        "nonfunctional_requirements": [],
+        "constraints": [
+          {
+            "item_id": "CON-001",
+            "lineage_id": "b81a2432-ca04-597c-8ae3-e3eb78d1fc5f",
+            "text": "The TTL is fixed at 24 hours and is not configurable."
+          },
+          {
+            "item_id": "CON-002",
+            "lineage_id": "72315342-d33e-5a50-849e-aeee42fb8465",
+            "text": "The TTL begins when the short URL is created."
+          },
+          {
+            "item_id": "CON-003",
+            "lineage_id": "9472c9d3-b8cb-5d4a-bf21-92ee7697bb46",
+            "text": "Expiration state is process-local and in-memory."
+          },
+          {
+            "item_id": "CON-004",
+            "lineage_id": "0b67fca2-3fba-5b13-b585-4036103e779a",
+            "text": "Expiration does not need to survive application restart."
+          },
+          {
+            "item_id": "CON-005",
+            "lineage_id": "d10dc0b5-e03d-57b3-aa37-d2958349f0b0",
+            "text": "Expiration is checked only when a code is accessed."
+          },
+          {
+            "item_id": "CON-006",
+            "lineage_id": "3a593803-0dca-5dfa-a8ac-0521ef63aab2",
+            "text": "No background expiration job or scheduler is required."
+          },
+          {
+            "item_id": "CON-007",
+            "lineage_id": "8c922005-de79-5ea7-afd7-7cb1253a5f12",
+            "text": "No migration or preservation of pre-existing runtime codes is required."
+          },
+          {
+            "item_id": "CON-008",
+            "lineage_id": "7f5f9ead-f767-5c8b-a7c9-b94016358cc2",
+            "text": "No database or persistent storage is required."
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "item_id": "AC-001",
+            "lineage_id": "b00df682-8dce-5ea1-9cc4-fe96bcf79d01",
+            "text": "A code resolves successfully before 24 hours have elapsed."
+          },
+          {
+            "item_id": "AC-002",
+            "lineage_id": "90e026a9-515d-5718-a563-ebddecd05411",
+            "text": "Analytics remains available before 24 hours have elapsed."
+          },
+          {
+            "item_id": "AC-003",
+            "lineage_id": "251f391c-39b0-5247-bc55-2bb2d6358f23",
+            "text": "At exactly 24 hours after creation, resolution returns HTTP 404."
+          },
+          {
+            "item_id": "AC-004",
+            "lineage_id": "804b3df2-708d-59f1-b800-d6d9580e2a94",
+            "text": "At exactly 24 hours after creation, analytics returns HTTP 404."
+          },
+          {
+            "item_id": "AC-005",
+            "lineage_id": "aeb48e83-ce3d-5385-9065-216ab63038f9",
+            "text": "Resolution and analytics continue to return HTTP 404 after 24 hours."
+          }
+        ],
+        "risks": [
+          {
+            "item_id": "RISK-001",
+            "lineage_id": "311f7a6b-5129-5846-b462-f7dfe85f86f0",
+            "text": "An incorrect boundary comparison could keep codes active at exactly 24 hours or hide analytics too early."
+          }
+        ],
+        "ambiguities": []
+      },
+      "dependency_artifacts": [
+        {
+          "artifact_id": "ARTIFACT-8590307D505E-O001",
+          "lineage_id": "c0213171-8760-5e23-9cac-7a1a3cfe5c62",
+          "artifact_type": "DESIGN",
+          "logical_name": "expiration-impact-analysis",
+          "content": "# Clarified URL-expiration impact analysis\n\n## Existing brownfield flow\n\n- `src/url_shortener/service.py` owns process-local code lookup and analytics state.\n- `src/url_shortener/app.py` already converts `UnknownShortCodeError` from both\n  redirect resolution and analytics lookup into HTTP 404.\n- `tests/test_service.py` contains domain and WSGI regression coverage.\n- `README.md` currently documents expiration as unresolved and out of scope.\n\n## Clarified design\n\n- Record one timezone-aware `created_at` value when a new code is created.\n- Use a fixed `timedelta(hours=24)` and an injected callable clock whose default is\n  current UTC time. Active means `now < created_at + TTL`; expired means\n  `now >= created_at + TTL`.\n- Check expiration under the existing service lock before successful resolution or\n  analytics access. An expired lookup raises the existing domain lookup error, so\n  the unchanged WSGI adapter deterministically returns HTTP 404 for both routes.\n- Add deterministic service and HTTP boundary tests with a mutable clock. No sleep,\n  scheduler, persistence, configuration, migration, or dependency is required.\n\n## Mutation boundary\n\n- Modify `src/url_shortener/service.py`, `tests/test_service.py`, and `README.md`.\n- Preserve `src/url_shortener/app.py`, `src/url_shortener/__init__.py`, and\n  `pyproject.toml` byte-for-byte.\n",
+          "content_hash": "8590307d505e76842f59b632a6d1d5a2890718ce0dae8a7ae52d81791779fe0e",
+          "output_index": 1,
+          "requirement_spec_id": "SPEC-0C11DA4A975F-V001",
+          "graph_id": "GRAPH-63884C17DACC-V001",
+          "task_id": "TASK-001",
+          "request_id": "2e54e001-43b0-542b-b674-daec8c65724a",
+          "attempt_id": "28ee4e77-750c-53d8-ac30-feb48b000d46",
+          "attempt_number": 1,
+          "requirement_refs": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "NFR-001",
+            "CON-001",
+            "CON-002",
+            "CON-003",
+            "CON-004",
+            "CON-005",
+            "CON-006",
+            "CON-007",
+            "CON-008"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002",
+            "AC-003",
+            "AC-004",
+            "AC-005",
+            "AC-006"
+          ],
+          "risk_refs": [
+            "RISK-001"
+          ],
+          "ambiguity_refs": [],
+          "created_at": "2026-08-10T12:00:00+00:00"
+        }
+      ],
+      "retry_context": null
+    },
+    {
+      "request_id": "6ba1fb2e-0261-5d5c-98aa-6ca9421334b9",
+      "attempt_id": "4cdad977-15c7-5327-88be-fb2955dc8047",
+      "graph_id": "GRAPH-63884C17DACC-V001",
+      "requirement_spec_id": "SPEC-0C11DA4A975F-V001",
+      "task_id": "TASK-003",
+      "attempt_number": 1,
+      "task": {
+        "task_id": "TASK-003",
+        "lineage_id": "48e3ea02-6526-5250-b09d-919785151794",
+        "source_key": "expiration_tests",
+        "title": "Add deterministic expiration tests",
+        "description": "Produce the governed add deterministic expiration tests output.",
+        "task_type": "TEST",
+        "materialization_policy": "REQUIRED",
+        "depends_on": [
+          "TASK-002"
+        ],
+        "requirement_refs": [
+          "FR-001",
+          "FR-002",
+          "FR-003",
+          "NFR-001"
+        ],
+        "acceptance_criteria_refs": [
+          "AC-001",
+          "AC-002",
+          "AC-003",
+          "AC-004",
+          "AC-005",
+          "AC-006"
+        ],
+        "risk_refs": [
+          "RISK-001"
+        ],
+        "ambiguity_refs": [],
+        "expected_outputs": [
+          "url-shortener-expiration-tests"
+        ]
+      },
+      "requirement_context": {
+        "normalized_problem_statement": "Add fixed process-local 24-hour expiration to the existing URL shortener, returning HTTP 404 for expired redirect and analytics access.",
+        "requirement_type": "brownfield",
+        "assumptions": [
+          "Existing shortening, analytics counting, and active-code behavior remain unchanged."
+        ],
+        "functional_requirements": [
+          {
+            "item_id": "FR-001",
+            "lineage_id": "a0d9474a-c9ca-5885-bb98-decb1f0d3dad",
+            "text": "Short URLs expire 24 hours after creation."
+          },
+          {
+            "item_id": "FR-002",
+            "lineage_id": "7f25c1c1-ee3b-5414-99b3-2b1933febd2f",
+            "text": "Resolving an expired short code returns HTTP 404."
+          },
+          {
+            "item_id": "FR-003",
+            "lineage_id": "a084066a-3bca-563b-8f33-9d00158780f8",
+            "text": "Requesting analytics for an expired short code returns HTTP 404."
+          }
+        ],
+        "nonfunctional_requirements": [
+          {
+            "item_id": "NFR-001",
+            "lineage_id": "2edfec4e-e79f-5f31-a577-4fb6576515c1",
+            "text": "Expiration boundary behavior must be deterministically testable without waiting for wall-clock time."
+          }
+        ],
+        "constraints": [],
+        "acceptance_criteria": [
+          {
+            "item_id": "AC-001",
+            "lineage_id": "b00df682-8dce-5ea1-9cc4-fe96bcf79d01",
+            "text": "A code resolves successfully before 24 hours have elapsed."
+          },
+          {
+            "item_id": "AC-002",
+            "lineage_id": "90e026a9-515d-5718-a563-ebddecd05411",
+            "text": "Analytics remains available before 24 hours have elapsed."
+          },
+          {
+            "item_id": "AC-003",
+            "lineage_id": "251f391c-39b0-5247-bc55-2bb2d6358f23",
+            "text": "At exactly 24 hours after creation, resolution returns HTTP 404."
+          },
+          {
+            "item_id": "AC-004",
+            "lineage_id": "804b3df2-708d-59f1-b800-d6d9580e2a94",
+            "text": "At exactly 24 hours after creation, analytics returns HTTP 404."
+          },
+          {
+            "item_id": "AC-005",
+            "lineage_id": "aeb48e83-ce3d-5385-9065-216ab63038f9",
+            "text": "Resolution and analytics continue to return HTTP 404 after 24 hours."
+          },
+          {
+            "item_id": "AC-006",
+            "lineage_id": "371b7d6f-f598-53f0-a3de-cc8105986b10",
+            "text": "Expiration tests complete without waiting 24 real hours."
+          }
+        ],
+        "risks": [
+          {
+            "item_id": "RISK-001",
+            "lineage_id": "311f7a6b-5129-5846-b462-f7dfe85f86f0",
+            "text": "An incorrect boundary comparison could keep codes active at exactly 24 hours or hide analytics too early."
+          }
+        ],
+        "ambiguities": []
+      },
+      "dependency_artifacts": [
+        {
+          "artifact_id": "ARTIFACT-7E8F5C7BAF4A-O001",
+          "lineage_id": "bfe6107f-8233-5bc8-9921-d88c549abcf2",
+          "artifact_type": "SOURCE",
+          "logical_name": "url-shortener-expiration-service",
+          "content": "\"\"\"In-memory URL-shortening domain service.\"\"\"\n\nfrom __future__ import annotations\n\nimport base64\nimport hashlib\nfrom collections.abc import Callable\nfrom datetime import UTC, datetime, timedelta\nfrom threading import Lock\nfrom urllib.parse import urlsplit\n\n\nclass URLShortenerError(Exception):\n    \"\"\"Base class for domain-level URL-shortener failures.\"\"\"\n\n\nclass InvalidURLError(URLShortenerError):\n    \"\"\"Raised when a submitted URL is not an absolute HTTP(S) URL.\"\"\"\n\n\nclass UnknownShortCodeError(URLShortenerError):\n    \"\"\"Raised when no original URL exists for a short code.\"\"\"\n\n\nClock = Callable[[], datetime]\nSHORT_URL_TTL = timedelta(hours=24)\n\n\ndef _utc_now() -> datetime:\n    return datetime.now(UTC)\n\n\nclass URLShortener:\n    \"\"\"Deterministic, collision-safe, process-local URL repository.\"\"\"\n\n    def __init__(self, *, clock: Clock | None = None) -> None:\n        self._clock = clock or _utc_now\n        self._url_by_code: dict[str, str] = {}\n        self._code_by_url: dict[str, str] = {}\n        self._redirect_count_by_code: dict[str, int] = {}\n        self._created_at_by_code: dict[str, datetime] = {}\n        self._lock = Lock()\n\n    def shorten(self, url: str) -> str:\n        \"\"\"Return a stable unique code for one valid absolute HTTP(S) URL.\"\"\"\n\n        validated = _validate_url(url)\n        with self._lock:\n            existing = self._code_by_url.get(validated)\n            if existing is not None:\n                return existing\n\n            nonce = 0\n            while True:\n                code = _candidate_code(validated, nonce)\n                owner = self._url_by_code.get(code)\n                if owner is None or owner == validated:\n                    self._url_by_code[code] = validated\n                    self._code_by_url[validated] = code\n                    self._redirect_count_by_code[code] = 0\n                    self._created_at_by_code[code] = _validated_now(self._clock())\n                    return code\n                nonce += 1\n\n    def resolve(self, code: str) -> str:\n        \"\"\"Return the original URL for a known code.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                original_url = self._url_by_code[code]\n                created_at = self._created_at_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n            if self._is_expired(created_at):\n                raise UnknownShortCodeError(f\"Unknown or expired short code: {code}.\")\n            self._redirect_count_by_code[code] += 1\n            return original_url\n\n    def redirect_count(self, code: str) -> int:\n        \"\"\"Return the successful-resolution count without changing it.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                redirect_count = self._redirect_count_by_code[code]\n                created_at = self._created_at_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n            if self._is_expired(created_at):\n                raise UnknownShortCodeError(f\"Unknown or expired short code: {code}.\")\n            return redirect_count\n\n    def _is_expired(self, created_at: datetime) -> bool:\n        return _validated_now(self._clock()) >= created_at + SHORT_URL_TTL\n\n\ndef _validated_now(value: datetime) -> datetime:\n    if value.tzinfo is None or value.utcoffset() is None:\n        raise ValueError(\"Clock must return a timezone-aware datetime.\")\n    return value\n\n\ndef _validate_url(url: str) -> str:\n    if not isinstance(url, str) or not url or url != url.strip():\n        raise InvalidURLError(\"URL must be a non-empty absolute HTTP(S) URL.\")\n    if any(character.isspace() for character in url):\n        raise InvalidURLError(\"URL must not contain whitespace.\")\n    try:\n        parsed = urlsplit(url)\n        port = parsed.port\n    except ValueError as error:\n        raise InvalidURLError(\"URL authority is malformed.\") from error\n    if (\n        parsed.scheme.lower() not in {\"http\", \"https\"}\n        or not parsed.netloc\n        or parsed.hostname is None\n        or (port is not None and not 1 <= port <= 65535)\n    ):\n        raise InvalidURLError(\"URL must be an absolute HTTP(S) URL.\")\n    return url\n\n\ndef _candidate_code(url: str, nonce: int) -> str:\n    digest = hashlib.sha256(f\"{url}\\0{nonce}\".encode(\"utf-8\")).digest()\n    return base64.urlsafe_b64encode(digest[:6]).decode(\"ascii\").rstrip(\"=\")\n",
+          "content_hash": "7e8f5c7baf4a89df63c3219ae07ad5baa3a8d06dc940388b12dae84d80fd51b0",
+          "output_index": 1,
+          "requirement_spec_id": "SPEC-0C11DA4A975F-V001",
+          "graph_id": "GRAPH-63884C17DACC-V001",
+          "task_id": "TASK-002",
+          "request_id": "8765086b-3a6d-5ace-bc42-37f861c48380",
+          "attempt_id": "c7cb17cc-612a-54df-af77-417de04d9839",
+          "attempt_number": 1,
+          "requirement_refs": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "CON-001",
+            "CON-002",
+            "CON-003",
+            "CON-004",
+            "CON-005",
+            "CON-006",
+            "CON-007",
+            "CON-008"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002",
+            "AC-003",
+            "AC-004",
+            "AC-005"
+          ],
+          "risk_refs": [
+            "RISK-001"
+          ],
+          "ambiguity_refs": [],
+          "created_at": "2026-08-10T12:00:00+00:00"
+        }
+      ],
+      "retry_context": null
+    },
+    {
+      "request_id": "b1198e9e-3736-5ec6-ae60-747f955238c2",
+      "attempt_id": "e6dd20f7-f0b5-5c5d-86ce-3ba777cf9c41",
+      "graph_id": "GRAPH-63884C17DACC-V001",
+      "requirement_spec_id": "SPEC-0C11DA4A975F-V001",
+      "task_id": "TASK-004",
+      "attempt_number": 1,
+      "task": {
+        "task_id": "TASK-004",
+        "lineage_id": "167ea11f-c1ca-5e4b-b02b-0c8298335725",
+        "source_key": "expiration_documentation",
+        "title": "Update expiration documentation",
+        "description": "Produce the governed update expiration documentation output.",
+        "task_type": "DOCUMENTATION",
+        "materialization_policy": "REQUIRED",
+        "depends_on": [
+          "TASK-002"
+        ],
+        "requirement_refs": [
+          "FR-001",
+          "FR-002",
+          "FR-003",
+          "CON-001",
+          "CON-002",
+          "CON-003",
+          "CON-004",
+          "CON-005",
+          "CON-006",
+          "CON-007",
+          "CON-008"
+        ],
+        "acceptance_criteria_refs": [
+          "AC-001",
+          "AC-002",
+          "AC-003",
+          "AC-004",
+          "AC-005"
+        ],
+        "risk_refs": [
+          "RISK-001"
+        ],
+        "ambiguity_refs": [],
+        "expected_outputs": [
+          "url-shortener-expiration-documentation"
+        ]
+      },
+      "requirement_context": {
+        "normalized_problem_statement": "Add fixed process-local 24-hour expiration to the existing URL shortener, returning HTTP 404 for expired redirect and analytics access.",
+        "requirement_type": "brownfield",
+        "assumptions": [
+          "Existing shortening, analytics counting, and active-code behavior remain unchanged."
+        ],
+        "functional_requirements": [
+          {
+            "item_id": "FR-001",
+            "lineage_id": "a0d9474a-c9ca-5885-bb98-decb1f0d3dad",
+            "text": "Short URLs expire 24 hours after creation."
+          },
+          {
+            "item_id": "FR-002",
+            "lineage_id": "7f25c1c1-ee3b-5414-99b3-2b1933febd2f",
+            "text": "Resolving an expired short code returns HTTP 404."
+          },
+          {
+            "item_id": "FR-003",
+            "lineage_id": "a084066a-3bca-563b-8f33-9d00158780f8",
+            "text": "Requesting analytics for an expired short code returns HTTP 404."
+          }
+        ],
+        "nonfunctional_requirements": [],
+        "constraints": [
+          {
+            "item_id": "CON-001",
+            "lineage_id": "b81a2432-ca04-597c-8ae3-e3eb78d1fc5f",
+            "text": "The TTL is fixed at 24 hours and is not configurable."
+          },
+          {
+            "item_id": "CON-002",
+            "lineage_id": "72315342-d33e-5a50-849e-aeee42fb8465",
+            "text": "The TTL begins when the short URL is created."
+          },
+          {
+            "item_id": "CON-003",
+            "lineage_id": "9472c9d3-b8cb-5d4a-bf21-92ee7697bb46",
+            "text": "Expiration state is process-local and in-memory."
+          },
+          {
+            "item_id": "CON-004",
+            "lineage_id": "0b67fca2-3fba-5b13-b585-4036103e779a",
+            "text": "Expiration does not need to survive application restart."
+          },
+          {
+            "item_id": "CON-005",
+            "lineage_id": "d10dc0b5-e03d-57b3-aa37-d2958349f0b0",
+            "text": "Expiration is checked only when a code is accessed."
+          },
+          {
+            "item_id": "CON-006",
+            "lineage_id": "3a593803-0dca-5dfa-a8ac-0521ef63aab2",
+            "text": "No background expiration job or scheduler is required."
+          },
+          {
+            "item_id": "CON-007",
+            "lineage_id": "8c922005-de79-5ea7-afd7-7cb1253a5f12",
+            "text": "No migration or preservation of pre-existing runtime codes is required."
+          },
+          {
+            "item_id": "CON-008",
+            "lineage_id": "7f5f9ead-f767-5c8b-a7c9-b94016358cc2",
+            "text": "No database or persistent storage is required."
+          }
+        ],
+        "acceptance_criteria": [
+          {
+            "item_id": "AC-001",
+            "lineage_id": "b00df682-8dce-5ea1-9cc4-fe96bcf79d01",
+            "text": "A code resolves successfully before 24 hours have elapsed."
+          },
+          {
+            "item_id": "AC-002",
+            "lineage_id": "90e026a9-515d-5718-a563-ebddecd05411",
+            "text": "Analytics remains available before 24 hours have elapsed."
+          },
+          {
+            "item_id": "AC-003",
+            "lineage_id": "251f391c-39b0-5247-bc55-2bb2d6358f23",
+            "text": "At exactly 24 hours after creation, resolution returns HTTP 404."
+          },
+          {
+            "item_id": "AC-004",
+            "lineage_id": "804b3df2-708d-59f1-b800-d6d9580e2a94",
+            "text": "At exactly 24 hours after creation, analytics returns HTTP 404."
+          },
+          {
+            "item_id": "AC-005",
+            "lineage_id": "aeb48e83-ce3d-5385-9065-216ab63038f9",
+            "text": "Resolution and analytics continue to return HTTP 404 after 24 hours."
+          }
+        ],
+        "risks": [
+          {
+            "item_id": "RISK-001",
+            "lineage_id": "311f7a6b-5129-5846-b462-f7dfe85f86f0",
+            "text": "An incorrect boundary comparison could keep codes active at exactly 24 hours or hide analytics too early."
+          }
+        ],
+        "ambiguities": []
+      },
+      "dependency_artifacts": [
+        {
+          "artifact_id": "ARTIFACT-7E8F5C7BAF4A-O001",
+          "lineage_id": "bfe6107f-8233-5bc8-9921-d88c549abcf2",
+          "artifact_type": "SOURCE",
+          "logical_name": "url-shortener-expiration-service",
+          "content": "\"\"\"In-memory URL-shortening domain service.\"\"\"\n\nfrom __future__ import annotations\n\nimport base64\nimport hashlib\nfrom collections.abc import Callable\nfrom datetime import UTC, datetime, timedelta\nfrom threading import Lock\nfrom urllib.parse import urlsplit\n\n\nclass URLShortenerError(Exception):\n    \"\"\"Base class for domain-level URL-shortener failures.\"\"\"\n\n\nclass InvalidURLError(URLShortenerError):\n    \"\"\"Raised when a submitted URL is not an absolute HTTP(S) URL.\"\"\"\n\n\nclass UnknownShortCodeError(URLShortenerError):\n    \"\"\"Raised when no original URL exists for a short code.\"\"\"\n\n\nClock = Callable[[], datetime]\nSHORT_URL_TTL = timedelta(hours=24)\n\n\ndef _utc_now() -> datetime:\n    return datetime.now(UTC)\n\n\nclass URLShortener:\n    \"\"\"Deterministic, collision-safe, process-local URL repository.\"\"\"\n\n    def __init__(self, *, clock: Clock | None = None) -> None:\n        self._clock = clock or _utc_now\n        self._url_by_code: dict[str, str] = {}\n        self._code_by_url: dict[str, str] = {}\n        self._redirect_count_by_code: dict[str, int] = {}\n        self._created_at_by_code: dict[str, datetime] = {}\n        self._lock = Lock()\n\n    def shorten(self, url: str) -> str:\n        \"\"\"Return a stable unique code for one valid absolute HTTP(S) URL.\"\"\"\n\n        validated = _validate_url(url)\n        with self._lock:\n            existing = self._code_by_url.get(validated)\n            if existing is not None:\n                return existing\n\n            nonce = 0\n            while True:\n                code = _candidate_code(validated, nonce)\n                owner = self._url_by_code.get(code)\n                if owner is None or owner == validated:\n                    self._url_by_code[code] = validated\n                    self._code_by_url[validated] = code\n                    self._redirect_count_by_code[code] = 0\n                    self._created_at_by_code[code] = _validated_now(self._clock())\n                    return code\n                nonce += 1\n\n    def resolve(self, code: str) -> str:\n        \"\"\"Return the original URL for a known code.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                original_url = self._url_by_code[code]\n                created_at = self._created_at_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n            if self._is_expired(created_at):\n                raise UnknownShortCodeError(f\"Unknown or expired short code: {code}.\")\n            self._redirect_count_by_code[code] += 1\n            return original_url\n\n    def redirect_count(self, code: str) -> int:\n        \"\"\"Return the successful-resolution count without changing it.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                redirect_count = self._redirect_count_by_code[code]\n                created_at = self._created_at_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n            if self._is_expired(created_at):\n                raise UnknownShortCodeError(f\"Unknown or expired short code: {code}.\")\n            return redirect_count\n\n    def _is_expired(self, created_at: datetime) -> bool:\n        return _validated_now(self._clock()) >= created_at + SHORT_URL_TTL\n\n\ndef _validated_now(value: datetime) -> datetime:\n    if value.tzinfo is None or value.utcoffset() is None:\n        raise ValueError(\"Clock must return a timezone-aware datetime.\")\n    return value\n\n\ndef _validate_url(url: str) -> str:\n    if not isinstance(url, str) or not url or url != url.strip():\n        raise InvalidURLError(\"URL must be a non-empty absolute HTTP(S) URL.\")\n    if any(character.isspace() for character in url):\n        raise InvalidURLError(\"URL must not contain whitespace.\")\n    try:\n        parsed = urlsplit(url)\n        port = parsed.port\n    except ValueError as error:\n        raise InvalidURLError(\"URL authority is malformed.\") from error\n    if (\n        parsed.scheme.lower() not in {\"http\", \"https\"}\n        or not parsed.netloc\n        or parsed.hostname is None\n        or (port is not None and not 1 <= port <= 65535)\n    ):\n        raise InvalidURLError(\"URL must be an absolute HTTP(S) URL.\")\n    return url\n\n\ndef _candidate_code(url: str, nonce: int) -> str:\n    digest = hashlib.sha256(f\"{url}\\0{nonce}\".encode(\"utf-8\")).digest()\n    return base64.urlsafe_b64encode(digest[:6]).decode(\"ascii\").rstrip(\"=\")\n",
+          "content_hash": "7e8f5c7baf4a89df63c3219ae07ad5baa3a8d06dc940388b12dae84d80fd51b0",
+          "output_index": 1,
+          "requirement_spec_id": "SPEC-0C11DA4A975F-V001",
+          "graph_id": "GRAPH-63884C17DACC-V001",
+          "task_id": "TASK-002",
+          "request_id": "8765086b-3a6d-5ace-bc42-37f861c48380",
+          "attempt_id": "c7cb17cc-612a-54df-af77-417de04d9839",
+          "attempt_number": 1,
+          "requirement_refs": [
+            "FR-001",
+            "FR-002",
+            "FR-003",
+            "CON-001",
+            "CON-002",
+            "CON-003",
+            "CON-004",
+            "CON-005",
+            "CON-006",
+            "CON-007",
+            "CON-008"
+          ],
+          "acceptance_criteria_refs": [
+            "AC-001",
+            "AC-002",
+            "AC-003",
+            "AC-004",
+            "AC-005"
+          ],
+          "risk_refs": [
+            "RISK-001"
+          ],
+          "ambiguity_refs": [],
+          "created_at": "2026-08-10T12:00:00+00:00"
+        }
+      ],
+      "retry_context": null
+    }
+  ],
+  "results": [
+    {
+      "request_id": "2e54e001-43b0-542b-b674-daec8c65724a",
+      "attempt_id": "28ee4e77-750c-53d8-ac30-feb48b000d46",
+      "task_id": "TASK-001",
+      "summary": "Produced governed expiration output for TASK-001.",
+      "outputs": [
+        {
+          "artifact_type": "DESIGN",
+          "logical_name": "expiration-impact-analysis",
+          "content": "# Clarified URL-expiration impact analysis\n\n## Existing brownfield flow\n\n- `src/url_shortener/service.py` owns process-local code lookup and analytics state.\n- `src/url_shortener/app.py` already converts `UnknownShortCodeError` from both\n  redirect resolution and analytics lookup into HTTP 404.\n- `tests/test_service.py` contains domain and WSGI regression coverage.\n- `README.md` currently documents expiration as unresolved and out of scope.\n\n## Clarified design\n\n- Record one timezone-aware `created_at` value when a new code is created.\n- Use a fixed `timedelta(hours=24)` and an injected callable clock whose default is\n  current UTC time. Active means `now < created_at + TTL`; expired means\n  `now >= created_at + TTL`.\n- Check expiration under the existing service lock before successful resolution or\n  analytics access. An expired lookup raises the existing domain lookup error, so\n  the unchanged WSGI adapter deterministically returns HTTP 404 for both routes.\n- Add deterministic service and HTTP boundary tests with a mutable clock. No sleep,\n  scheduler, persistence, configuration, migration, or dependency is required.\n\n## Mutation boundary\n\n- Modify `src/url_shortener/service.py`, `tests/test_service.py`, and `README.md`.\n- Preserve `src/url_shortener/app.py`, `src/url_shortener/__init__.py`, and\n  `pyproject.toml` byte-for-byte.\n"
+        }
+      ],
+      "materialization_proposals": [],
+      "assumptions": [
+        "Expiration state remains process-local and in-memory."
+      ],
+      "risks": [
+        "Incorrect time-boundary handling could expose expired codes."
+      ]
+    },
+    {
+      "request_id": "8765086b-3a6d-5ace-bc42-37f861c48380",
+      "attempt_id": "c7cb17cc-612a-54df-af77-417de04d9839",
+      "task_id": "TASK-002",
+      "summary": "Produced governed expiration output for TASK-002.",
+      "outputs": [
+        {
+          "artifact_type": "SOURCE",
+          "logical_name": "url-shortener-expiration-service",
+          "content": "\"\"\"In-memory URL-shortening domain service.\"\"\"\n\nfrom __future__ import annotations\n\nimport base64\nimport hashlib\nfrom collections.abc import Callable\nfrom datetime import UTC, datetime, timedelta\nfrom threading import Lock\nfrom urllib.parse import urlsplit\n\n\nclass URLShortenerError(Exception):\n    \"\"\"Base class for domain-level URL-shortener failures.\"\"\"\n\n\nclass InvalidURLError(URLShortenerError):\n    \"\"\"Raised when a submitted URL is not an absolute HTTP(S) URL.\"\"\"\n\n\nclass UnknownShortCodeError(URLShortenerError):\n    \"\"\"Raised when no original URL exists for a short code.\"\"\"\n\n\nClock = Callable[[], datetime]\nSHORT_URL_TTL = timedelta(hours=24)\n\n\ndef _utc_now() -> datetime:\n    return datetime.now(UTC)\n\n\nclass URLShortener:\n    \"\"\"Deterministic, collision-safe, process-local URL repository.\"\"\"\n\n    def __init__(self, *, clock: Clock | None = None) -> None:\n        self._clock = clock or _utc_now\n        self._url_by_code: dict[str, str] = {}\n        self._code_by_url: dict[str, str] = {}\n        self._redirect_count_by_code: dict[str, int] = {}\n        self._created_at_by_code: dict[str, datetime] = {}\n        self._lock = Lock()\n\n    def shorten(self, url: str) -> str:\n        \"\"\"Return a stable unique code for one valid absolute HTTP(S) URL.\"\"\"\n\n        validated = _validate_url(url)\n        with self._lock:\n            existing = self._code_by_url.get(validated)\n            if existing is not None:\n                return existing\n\n            nonce = 0\n            while True:\n                code = _candidate_code(validated, nonce)\n                owner = self._url_by_code.get(code)\n                if owner is None or owner == validated:\n                    self._url_by_code[code] = validated\n                    self._code_by_url[validated] = code\n                    self._redirect_count_by_code[code] = 0\n                    self._created_at_by_code[code] = _validated_now(self._clock())\n                    return code\n                nonce += 1\n\n    def resolve(self, code: str) -> str:\n        \"\"\"Return the original URL for a known code.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                original_url = self._url_by_code[code]\n                created_at = self._created_at_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n            if self._is_expired(created_at):\n                raise UnknownShortCodeError(f\"Unknown or expired short code: {code}.\")\n            self._redirect_count_by_code[code] += 1\n            return original_url\n\n    def redirect_count(self, code: str) -> int:\n        \"\"\"Return the successful-resolution count without changing it.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                redirect_count = self._redirect_count_by_code[code]\n                created_at = self._created_at_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n            if self._is_expired(created_at):\n                raise UnknownShortCodeError(f\"Unknown or expired short code: {code}.\")\n            return redirect_count\n\n    def _is_expired(self, created_at: datetime) -> bool:\n        return _validated_now(self._clock()) >= created_at + SHORT_URL_TTL\n\n\ndef _validated_now(value: datetime) -> datetime:\n    if value.tzinfo is None or value.utcoffset() is None:\n        raise ValueError(\"Clock must return a timezone-aware datetime.\")\n    return value\n\n\ndef _validate_url(url: str) -> str:\n    if not isinstance(url, str) or not url or url != url.strip():\n        raise InvalidURLError(\"URL must be a non-empty absolute HTTP(S) URL.\")\n    if any(character.isspace() for character in url):\n        raise InvalidURLError(\"URL must not contain whitespace.\")\n    try:\n        parsed = urlsplit(url)\n        port = parsed.port\n    except ValueError as error:\n        raise InvalidURLError(\"URL authority is malformed.\") from error\n    if (\n        parsed.scheme.lower() not in {\"http\", \"https\"}\n        or not parsed.netloc\n        or parsed.hostname is None\n        or (port is not None and not 1 <= port <= 65535)\n    ):\n        raise InvalidURLError(\"URL must be an absolute HTTP(S) URL.\")\n    return url\n\n\ndef _candidate_code(url: str, nonce: int) -> str:\n    digest = hashlib.sha256(f\"{url}\\0{nonce}\".encode(\"utf-8\")).digest()\n    return base64.urlsafe_b64encode(digest[:6]).decode(\"ascii\").rstrip(\"=\")\n"
+        }
+      ],
+      "materialization_proposals": [
+        {
+          "output_index": 1,
+          "target_path": "src/url_shortener/service.py"
+        }
+      ],
+      "assumptions": [
+        "Expiration state remains process-local and in-memory."
+      ],
+      "risks": [
+        "Incorrect time-boundary handling could expose expired codes."
+      ]
+    },
+    {
+      "request_id": "6ba1fb2e-0261-5d5c-98aa-6ca9421334b9",
+      "attempt_id": "4cdad977-15c7-5327-88be-fb2955dc8047",
+      "task_id": "TASK-003",
+      "summary": "Produced governed expiration output for TASK-003.",
+      "outputs": [
+        {
+          "artifact_type": "TEST",
+          "logical_name": "url-shortener-expiration-tests",
+          "content": "\"\"\"Executable tests for the generated URL-shortener project.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport unittest\nfrom datetime import UTC, datetime, timedelta\nfrom io import BytesIO\nfrom typing import Any\n\nfrom url_shortener.app import URLShortenerApplication\nfrom url_shortener.service import InvalidURLError, UnknownShortCodeError, URLShortener\n\n\ndef invoke_wsgi(\n    application: URLShortenerApplication,\n    method: str,\n    path: str,\n    payload: dict[str, object] | None = None,\n) -> tuple[str, dict[str, str], bytes]:\n    body = b\"\" if payload is None else json.dumps(payload).encode(\"utf-8\")\n    environ: dict[str, Any] = {\n        \"REQUEST_METHOD\": method,\n        \"PATH_INFO\": path,\n        \"CONTENT_LENGTH\": str(len(body)),\n        \"wsgi.input\": BytesIO(body),\n    }\n    captured: dict[str, object] = {}\n\n    def start_response(status: str, headers: list[tuple[str, str]]) -> None:\n        captured[\"status\"] = status\n        captured[\"headers\"] = dict(headers)\n\n    response = b\"\".join(application(environ, start_response))\n    return (\n        str(captured[\"status\"]),\n        dict(captured[\"headers\"]),  # type: ignore[arg-type]\n        response,\n    )\n\n\nclass MutableClock:\n    def __init__(self, current: datetime) -> None:\n        self.current = current\n\n    def __call__(self) -> datetime:\n        return self.current\n\n\nclass URLShortenerServiceTests(unittest.TestCase):\n    def setUp(self) -> None:\n        self.service = URLShortener()\n\n    def test_shortening_valid_url_returns_code(self) -> None:\n        code = self.service.shorten(\"https://example.com/path\")\n        self.assertRegex(code, r\"^[A-Za-z0-9_-]{8}$\")\n\n    def test_different_urls_receive_distinct_codes(self) -> None:\n        first = self.service.shorten(\"https://example.com/first\")\n        second = self.service.shorten(\"https://example.com/second\")\n        self.assertNotEqual(first, second)\n\n    def test_repeated_shortening_is_idempotent(self) -> None:\n        url = \"https://example.com/repeated\"\n        self.assertEqual(self.service.shorten(url), self.service.shorten(url))\n\n    def test_known_code_resolves_to_original_url(self) -> None:\n        url = \"https://example.com/original\"\n        self.assertEqual(self.service.resolve(self.service.shorten(url)), url)\n\n    def test_redirect_count_starts_at_zero(self) -> None:\n        code = self.service.shorten(\"https://example.com/count\")\n        self.assertEqual(self.service.redirect_count(code), 0)\n\n    def test_successful_resolves_increment_exactly_once_each(self) -> None:\n        url = \"https://example.com/counted\"\n        code = self.service.shorten(url)\n        self.assertEqual(self.service.resolve(code), url)\n        self.assertEqual(self.service.resolve(code), url)\n        self.assertEqual(self.service.redirect_count(code), 2)\n\n    def test_redirect_count_lookup_does_not_increment(self) -> None:\n        code = self.service.shorten(\"https://example.com/observe\")\n        self.service.resolve(code)\n        self.assertEqual(self.service.redirect_count(code), 1)\n        self.assertEqual(self.service.redirect_count(code), 1)\n\n    def test_unknown_resolution_has_no_analytics_state(self) -> None:\n        with self.assertRaises(UnknownShortCodeError):\n            self.service.resolve(\"missing\")\n        with self.assertRaises(UnknownShortCodeError):\n            self.service.redirect_count(\"missing\")\n\n    def test_reshortening_preserves_redirect_count(self) -> None:\n        url = \"https://example.com/reshorten\"\n        code = self.service.shorten(url)\n        self.service.resolve(code)\n        self.assertEqual(self.service.shorten(url), code)\n        self.assertEqual(self.service.redirect_count(code), 1)\n\n    def test_unknown_code_raises_domain_error(self) -> None:\n        with self.assertRaises(UnknownShortCodeError):\n            self.service.resolve(\"missing\")\n\n    def test_expiration_boundary_for_resolution_and_analytics(self) -> None:\n        created_at = datetime(2030, 1, 1, tzinfo=UTC)\n        clock = MutableClock(created_at)\n        service = URLShortener(clock=clock)\n        url = \"https://example.com/expiring\"\n        code = service.shorten(url)\n\n        clock.current = created_at + timedelta(hours=24) - timedelta(seconds=1)\n        self.assertEqual(service.resolve(code), url)\n        self.assertEqual(service.redirect_count(code), 1)\n\n        clock.current = created_at + timedelta(hours=24)\n        with self.assertRaises(UnknownShortCodeError):\n            service.resolve(code)\n        with self.assertRaises(UnknownShortCodeError):\n            service.redirect_count(code)\n\n        clock.current = created_at + timedelta(hours=24, seconds=1)\n        with self.assertRaises(UnknownShortCodeError):\n            service.resolve(code)\n        with self.assertRaises(UnknownShortCodeError):\n            service.redirect_count(code)\n\n    def test_invalid_urls_are_rejected(self) -> None:\n        for url in (\"\", \"example.com\", \"/relative\", \"ftp://example.com\", \"https://bad host\"):\n            with self.subTest(url=url), self.assertRaises(InvalidURLError):\n                self.service.shorten(url)\n\n\nclass URLShortenerHTTPTests(unittest.TestCase):\n    def setUp(self) -> None:\n        self.application = URLShortenerApplication(\n            URLShortener(), base_url=\"http://short.test\"\n        )\n\n    def test_post_shorten_returns_created_response(self) -> None:\n        status, _, body = invoke_wsgi(\n            self.application,\n            \"POST\",\n            \"/shorten\",\n            {\"url\": \"https://example.com/http\"},\n        )\n        payload = json.loads(body)\n        self.assertEqual(status, \"201 Created\")\n        self.assertEqual(payload[\"short_url\"], f\"http://short.test/{payload['code']}\")\n\n    def test_post_shorten_rejects_invalid_url(self) -> None:\n        status, _, body = invoke_wsgi(\n            self.application,\n            \"POST\",\n            \"/shorten\",\n            {\"url\": \"ftp://example.com/not-supported\"},\n        )\n        self.assertEqual(status, \"400 Bad Request\")\n        self.assertEqual(json.loads(body)[\"error\"], \"invalid_url\")\n\n    def test_get_shorten_rejects_wrong_method(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/shorten\")\n        self.assertEqual(status, \"405 Method Not Allowed\")\n        self.assertEqual(json.loads(body)[\"error\"], \"method_not_allowed\")\n\n    def test_get_known_code_redirects(self) -> None:\n        url = \"https://example.com/redirect\"\n        code = self.application.service.shorten(url)\n        status, headers, body = invoke_wsgi(self.application, \"GET\", f\"/{code}\")\n        self.assertEqual(status, \"302 Found\")\n        self.assertEqual(headers[\"Location\"], url)\n        self.assertEqual(body, b\"\")\n\n    def test_get_analytics_tracks_only_successful_redirects(self) -> None:\n        code = self.application.service.shorten(\"https://example.com/analytics\")\n\n        status, _, body = invoke_wsgi(self.application, \"GET\", f\"/analytics/{code}\")\n        self.assertEqual(status, \"200 OK\")\n        self.assertEqual(json.loads(body), {\"code\": code, \"redirect_count\": 0})\n        status, _, body = invoke_wsgi(self.application, \"GET\", f\"/analytics/{code}\")\n        self.assertEqual(json.loads(body)[\"redirect_count\"], 0)\n\n        self.assertEqual(invoke_wsgi(self.application, \"GET\", f\"/{code}\")[0], \"302 Found\")\n        status, _, body = invoke_wsgi(self.application, \"GET\", f\"/analytics/{code}\")\n        self.assertEqual(json.loads(body)[\"redirect_count\"], 1)\n        self.assertEqual(invoke_wsgi(self.application, \"GET\", f\"/{code}\")[0], \"302 Found\")\n        status, _, body = invoke_wsgi(self.application, \"GET\", f\"/analytics/{code}\")\n        self.assertEqual(json.loads(body)[\"redirect_count\"], 2)\n\n    def test_http_expiration_boundary_for_resolution_and_analytics(self) -> None:\n        created_at = datetime(2030, 1, 1, tzinfo=UTC)\n        clock = MutableClock(created_at)\n        application = URLShortenerApplication(\n            URLShortener(clock=clock), base_url=\"http://short.test\"\n        )\n        code = application.service.shorten(\"https://example.com/http-expiring\")\n\n        clock.current = created_at + timedelta(hours=24) - timedelta(seconds=1)\n        self.assertEqual(invoke_wsgi(application, \"GET\", f\"/{code}\")[0], \"302 Found\")\n        self.assertEqual(\n            invoke_wsgi(application, \"GET\", f\"/analytics/{code}\")[0], \"200 OK\"\n        )\n\n        clock.current = created_at + timedelta(hours=24)\n        self.assertEqual(\n            invoke_wsgi(application, \"GET\", f\"/{code}\")[0], \"404 Not Found\"\n        )\n        self.assertEqual(\n            invoke_wsgi(application, \"GET\", f\"/analytics/{code}\")[0],\n            \"404 Not Found\",\n        )\n\n        clock.current = created_at + timedelta(hours=24, seconds=1)\n        self.assertEqual(\n            invoke_wsgi(application, \"GET\", f\"/{code}\")[0], \"404 Not Found\"\n        )\n        self.assertEqual(\n            invoke_wsgi(application, \"GET\", f\"/analytics/{code}\")[0],\n            \"404 Not Found\",\n        )\n\n    def test_get_unknown_analytics_code_returns_not_found(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/analytics/unknown\")\n        self.assertEqual(status, \"404 Not Found\")\n        self.assertEqual(json.loads(body)[\"error\"], \"unknown_code\")\n\n    def test_get_unknown_code_returns_not_found(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/unknown\")\n        self.assertEqual(status, \"404 Not Found\")\n        self.assertEqual(json.loads(body)[\"error\"], \"unknown_code\")\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+        }
+      ],
+      "materialization_proposals": [
+        {
+          "output_index": 1,
+          "target_path": "tests/test_service.py"
+        }
+      ],
+      "assumptions": [
+        "Expiration state remains process-local and in-memory."
+      ],
+      "risks": [
+        "Incorrect time-boundary handling could expose expired codes."
+      ]
+    },
+    {
+      "request_id": "b1198e9e-3736-5ec6-ae60-747f955238c2",
+      "attempt_id": "e6dd20f7-f0b5-5c5d-86ce-3ba777cf9c41",
+      "task_id": "TASK-004",
+      "summary": "Produced governed expiration output for TASK-004.",
+      "outputs": [
+        {
+          "artifact_type": "DOCUMENTATION",
+          "logical_name": "url-shortener-expiration-documentation",
+          "content": "# Governed URL Shortener Demo\n\nThis dependency-free Python URL shortener was originally produced by the governed\ngreenfield scenario, enhanced by the governed brownfield analytics scenario, and\nthen enhanced by the governed ambiguity-resolution scenario. The third workflow\nblocked planning for an underspecified expiration request, preserved the human\nclarification and analysis revision lineage, and transactionally modified three\nexisting files only after the revised requirement became authoritative.\n\n## Architecture\n\n`URLShortener` contains the domain rules and process-local in-memory mappings.\n`URLShortenerApplication` is a thin WSGI adapter. The service accepts absolute\nHTTP(S) URLs, generates stable collision-checked short codes, resolves active codes,\ncounts successful resolutions, exposes per-code analytics, and reports typed errors\nfor invalid URLs and unknown or expired codes.\n\nEach code records a timezone-aware creation time and expires exactly 24 hours later.\nThe fixed TTL starts at creation and is checked on redirect or analytics access. At\nor after the boundary, both operations return HTTP 404 through the existing adapter.\nExpiration and analytics state are process-local and in-memory: neither survives a\nrestart. There is no configuration, database, migration, cleanup scheduler, or\nbackground expiration job.\n\n## Run\n\nPython 3.11 or newer is required. No third-party runtime dependency is needed.\n\n```bash\nPYTHONPATH=src python -m url_shortener.app\n```\n\nThe server binds to `127.0.0.1:8000` by default. Override it with\n`URL_SHORTENER_HOST` and `URL_SHORTENER_PORT`.\n\n## Test\n\n```bash\nPYTHONPATH=src python -m unittest discover -s tests -v\n```\n\nTests inject a mutable timezone-aware clock, run entirely in-process, wait no real\ntime, and require no network access.\n\n## HTTP API\n\nShorten a URL:\n\n```bash\ncurl -i -X POST http://127.0.0.1:8000/shorten \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"url\":\"https://example.com/path\"}'\n```\n\nThe `201 Created` JSON response contains `code` and `short_url`. Resolve the code:\n\n```bash\ncurl -i http://127.0.0.1:8000/<code>\n```\n\nAn active code returns `302 Found`; an unknown or expired code returns\n`404 Not Found`. Each successful pre-expiration redirect increments that code's\nprocess-local count.\n\nInspect analytics without incrementing the count:\n\n```bash\ncurl -i http://127.0.0.1:8000/analytics/<code>\n```\n\nAn active code returns `200 OK` with JSON such as\n`{\"code\": \"abc12345\", \"redirect_count\": 7}`. An unknown or expired analytics\ncode returns `404 Not Found`. Analytics lookup itself does not increment the count.\n\n## Assumptions and trade-offs\n\n- Repeated shortening of the same URL returns the existing code and does not reset\n  its creation time or redirect count.\n- SHA-256-derived candidates plus collision checking provide deterministic codes.\n- Redirect counts and expiration timestamps are process-local, in-memory, and reset\n  when the process restarts.\n- Persistence, configurable TTLs, background cleanup, migration, authentication,\n  and repository promotion remain outside this prototype.\n- The orchestrator does not execute generated source or tests. Reviewer tooling\n  validates this exported copy only after governed execution and integrity checks.\n"
+        }
+      ],
+      "materialization_proposals": [
+        {
+          "output_index": 1,
+          "target_path": "README.md"
+        }
+      ],
+      "assumptions": [
+        "Expiration state remains process-local and in-memory."
+      ],
+      "risks": [
+        "Incorrect time-boundary handling could expose expired codes."
+      ]
+    }
+  ],
+  "validations": [
+    {
+      "request_id": "2e54e001-43b0-542b-b674-daec8c65724a",
+      "attempt_id": "28ee4e77-750c-53d8-ac30-feb48b000d46",
+      "task_id": "TASK-001",
+      "passed": true,
+      "artifact_ids": [
+        "ARTIFACT-8590307D505E-O001"
+      ],
+      "checks": [
+        {
+          "name": "request_correlation",
+          "passed": true,
+          "detail": "Execution result correlation matches the request."
+        },
+        {
+          "name": "expected_output_presence",
+          "passed": true,
+          "detail": "Required executor output is present."
+        },
+        {
+          "name": "logical_names",
+          "passed": true,
+          "detail": "Artifact logical names are non-empty."
+        },
+        {
+          "name": "artifact_contents",
+          "passed": true,
+          "detail": "Artifact contents are non-empty."
+        },
+        {
+          "name": "artifact_count",
+          "passed": true,
+          "detail": "Executor output count matches canonical artifact count."
+        },
+        {
+          "name": "artifact_provenance",
+          "passed": true,
+          "detail": "Canonical artifact provenance matches the execution request."
+        },
+        {
+          "name": "artifact_identity",
+          "passed": true,
+          "detail": "Canonical artifact identities and hashes are valid."
+        },
+        {
+          "name": "output_correspondence",
+          "passed": true,
+          "detail": "Canonical artifacts preserve executor output order and content."
+        }
+      ],
+      "errors": []
+    },
+    {
+      "request_id": "8765086b-3a6d-5ace-bc42-37f861c48380",
+      "attempt_id": "c7cb17cc-612a-54df-af77-417de04d9839",
+      "task_id": "TASK-002",
+      "passed": true,
+      "artifact_ids": [
+        "ARTIFACT-7E8F5C7BAF4A-O001"
+      ],
+      "checks": [
+        {
+          "name": "request_correlation",
+          "passed": true,
+          "detail": "Execution result correlation matches the request."
+        },
+        {
+          "name": "expected_output_presence",
+          "passed": true,
+          "detail": "Required executor output is present."
+        },
+        {
+          "name": "logical_names",
+          "passed": true,
+          "detail": "Artifact logical names are non-empty."
+        },
+        {
+          "name": "artifact_contents",
+          "passed": true,
+          "detail": "Artifact contents are non-empty."
+        },
+        {
+          "name": "artifact_count",
+          "passed": true,
+          "detail": "Executor output count matches canonical artifact count."
+        },
+        {
+          "name": "artifact_provenance",
+          "passed": true,
+          "detail": "Canonical artifact provenance matches the execution request."
+        },
+        {
+          "name": "artifact_identity",
+          "passed": true,
+          "detail": "Canonical artifact identities and hashes are valid."
+        },
+        {
+          "name": "output_correspondence",
+          "passed": true,
+          "detail": "Canonical artifacts preserve executor output order and content."
+        }
+      ],
+      "errors": []
+    },
+    {
+      "request_id": "6ba1fb2e-0261-5d5c-98aa-6ca9421334b9",
+      "attempt_id": "4cdad977-15c7-5327-88be-fb2955dc8047",
+      "task_id": "TASK-003",
+      "passed": true,
+      "artifact_ids": [
+        "ARTIFACT-B9E24EDA97FA-O001"
+      ],
+      "checks": [
+        {
+          "name": "request_correlation",
+          "passed": true,
+          "detail": "Execution result correlation matches the request."
+        },
+        {
+          "name": "expected_output_presence",
+          "passed": true,
+          "detail": "Required executor output is present."
+        },
+        {
+          "name": "logical_names",
+          "passed": true,
+          "detail": "Artifact logical names are non-empty."
+        },
+        {
+          "name": "artifact_contents",
+          "passed": true,
+          "detail": "Artifact contents are non-empty."
+        },
+        {
+          "name": "artifact_count",
+          "passed": true,
+          "detail": "Executor output count matches canonical artifact count."
+        },
+        {
+          "name": "artifact_provenance",
+          "passed": true,
+          "detail": "Canonical artifact provenance matches the execution request."
+        },
+        {
+          "name": "artifact_identity",
+          "passed": true,
+          "detail": "Canonical artifact identities and hashes are valid."
+        },
+        {
+          "name": "output_correspondence",
+          "passed": true,
+          "detail": "Canonical artifacts preserve executor output order and content."
+        }
+      ],
+      "errors": []
+    },
+    {
+      "request_id": "b1198e9e-3736-5ec6-ae60-747f955238c2",
+      "attempt_id": "e6dd20f7-f0b5-5c5d-86ce-3ba777cf9c41",
+      "task_id": "TASK-004",
+      "passed": true,
+      "artifact_ids": [
+        "ARTIFACT-64FB8E1BFE5A-O001"
+      ],
+      "checks": [
+        {
+          "name": "request_correlation",
+          "passed": true,
+          "detail": "Execution result correlation matches the request."
+        },
+        {
+          "name": "expected_output_presence",
+          "passed": true,
+          "detail": "Required executor output is present."
+        },
+        {
+          "name": "logical_names",
+          "passed": true,
+          "detail": "Artifact logical names are non-empty."
+        },
+        {
+          "name": "artifact_contents",
+          "passed": true,
+          "detail": "Artifact contents are non-empty."
+        },
+        {
+          "name": "artifact_count",
+          "passed": true,
+          "detail": "Executor output count matches canonical artifact count."
+        },
+        {
+          "name": "artifact_provenance",
+          "passed": true,
+          "detail": "Canonical artifact provenance matches the execution request."
+        },
+        {
+          "name": "artifact_identity",
+          "passed": true,
+          "detail": "Canonical artifact identities and hashes are valid."
+        },
+        {
+          "name": "output_correspondence",
+          "passed": true,
+          "detail": "Canonical artifacts preserve executor output order and content."
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "failures": [],
+  "recovery_decisions": []
+}

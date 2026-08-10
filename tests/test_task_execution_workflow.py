@@ -16,7 +16,10 @@ from agentic_sdlc.llm import (
     FakeTaskPlanningClient,
 )
 from agentic_sdlc.requirement_analysis import RequirementAnalysis
-from agentic_sdlc.requirement_spec import build_approved_requirement_spec
+from agentic_sdlc.requirement_spec import (
+    ApprovedRequirementSpec,
+    build_approved_requirement_spec,
+)
 from agentic_sdlc.state import WorkflowState, demo_input
 from agentic_sdlc.task_execution import (
     TaskExecutionFailurePhase,
@@ -24,6 +27,7 @@ from agentic_sdlc.task_execution import (
     TaskExecutionRecoveryFailureKind,
     TaskExecutionStatus,
     TaskGraphExecutionStatus,
+    STALE_TASK_GRAPH_REASON,
     initialize_task_graph_execution,
     prepare_task_retry,
     ready_task_ids,
@@ -49,6 +53,7 @@ from agentic_sdlc.task_graph import (
 from agentic_sdlc.nodes import (
     _has_complete_final_execution_evidence,
     execute_task_graph_step,
+    initialize_task_graph_execution_node,
     safe_stop,
 )
 from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
@@ -403,7 +408,7 @@ def _analysis() -> RequirementAnalysis:
         ],
         acceptance_criteria=["Every planned task produces reviewable output."],
         risks=["Inconsistent predecessor artifacts could break downstream work."],
-        needs_clarification=True,
+        needs_clarification=False,
         confidence=0.9,
     )
 
@@ -498,12 +503,33 @@ def _direct_execution_state(
         "run_id": run_id,
         "approved_requirement_spec": spec.model_dump(mode="json"),
         "approved_task_graph": graph.model_dump(mode="json"),
-        "task_graph_execution": initialize_task_graph_execution(graph),
+        "task_graph_execution": initialize_task_graph_execution(
+            graph, authoritative_requirement_spec=spec
+        ),
         "governed_workspace_session": session,
         "workspace_snapshots": [snapshot],
         "serialized_conflict_retry_task_ids": [],
     }
     return state, graph, runtime
+
+
+def _superseding_spec(spec: ApprovedRequirementSpec) -> ApprovedRequirementSpec:
+    revised = _analysis().model_copy(
+        update={
+            "normalized_problem_statement": (
+                "Produce governed URL-shortener engineering artifacts under revised "
+                "authoritative requirements."
+            )
+        }
+    )
+    return build_approved_requirement_spec(
+        revised,
+        source_analysis_revision=1,
+        version=2,
+        supersedes_spec_id=spec.spec_id,
+        lineage_id=spec.lineage_id,
+        created_at="2026-08-10T13:00:00+00:00",
+    )
 
 
 def _run_approved(
@@ -598,6 +624,86 @@ def test_compiled_topology_uses_one_fixed_loop_and_no_dynamic_task_nodes() -> No
         "test_plan",
         "synchronization_complete",
     }.isdisjoint(WorkflowState.__annotations__)
+
+
+def test_stale_graph_is_rejected_before_execution_or_workspace_initialization(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    spec = build_approved_requirement_spec(
+        _analysis(),
+        source_analysis_revision=0,
+        created_at="2026-08-10T12:00:00+00:00",
+    )
+    graph, _ = normalize_and_validate_task_graph(
+        _single_proposal(),
+        spec,
+        version=1,
+        created_at="2026-08-10T12:00:00+00:00",
+    )
+    current_spec = _superseding_spec(spec)
+    runtime = GovernedWorkspaceRuntime()
+    workspace_initializations: list[str] = []
+
+    def forbidden_workspace_initialization(run_id: str) -> object:
+        workspace_initializations.append(run_id)
+        raise AssertionError("stale execution must not initialize a workspace")
+
+    monkeypatch.setattr(
+        runtime, "establish_workspace_for_run", forbidden_workspace_initialization
+    )
+    state: WorkflowState = {
+        "run_id": uuid4().hex,
+        "task_graph_decision": "APPROVE",
+        "approved_requirement_spec": current_spec.model_dump(mode="json"),
+        "approved_task_graph": graph.model_dump(mode="json"),
+        "errors": [],
+    }
+
+    update = initialize_task_graph_execution_node(
+        state, workspace_runtime=runtime
+    )
+
+    assert update["safe_stop_reason"] == STALE_TASK_GRAPH_REASON
+    assert "task_graph_execution" not in update
+    assert "governed_workspace_session" not in update
+    assert workspace_initializations == []
+    assert update["errors"][0].startswith("STALE_TASK_GRAPH:")
+
+
+def test_upstream_requirement_change_blocks_execution_advance_before_dispatch(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    state, _, runtime = _direct_execution_state(_single_proposal())
+    original_execution = state["task_graph_execution"]
+    spec = ApprovedRequirementSpec.model_validate_json(
+        json.dumps(state["approved_requirement_spec"])
+    )
+    state["approved_requirement_spec"] = _superseding_spec(spec).model_dump(
+        mode="json"
+    )
+    workspace_accesses: list[str] = []
+
+    def forbidden_workspace_access(run_id: str) -> object:
+        workspace_accesses.append(run_id)
+        raise AssertionError("stale execution must stop before workspace access")
+
+    monkeypatch.setattr(runtime, "workspace_for_run", forbidden_workspace_access)
+    executor = DeterministicExecutor()
+
+    update = execute_task_graph_step(
+        state,
+        executor=executor,
+        workspace_runtime=runtime,
+        repository_context_path_provider=DeterministicRepositoryContextPathProvider(),
+    )
+
+    assert update["task_graph_execution"].status is TaskGraphExecutionStatus.FAILED
+    assert update["task_graph_execution"].task_states == original_execution.task_states
+    assert update["safe_stop_reason"] == STALE_TASK_GRAPH_REASON
+    assert workspace_accesses == []
+    assert executor.calls == []
+    assert update.get("workspace_mutation_results", []) == []
+    assert update.get("task_execution_requests", []) == []
 
 
 def test_static_loop_runs_bounded_fanout_wave_and_propagates_dependency_evidence() -> None:

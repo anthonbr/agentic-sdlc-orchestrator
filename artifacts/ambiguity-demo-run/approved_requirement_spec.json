@@ -1,0 +1,120 @@
+{
+  "spec_id": "SPEC-0C11DA4A975F-V001",
+  "lineage_id": "8e699afe-796e-547a-a11e-8e3c1282b88e",
+  "version": 1,
+  "supersedes_spec_id": null,
+  "source_analysis_revision": 1,
+  "created_at": "2026-08-10T12:00:00+00:00",
+  "content_hash": "0c11da4a975f0ba4b8b68cab41c72902dba407f7b9a5359caeda01c0d1c1c7fd",
+  "normalized_problem_statement": "Add fixed process-local 24-hour expiration to the existing URL shortener, returning HTTP 404 for expired redirect and analytics access.",
+  "requirement_type": "brownfield",
+  "assumptions": [
+    "Existing shortening, analytics counting, and active-code behavior remain unchanged."
+  ],
+  "functional_requirements": [
+    {
+      "item_id": "FR-001",
+      "lineage_id": "a0d9474a-c9ca-5885-bb98-decb1f0d3dad",
+      "text": "Short URLs expire 24 hours after creation."
+    },
+    {
+      "item_id": "FR-002",
+      "lineage_id": "7f25c1c1-ee3b-5414-99b3-2b1933febd2f",
+      "text": "Resolving an expired short code returns HTTP 404."
+    },
+    {
+      "item_id": "FR-003",
+      "lineage_id": "a084066a-3bca-563b-8f33-9d00158780f8",
+      "text": "Requesting analytics for an expired short code returns HTTP 404."
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "item_id": "NFR-001",
+      "lineage_id": "2edfec4e-e79f-5f31-a577-4fb6576515c1",
+      "text": "Expiration boundary behavior must be deterministically testable without waiting for wall-clock time."
+    }
+  ],
+  "constraints": [
+    {
+      "item_id": "CON-001",
+      "lineage_id": "b81a2432-ca04-597c-8ae3-e3eb78d1fc5f",
+      "text": "The TTL is fixed at 24 hours and is not configurable."
+    },
+    {
+      "item_id": "CON-002",
+      "lineage_id": "72315342-d33e-5a50-849e-aeee42fb8465",
+      "text": "The TTL begins when the short URL is created."
+    },
+    {
+      "item_id": "CON-003",
+      "lineage_id": "9472c9d3-b8cb-5d4a-bf21-92ee7697bb46",
+      "text": "Expiration state is process-local and in-memory."
+    },
+    {
+      "item_id": "CON-004",
+      "lineage_id": "0b67fca2-3fba-5b13-b585-4036103e779a",
+      "text": "Expiration does not need to survive application restart."
+    },
+    {
+      "item_id": "CON-005",
+      "lineage_id": "d10dc0b5-e03d-57b3-aa37-d2958349f0b0",
+      "text": "Expiration is checked only when a code is accessed."
+    },
+    {
+      "item_id": "CON-006",
+      "lineage_id": "3a593803-0dca-5dfa-a8ac-0521ef63aab2",
+      "text": "No background expiration job or scheduler is required."
+    },
+    {
+      "item_id": "CON-007",
+      "lineage_id": "8c922005-de79-5ea7-afd7-7cb1253a5f12",
+      "text": "No migration or preservation of pre-existing runtime codes is required."
+    },
+    {
+      "item_id": "CON-008",
+      "lineage_id": "7f5f9ead-f767-5c8b-a7c9-b94016358cc2",
+      "text": "No database or persistent storage is required."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "item_id": "AC-001",
+      "lineage_id": "b00df682-8dce-5ea1-9cc4-fe96bcf79d01",
+      "text": "A code resolves successfully before 24 hours have elapsed."
+    },
+    {
+      "item_id": "AC-002",
+      "lineage_id": "90e026a9-515d-5718-a563-ebddecd05411",
+      "text": "Analytics remains available before 24 hours have elapsed."
+    },
+    {
+      "item_id": "AC-003",
+      "lineage_id": "251f391c-39b0-5247-bc55-2bb2d6358f23",
+      "text": "At exactly 24 hours after creation, resolution returns HTTP 404."
+    },
+    {
+      "item_id": "AC-004",
+      "lineage_id": "804b3df2-708d-59f1-b800-d6d9580e2a94",
+      "text": "At exactly 24 hours after creation, analytics returns HTTP 404."
+    },
+    {
+      "item_id": "AC-005",
+      "lineage_id": "aeb48e83-ce3d-5385-9065-216ab63038f9",
+      "text": "Resolution and analytics continue to return HTTP 404 after 24 hours."
+    },
+    {
+      "item_id": "AC-006",
+      "lineage_id": "371b7d6f-f598-53f0-a3de-cc8105986b10",
+      "text": "Expiration tests complete without waiting 24 real hours."
+    }
+  ],
+  "risks": [
+    {
+      "item_id": "RISK-001",
+      "lineage_id": "311f7a6b-5129-5846-b462-f7dfe85f86f0",
+      "text": "An incorrect boundary comparison could keep codes active at exactly 24 hours or hide analytics too early."
+    }
+  ],
+  "ambiguities": []
+}

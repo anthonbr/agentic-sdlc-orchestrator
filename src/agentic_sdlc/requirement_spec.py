@@ -10,7 +10,10 @@ from uuid import UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentic_sdlc.requirement_analysis import RequirementAnalysis
+from agentic_sdlc.requirement_analysis import (
+    RequirementAnalysis,
+    require_requirement_planning_ready,
+)
 
 
 LINEAGE_NAMESPACE = UUID("a514fa1a-3dc8-5ee1-9899-04b92f98f7fd")
@@ -85,6 +88,10 @@ def build_approved_requirement_spec(
     created_at: str | None = None,
 ) -> ApprovedRequirementSpec:
     """Package approved text without semantic rewriting or another LLM call."""
+
+    require_requirement_planning_ready(
+        analysis, analysis_revision=source_analysis_revision
+    )
 
     item_groups = {
         "functional_requirements": _items("FR", analysis.functional_requirements),

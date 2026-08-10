@@ -80,6 +80,16 @@ class RequirementAnalysisData(TypedDict):
     confidence: float
 
 
+class RequirementPlanningReadinessData(TypedDict):
+    """JSON-safe deterministic planning decision for one analysis revision."""
+
+    analysis_revision: int
+    status: Literal["READY", "BLOCKED"]
+    needs_clarification: bool
+    blocking_ambiguities: list[str]
+    reason_code: Literal["UNRESOLVED_REQUIREMENT_AMBIGUITY"] | None
+
+
 class RequirementAnalysisRecord(TypedDict):
     """One validated analysis proposal with its generation lineage."""
 
@@ -90,6 +100,7 @@ class RequirementAnalysisRecord(TypedDict):
     model_name: str
     reviewer_feedback: str
     analysis: RequirementAnalysisData
+    planning_readiness: RequirementPlanningReadinessData
 
 
 class RequirementAnalysisFailure(TypedDict):
@@ -232,6 +243,7 @@ class WorkflowState(TypedDict, total=False):
     requirement_analysis_history: Annotated[
         list[RequirementAnalysisRecord], operator.add
     ]
+    requirement_planning_readiness: RequirementPlanningReadinessData
     requirement_analysis_failures: Annotated[
         list[RequirementAnalysisFailure], operator.add
     ]

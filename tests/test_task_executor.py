@@ -96,7 +96,7 @@ def _request_fixture() -> tuple[
             "The mapping input contract is documented.",
         ],
         risks=["An unclear error contract could create incompatible clients."],
-        needs_clarification=True,
+        needs_clarification=False,
         confidence=0.9,
     )
     spec = build_approved_requirement_spec(
@@ -136,7 +136,11 @@ def _request_fixture() -> tuple[
         proposal, spec, version=1, created_at=FIXED_TIME
     )
     execution = start_task(
-        graph, initialize_task_graph_execution(graph), "TASK-001"
+        graph,
+        initialize_task_graph_execution(
+            graph, authoritative_requirement_spec=spec
+        ),
+        "TASK-001",
     )
     dependency_request = build_task_execution_request(
         spec, graph, execution, "TASK-001"

@@ -5,7 +5,10 @@ from __future__ import annotations
 from pydantic import ValidationError
 from pytest import mark, raises
 
-from agentic_sdlc.requirement_analysis import RequirementAnalysis
+from agentic_sdlc.requirement_analysis import (
+    RequirementAnalysis,
+    RequirementPlanningReadinessError,
+)
 from agentic_sdlc.requirement_spec import build_approved_requirement_spec
 from agentic_sdlc.task_graph import (
     ProposedTask,
@@ -34,7 +37,7 @@ def _analysis() -> RequirementAnalysis:
             "A known short URL redirects to its original URL.",
         ],
         risks=["Short-code collisions could redirect to the wrong URL."],
-        needs_clarification=True,
+        needs_clarification=False,
         confidence=0.9,
     )
 
@@ -111,6 +114,18 @@ def test_approved_spec_assigns_namespaces_lineage_and_exact_text() -> None:
     assert spec.created_at == FIXED_TIME
     assert spec.spec_id.startswith("SPEC-")
     assert len(spec.content_hash) == 64
+
+
+def test_blocked_analysis_cannot_be_packaged_as_approved_requirement_spec() -> None:
+    blocked = _analysis().model_copy(update={"needs_clarification": True})
+
+    with raises(
+        RequirementPlanningReadinessError,
+        match="^UNRESOLVED_REQUIREMENT_AMBIGUITY:",
+    ):
+        build_approved_requirement_spec(
+            blocked, source_analysis_revision=2, created_at=FIXED_TIME
+        )
 
 
 def test_approved_spec_hash_and_ids_are_deterministic() -> None:

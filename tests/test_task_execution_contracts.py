@@ -74,7 +74,7 @@ def _analysis() -> RequirementAnalysis:
             "A known short URL redirects to its original URL.",
         ],
         risks=["Short-code collisions could redirect to the wrong URL."],
-        needs_clarification=True,
+        needs_clarification=False,
         confidence=0.9,
     )
 
@@ -145,6 +145,14 @@ def _context_graph(spec: ApprovedRequirementSpec) -> TaskGraph:
     )
 
 
+def _initialize(
+    spec: ApprovedRequirementSpec, graph: TaskGraph
+) -> TaskGraphExecutionState:
+    return initialize_task_graph_execution(
+        graph, authoritative_requirement_spec=spec
+    )
+
+
 def _running_request(
     spec: ApprovedRequirementSpec,
     graph: TaskGraph,
@@ -154,7 +162,9 @@ def _running_request(
     artifacts: tuple[EngineeringArtifact, ...] = (),
     validations: tuple[TaskExecutionValidationResult, ...] = (),
 ) -> tuple[TaskGraphExecutionState, TaskExecutionRequest]:
-    active = execution or initialize_task_graph_execution(graph)
+    active = execution or initialize_task_graph_execution(
+        graph, authoritative_requirement_spec=spec
+    )
     if next(
         state for state in active.task_states if state.task_id == task_id
     ).status is TaskExecutionStatus.READY:
@@ -246,7 +256,7 @@ def _dependency_attempt(
         ),
     )
     execution = start_task(
-        graph, initialize_task_graph_execution(graph), "TASK-001"
+        graph, _initialize(spec, graph), "TASK-001"
     )
     request = build_task_execution_request(spec, graph, execution, "TASK-001")
     result = _result(request, *outputs)
@@ -278,7 +288,7 @@ def test_request_identity_and_context_are_deterministic_for_running_attempt() ->
 def test_request_requires_running_task_and_positive_attempt_count() -> None:
     spec = _spec()
     graph = _context_graph(spec)
-    ready = initialize_task_graph_execution(graph)
+    ready = _initialize(spec, graph)
 
     invalid_running = TaskGraphExecutionState(
         graph_id=graph.graph_id,
@@ -312,7 +322,7 @@ def test_request_rejects_every_non_running_task_status(
 ) -> None:
     spec = _spec()
     graph = _context_graph(spec)
-    initial = initialize_task_graph_execution(graph)
+    initial = _initialize(spec, graph)
     execution = TaskGraphExecutionState(
         graph_id=graph.graph_id,
         status=(
@@ -372,7 +382,7 @@ def test_request_rejects_unknown_approved_reference() -> None:
     )
     execution = start_task(
         invalid_graph,
-        initialize_task_graph_execution(invalid_graph),
+        _initialize(spec, invalid_graph),
         "TASK-001",
     )
 
@@ -399,7 +409,7 @@ def test_direct_dependency_artifact_is_available_to_running_task() -> None:
         ),
     )
     execution = start_task(
-        graph, initialize_task_graph_execution(graph), "TASK-001"
+        graph, _initialize(spec, graph), "TASK-001"
     )
     _, dependency_artifacts, dependency_validation = _canonical_output(
         spec,
@@ -456,7 +466,7 @@ def test_unrelated_artifact_is_rejected_as_dependency_context() -> None:
         ),
         _proposed_task("unrelated"),
     )
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(spec, graph)
     execution = start_task(graph, execution, "TASK-001")
     execution = start_task(graph, execution, "TASK-003")
     _, dependency_artifacts, dependency_validation = _canonical_output(
@@ -507,7 +517,7 @@ def test_fan_in_dependency_artifacts_are_sorted_by_declared_dependency_order() -
             acceptance_refs=("AC-002",),
         ),
     )
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(spec, graph)
     execution = start_task(graph, execution, "TASK-001")
     execution = start_task(graph, execution, "TASK-002")
     _, first_artifacts, first_validation = _canonical_output(
@@ -912,7 +922,7 @@ def test_dependency_builder_rejects_artifact_from_nonaccepted_attempt() -> None:
         ),
     )
     execution = start_task(
-        graph, initialize_task_graph_execution(graph), "TASK-001"
+        graph, _initialize(spec, graph), "TASK-001"
     )
     _, artifacts, validation = _canonical_output(
         spec, graph, execution, "TASK-001", logical_name="dependency"
@@ -1060,7 +1070,7 @@ def test_explicitly_validated_empty_dependency_artifact_set_is_supported() -> No
         ),
     )
     execution = start_task(
-        graph, initialize_task_graph_execution(graph), "TASK-001"
+        graph, _initialize(spec, graph), "TASK-001"
     )
     source_request = build_task_execution_request(
         spec, graph, execution, "TASK-001"
