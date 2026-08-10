@@ -577,6 +577,48 @@ mutating history. V0.6 prohibits execution of `GRAPH-v1` under `SPEC-v2` authori
 and requires governed replanning; it does not implement live upstream-change
 reconciliation, DAG mutation, or execution-state migration.
 
+## Reviewer path: three scenarios
+
+Start with each scenario's `summary.md`. Human decisions are in
+`requirement_analysis.md` and `task_graph.md`, dependencies are in `task_graph.*`,
+and validation/mutation evidence is in `task_execution.json` and
+`workspace_execution.json`.
+
+| Scenario | Demonstrates | Reviewer evidence | Runnable product |
+| --- | --- | --- | --- |
+| Greenfield | Governed planning and transactional creation of a URL shortener | [`artifacts/demo-run/`](artifacts/demo-run/), especially [`summary.md`](artifacts/demo-run/summary.md) and [`task_graph.md`](artifacts/demo-run/task_graph.md) | [`generated-project/`](artifacts/demo-run/generated-project/) |
+| Brownfield | Bounded repository reasoning and a governed analytics enhancement | [`artifacts/brownfield-demo-run/`](artifacts/brownfield-demo-run/), especially [`summary.md`](artifacts/brownfield-demo-run/summary.md) and [`workspace_seed.json`](artifacts/brownfield-demo-run/workspace_seed.json) | [`enhanced-project/`](artifacts/brownfield-demo-run/enhanced-project/) |
+| Ambiguous | Planning blocked pending human clarification, revised authority, then governed expiration work | [`artifacts/ambiguity-demo-run/`](artifacts/ambiguity-demo-run/), especially [`summary.md`](artifacts/ambiguity-demo-run/summary.md) and [`ambiguity_resolution.json`](artifacts/ambiguity-demo-run/ambiguity_resolution.json) | [`expiration-project/`](artifacts/ambiguity-demo-run/expiration-project/) |
+
+The checked-in greenfield and brownfield bundles are frozen V0.5 reviewer snapshots;
+their Markdown preserves the schema and policy state at generation time. In
+particular, the greenfield snapshot's historical `needs_clarification=true` predates
+the V0.6 planning-readiness gate and must not be read as current approval behavior.
+The ambiguity bundle is the authoritative reviewer proof of the V0.6 `BLOCKED` ->
+`REQUEST_CHANGES` -> `READY` -> `APPROVE` lifecycle.
+
+These deterministic checks use scripted clients and require no API key or network:
+
+```bash
+# Greenfield workflow/artifact check
+.venv/bin/pytest -q tests/test_workflow.py::test_successful_run_writes_canonical_artifact_set
+
+# Brownfield workflow, export, and byte-identical regeneration checks
+.venv/bin/pytest -q tests/test_brownfield_demo.py
+
+# Ambiguity checked-in regeneration and complete scenario checks
+.venv/bin/python -m tests.demo_ambiguity_scenario artifacts/ambiguity-demo-run
+.venv/bin/pytest -q tests/test_ambiguity_demo.py
+```
+
+Each product export has its own dependency-free run/test commands in its README.
+The real OpenAI-backed interactive path is separate and described below. Successful
+reviewer bundles show the positive governed path; bounded retry and safe-stop
+evidence is in [`tests/test_workflow.py`](tests/test_workflow.py) and
+[`tests/test_task_execution_workflow.py`](tests/test_task_execution_workflow.py),
+while fault-injected rollback evidence is in
+[`tests/test_workspace_mutation.py`](tests/test_workspace_mutation.py).
+
 ## Setup and run
 
 Python 3.13 or newer is required.
@@ -791,7 +833,7 @@ fault-injected rollback, and explicit rollback-failure evidence.
 
 ## Deliberately deferred
 
-The current V0.5 slice does not include cancellation, production task/wave timeout
+The current V0.6 scope does not include cancellation, production task/wave timeout
 policy, work-conserving streaming dispatch, fallback models or providers, delayed
 retry/backoff policy, distributed workers, repository copying or Git worktrees,
 DELETE support, generated-code execution,
