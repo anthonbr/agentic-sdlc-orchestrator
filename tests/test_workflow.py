@@ -1,4 +1,4 @@
-"""Behavior tests for governed V0.4 orchestration and both LLM boundaries."""
+"""Behavior tests for the governed orchestration workflow."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from agentic_sdlc.llm import (
     RequirementAnalysisClientError,
     TaskPlanningClientError,
 )
-from agentic_sdlc.nodes import exit_gate, synchronize
+from agentic_sdlc.nodes import exit_gate
 from agentic_sdlc.prompts import (
     REQUIREMENT_ANALYSIS_PROMPT_VERSION,
     REQUIREMENT_ANALYSIS_SYSTEM_PROMPT,
@@ -38,17 +38,38 @@ from agentic_sdlc.state import (
     MAX_TASK_GRAPH_REVISIONS_REASON,
     REQUIREMENT_ANALYSIS_REJECTED_REASON,
     TASK_GRAPH_REJECTED_REASON,
-    ArchitectureArtifact,
     WorkflowState,
     demo_input,
 )
+from agentic_sdlc.task_execution import TaskGraphExecutionStatus
+from agentic_sdlc.task_execution_contracts import TaskExecutionResult
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
     TaskGraph,
+    TaskMaterializationPolicy,
     TaskType,
 )
+from agentic_sdlc.workspace_integration_contracts import (
+    WorkspaceBoundTaskExecutionRequest,
+)
 from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
+from tests.demo_url_shortener_project import deterministic_demo_result
+
+
+class RecordingTaskExecutor:
+    """Deterministic network-free executor for complete workflow tests."""
+
+    model_name = "recording-task-executor"
+
+    def __init__(self) -> None:
+        self.calls: list[WorkspaceBoundTaskExecutionRequest] = []
+
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
+        self.calls.append(request)
+        return deterministic_demo_result(request)
 
 
 def _analysis(version: str = "v1") -> RequirementAnalysis:
@@ -66,7 +87,9 @@ def _analysis(version: str = "v1") -> RequirementAnalysis:
         nonfunctional_requirements=["Short-code lookup should be reliable."],
         constraints=["The persistence technology is not yet selected."],
         ambiguities=["URL expiration behavior is unspecified."],
-        assumptions=["The workflow plans but does not implement the service."],
+        assumptions=[
+            "Materialization is limited to the disposable isolated workspace."
+        ],
         acceptance_criteria=[
             "A submitted valid URL receives a unique short URL.",
             "An unknown short code returns a defined error.",
@@ -87,12 +110,16 @@ def _proposed_task(
     acceptance_refs: list[str] | None = None,
     risk_refs: list[str] | None = None,
     ambiguity_refs: list[str] | None = None,
+    materialization_policy: TaskMaterializationPolicy = (
+        TaskMaterializationPolicy.FORBIDDEN
+    ),
 ) -> ProposedTask:
     return ProposedTask(
         key=key,
         title=title,
         description=f"Produce the governed {title.lower()} output.",
         task_type=task_type,
+        materialization_policy=materialization_policy,
         depends_on=depends_on or [],
         requirement_refs=requirement_refs or ["FR-001"],
         acceptance_criteria_refs=acceptance_refs or [],
@@ -125,6 +152,7 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
                 requirement_refs=["FR-001", "FR-002", "FR-003", "FR-004"],
                 acceptance_refs=["AC-001", "AC-002"],
                 ambiguity_refs=["AMB-001"],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
             ),
             _proposed_task(
                 "verify_service",
@@ -134,6 +162,7 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
                 requirement_refs=["NFR-001"],
                 acceptance_refs=["AC-001", "AC-002"],
                 risk_refs=["RISK-001"],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
             ),
             _proposed_task(
                 "document_service",
@@ -141,6 +170,7 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
                 task_type=TaskType.DOCUMENTATION,
                 depends_on=["verify_service"],
                 requirement_refs=["FR-001"],
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
             ),
         ]
     )
@@ -155,10 +185,13 @@ def _start_demo(
     *,
     analyst: FakeRequirementAnalysisClient | None = None,
     planner: FakeTaskPlanningClient | None = None,
+    executor: RecordingTaskExecutor | None = None,
 ) -> tuple[Any, str, WorkflowState, FakeRequirementAnalysisClient, FakeTaskPlanningClient]:
     active_analyst = analyst or FakeRequirementAnalysisClient([_analysis()])
     active_planner = planner or FakeTaskPlanningClient([_proposal()])
-    workflow = build_workflow(active_analyst, active_planner)
+    workflow = build_workflow(
+        active_analyst, active_planner, executor or RecordingTaskExecutor()
+    )
     thread_id = uuid4().hex
     state = run_workflow(
         demo_input(),
@@ -384,6 +417,22 @@ def test_missing_requirement_api_key_safe_stops_without_network(
     )
 
 
+def test_created_requirement_openai_client_disables_sdk_retries(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_openai(**kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr("agentic_sdlc.llm.OpenAI", fake_openai)
+
+    OpenAIRequirementAnalysisClient(api_key="test-key")._create_client()
+
+    assert captured == {"api_key": "test-key", "max_retries": 0}
+
+
 def test_openai_requirement_client_uses_structured_parse_without_network() -> None:
     calls: list[dict[str, Any]] = []
 
@@ -401,6 +450,7 @@ def test_openai_requirement_client_uses_structured_parse_without_network() -> No
     assert isinstance(result, RequirementAnalysis)
     assert calls[0]["model"] == "test-model"
     assert calls[0]["text_format"] is RequirementAnalysis
+    assert calls[0]["store"] is False
     assert "Prior validated analysis" in calls[0]["input"][1]["content"]
     assert "Authoritative human review feedback" in calls[0]["input"][1]["content"]
 
@@ -433,6 +483,7 @@ def test_openai_task_planner_uses_approved_spec_and_schema_without_network() -> 
 
     assert isinstance(result, ProposedTaskGraph)
     assert calls[0]["text_format"] is ProposedTaskGraph
+    assert calls[0]["store"] is False
     content = calls[0]["input"][1]["content"]
     assert "Human-approved requirement specification" in content
     assert spec.spec_id in content
@@ -442,11 +493,13 @@ def test_openai_task_planner_uses_approved_spec_and_schema_without_network() -> 
 
 def test_task_planning_prompt_reserves_authoritative_metadata() -> None:
     prompt = " ".join(TASK_PLANNING_SYSTEM_PROMPT.casefold().split())
-    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.1"
+    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.2"
     assert "cover every fr, nfr, con, and ac item" in prompt
     assert "deterministic application validation is authoritative" in prompt
     assert "do not assign task-### ids" in prompt
     assert "do not silently choose an implementation outcome" in prompt
+    assert "do not derive this policy mechanically from task type" in prompt
+    assert "no_change may eventually satisfy required" in prompt
     assert "do not execute tasks" in prompt
 
 
@@ -565,7 +618,23 @@ def test_missing_api_key_at_task_planning_safe_stops_without_fake_fallback(
     assert "approved_task_graph" not in result
 
 
-def test_task_graph_approval_runs_existing_parallel_artifact_branches() -> None:
+def test_created_task_planning_openai_client_disables_sdk_retries(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_openai(**kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr("agentic_sdlc.llm.OpenAI", fake_openai)
+
+    OpenAITaskPlanningClient(api_key="test-key")._create_client()
+
+    assert captured == {"api_key": "test-key", "max_retries": 0}
+
+
+def test_task_graph_approval_runs_the_authoritative_task_graph_to_completion() -> None:
     workflow, thread_id, _, _, _ = _start_demo()
     paused = _approve_requirements(workflow, thread_id)
 
@@ -580,9 +649,23 @@ def test_task_graph_approval_runs_existing_parallel_artifact_branches() -> None:
     )
 
     assert result["approved_task_graph"] == result["candidate_task_graph"]
-    assert result["architecture"]["components"]
-    assert result["test_plan"]["cases"]
-    assert result["synchronization_complete"] is True
+    assert result["task_graph_execution"].status is (
+        TaskGraphExecutionStatus.SUCCEEDED
+    )
+    assert [request.task_id for request in result["task_execution_requests"]] == [
+        "TASK-001",
+        "TASK-002",
+        "TASK-003",
+        "TASK-004",
+        "TASK-005",
+    ]
+    assert len(result["engineering_artifacts"]) == 8
+    assert all(
+        validation.passed
+        for validation in result["task_execution_validations"]
+    )
+    assert "architecture" not in result
+    assert "test_plan" not in result
     assert result["exit_gate_passed"] is True
     assert result["workflow_status"] == "success"
     assert result["task_graph_review_history"] == [
@@ -710,19 +793,7 @@ def test_entry_gate_failure_stops_before_any_llm(tmp_path: Path) -> None:
     assert not artifact_dir.exists()
 
 
-def test_synchronization_requires_both_static_branch_outputs() -> None:
-    architecture: ArchitectureArtifact = {
-        "summary": "Present",
-        "components": ["API"],
-        "design_notes": [],
-    }
-    result = synchronize({"architecture": architecture, "errors": []})
-
-    assert result["synchronization_complete"] is False
-    assert "test plan" in result["errors"][0]
-
-
-def test_exit_gate_rejects_incomplete_v04_state() -> None:
+def test_exit_gate_rejects_incomplete_governed_state() -> None:
     incomplete: WorkflowState = {
         "entry_gate_passed": True,
         "normalized_requirements": [{"id": "REQ-001", "text": "Requirement"}],
@@ -738,26 +809,87 @@ def test_exit_gate_rejects_incomplete_v04_state() -> None:
 
 def test_successful_run_writes_canonical_artifact_set(tmp_path: Path) -> None:
     artifact_dir = tmp_path / "demo-run"
+    artifact_dir.mkdir()
+    (artifact_dir / "architecture.md").write_text("legacy architecture")
+    (artifact_dir / "test_plan.md").write_text("legacy test plan")
 
     result = _approve_demo(artifact_dir)
 
     assert result["workflow_status"] == "success"
     assert {path.name for path in artifact_dir.iterdir()} == set(ARTIFACT_FILENAMES)
+    assert not (artifact_dir / "architecture.md").exists()
+    assert not (artifact_dir / "test_plan.md").exists()
     spec = json.loads(
         (artifact_dir / "approved_requirement_spec.json").read_text()
     )
     graph = json.loads((artifact_dir / "task_graph.json").read_text())
+    execution = json.loads((artifact_dir / "task_execution.json").read_text())
+    engineering_artifacts = json.loads(
+        (artifact_dir / "engineering_artifacts.json").read_text()
+    )
+    workspace_execution = json.loads(
+        (artifact_dir / "workspace_execution.json").read_text()
+    )
     graph_markdown = (artifact_dir / "task_graph.md").read_text()
     summary = (artifact_dir / "summary.md").read_text()
     assert spec["functional_requirements"][0]["item_id"] == "FR-001"
     assert graph["tasks"][0]["task_id"] == "TASK-001"
     assert "Layer 1 — parallel" in graph_markdown
-    assert "Execution status: not executed" in graph_markdown
+    assert "Execution status: SUCCEEDED" in graph_markdown
+    assert execution["task_graph_execution"]["status"] == "SUCCEEDED"
+    assert [request["task_id"] for request in execution["requests"]] == [
+        "TASK-001",
+        "TASK-002",
+        "TASK-003",
+        "TASK-004",
+        "TASK-005",
+    ]
+    assert len(engineering_artifacts) == 8
+    assert {item["logical_name"] for item in engineering_artifacts} == {
+        "url-shortener-api-design",
+        "url-shortener-storage-design",
+        "generated-project-metadata",
+        "url-shortener-package",
+        "url-shortener-domain-service",
+        "url-shortener-wsgi-application",
+        "url-shortener-executable-tests",
+        "generated-project-readme",
+    }
+    assert sorted(
+        item["target_path"]
+        for item in workspace_execution["materialization_intents"]
+    ) == [
+        "README.md",
+        "pyproject.toml",
+        "src/url_shortener/__init__.py",
+        "src/url_shortener/app.py",
+        "src/url_shortener/service.py",
+        "tests/test_service.py",
+    ]
+    assert [item["status"] for item in workspace_execution["mutations"]] == [
+        "APPLIED",
+        "APPLIED",
+        "APPLIED",
+    ]
+    contents_by_name = {
+        item["logical_name"]: item["content"] for item in engineering_artifacts
+    }
+    assert "class URLShortener:" in contents_by_name[
+        "url-shortener-domain-service"
+    ]
+    assert "class URLShortenerApplication:" in contents_by_name[
+        "url-shortener-wsgi-application"
+    ]
+    assert "class URLShortenerHTTPTests" in contents_by_name[
+        "url-shortener-executable-tests"
+    ]
     assert "Required specification coverage: complete (FR/NFR/CON/AC)" in (
         graph_markdown
     )
     assert "Requirement Analysis" in summary
     assert "Engineering Task Graph" in summary
+    assert "TaskGraph execution: SUCCEEDED" in summary
+    assert "governed V0.5 workflow executed" in summary
     assert "No engineering task was executed" not in summary
 
 
@@ -796,7 +928,11 @@ def test_cli_preserves_multiline_requirement_feedback_and_reaches_graph_review(
         output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "WORKFLOW", build_workflow(analyst, planner))
+    monkeypatch.setattr(
+        cli,
+        "WORKFLOW",
+        build_workflow(analyst, planner, RecordingTaskExecutor()),
+    )
     monkeypatch.setattr(cli, "write_workflow_diagram", write_stub_diagram)
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
 
@@ -845,6 +981,7 @@ def test_diagram_failure_does_not_fail_demo(
         build_workflow(
             FakeRequirementAnalysisClient([_analysis()]),
             FakeTaskPlanningClient([_proposal()]),
+            RecordingTaskExecutor(),
         ),
     )
     monkeypatch.setattr(cli, "write_workflow_diagram", fail_to_render)

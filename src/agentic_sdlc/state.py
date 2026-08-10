@@ -1,9 +1,37 @@
-"""Typed shared state and demonstration input for the V0.4 workflow."""
+"""Typed shared state and demonstration input for the governed workflow."""
 
 from __future__ import annotations
 
 import operator
 from typing import Annotated, Literal, TypedDict
+
+from agentic_sdlc.task_execution import (
+    TaskExecutionFailure,
+    TaskExecutionRecoveryDecision,
+    TaskExecutionWave,
+    TaskGraphExecutionState,
+)
+from agentic_sdlc.task_execution_contracts import (
+    EngineeringArtifact,
+    TaskExecutionRequest,
+    TaskExecutionResult,
+    TaskExecutionValidationResult,
+)
+from agentic_sdlc.workspace_contracts import (
+    ArtifactMaterializationIntent,
+    ArtifactMaterializationValidationResult,
+    WorkspaceChangeSet,
+    WorkspaceChangeSetValidationResult,
+    WorkspaceSnapshot,
+)
+from agentic_sdlc.workspace_integration_contracts import (
+    GovernedWorkspaceSession,
+    TaskAttemptExitDecision,
+    WorkspaceBoundTaskExecutionRequest,
+    WorkspaceExecutionWave,
+    WorkspaceWaveConflictEvidence,
+)
+from agentic_sdlc.workspace_mutation import WorkspaceMutationResult
 
 
 class NormalizedRequirement(TypedDict):
@@ -11,28 +39,6 @@ class NormalizedRequirement(TypedDict):
 
     id: str
     text: str
-
-
-class ArchitectureArtifact(TypedDict):
-    """Small architecture output produced by one parallel branch."""
-
-    summary: str
-    components: list[str]
-    design_notes: list[str]
-
-
-class TestCase(TypedDict):
-    """One planned verification case."""
-
-    name: str
-    purpose: str
-
-
-class TestPlanArtifact(TypedDict):
-    """Small test-plan output produced by one parallel branch."""
-
-    strategy: str
-    cases: list[TestCase]
 
 
 ApprovalDecision = Literal["APPROVE", "REQUEST_CHANGES", "REJECT"]
@@ -128,6 +134,7 @@ class ApprovedRequirementSpecData(TypedDict):
 TaskTypeData = Literal[
     "DESIGN", "IMPLEMENTATION", "TEST", "DOCUMENTATION", "VALIDATION", "RELEASE"
 ]
+TaskMaterializationPolicyData = Literal["FORBIDDEN", "ALLOWED", "REQUIRED"]
 TaskPlanningStatus = Literal["pending", "candidate", "validated", "failed"]
 
 
@@ -140,6 +147,7 @@ class TaskData(TypedDict):
     title: str
     description: str
     task_type: TaskTypeData
+    materialization_policy: TaskMaterializationPolicyData
     depends_on: list[str]
     requirement_refs: list[str]
     acceptance_criteria_refs: list[str]
@@ -198,7 +206,6 @@ WorkflowStatus = Literal[
     "pending",
     "awaiting_approval",
     "entry_gate_failed",
-    "synchronization_failed",
     "exit_gate_failed",
     "safe_stopped",
     "success",
@@ -209,6 +216,7 @@ class WorkflowState(TypedDict, total=False):
     """Shared JSON-safe state updated by the static LangGraph control plane."""
 
     project_name: str
+    run_id: str
     requirements: list[str]
     raw_requirement: str
     normalized_requirements: list[NormalizedRequirement]
@@ -246,10 +254,45 @@ class WorkflowState(TypedDict, total=False):
     task_graph_decision: ApprovalDecision | None
     task_graph_feedback: str
     task_graph_review_history: Annotated[list[ApprovalEvent], operator.add]
+    task_graph_execution: TaskGraphExecutionState
+    task_execution_requests: Annotated[list[TaskExecutionRequest], operator.add]
+    task_execution_results: Annotated[list[TaskExecutionResult], operator.add]
+    engineering_artifacts: Annotated[list[EngineeringArtifact], operator.add]
+    task_execution_validations: Annotated[
+        list[TaskExecutionValidationResult], operator.add
+    ]
+    task_execution_failures: Annotated[list[TaskExecutionFailure], operator.add]
+    task_execution_recovery_decisions: Annotated[
+        list[TaskExecutionRecoveryDecision], operator.add
+    ]
+    task_execution_waves: Annotated[list[TaskExecutionWave], operator.add]
+    governed_workspace_session: GovernedWorkspaceSession
+    workspace_snapshots: Annotated[list[WorkspaceSnapshot], operator.add]
+    workspace_execution_waves: Annotated[list[WorkspaceExecutionWave], operator.add]
+    workspace_bound_task_execution_requests: Annotated[
+        list[WorkspaceBoundTaskExecutionRequest], operator.add
+    ]
+    artifact_materialization_intents: Annotated[
+        list[ArtifactMaterializationIntent], operator.add
+    ]
+    artifact_materialization_validations: Annotated[
+        list[ArtifactMaterializationValidationResult], operator.add
+    ]
+    workspace_change_sets: Annotated[list[WorkspaceChangeSet], operator.add]
+    workspace_change_set_validations: Annotated[
+        list[WorkspaceChangeSetValidationResult], operator.add
+    ]
+    workspace_conflict_evidence: Annotated[
+        list[WorkspaceWaveConflictEvidence], operator.add
+    ]
+    workspace_mutation_results: Annotated[
+        list[WorkspaceMutationResult], operator.add
+    ]
+    task_attempt_exit_decisions: Annotated[
+        list[TaskAttemptExitDecision], operator.add
+    ]
+    serialized_conflict_retry_task_ids: list[str]
     safe_stop_reason: str
-    architecture: ArchitectureArtifact
-    test_plan: TestPlanArtifact
-    synchronization_complete: bool
     exit_gate_passed: bool
     workflow_status: WorkflowStatus
     errors: list[str]

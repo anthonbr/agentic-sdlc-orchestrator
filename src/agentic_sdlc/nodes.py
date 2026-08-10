@@ -1,8 +1,11 @@
-"""Governed workflow nodes for the V0.4 orchestration prototype."""
+"""Governed planning and execution nodes for the static control plane."""
 
 from __future__ import annotations
 
 import json
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import cast
 
 from langgraph.types import interrupt
@@ -34,7 +37,6 @@ from agentic_sdlc.state import (
     ApprovalEvent,
     ApprovalResponse,
     ApprovedRequirementSpecData,
-    ArchitectureArtifact,
     RequirementAnalysisData,
     RequirementAnalysisFailure,
     RequirementAnalysisRecord,
@@ -42,19 +44,101 @@ from agentic_sdlc.state import (
     TaskGraphRecord,
     TaskGraphSemanticsData,
     TaskPlanningFailure,
-    TestPlanArtifact,
     WorkflowState,
 )
 from agentic_sdlc.task_graph import (
     ProposedTaskGraph,
     TaskGraph,
     TaskGraphValidationError,
+    TaskMaterializationPolicy,
     normalize_and_validate_task_graph as normalize_task_graph,
 )
+from agentic_sdlc.task_execution import (
+    MAX_PARALLEL_TASK_EXECUTIONS,
+    TaskExecutionError,
+    TaskExecutionFailure,
+    TaskExecutionFailurePhase,
+    TaskExecutionRecoveryAction,
+    TaskExecutionRecoveryDecision,
+    TaskExecutionRecoveryFailureKind,
+    TaskExecutionStatus,
+    TaskExecutionWave,
+    TaskExecutionWaveAttempt,
+    TaskGraphExecutionState,
+    TaskGraphExecutionStatus,
+    abort_running_task,
+    decide_task_execution_recovery,
+    fail_task_graph_integrity,
+    initialize_task_graph_execution,
+    mark_task_failed,
+    mark_task_succeeded,
+    prepare_task_retry,
+    ready_task_wave_ids,
+    safe_stop_task_graph_execution,
+    start_task_wave,
+    start_serialized_task_wave,
+)
+from agentic_sdlc.task_execution_contracts import (
+    EngineeringArtifact,
+    TaskExecutionContractError,
+    TaskExecutionCorrelationError,
+    TaskExecutionRequest,
+    TaskExecutionResult,
+    TaskExecutionValidationResult,
+    build_task_execution_request,
+    canonicalize_execution_result,
+    classify_validation_failure,
+    validate_execution_result,
+)
+from agentic_sdlc.task_executor import TaskExecutor, TaskExecutorError
+from agentic_sdlc.workspace_contracts import (
+    ArtifactMaterializationIntent,
+    ArtifactMaterializationIssueCode,
+    ArtifactMaterializationValidationResult,
+    WorkspaceChangeSet,
+    WorkspaceChangeSetConflictAnalysis,
+    WorkspaceChangeSetValidationResult,
+    WorkspaceContractError,
+    WorkspaceSnapshot,
+    analyze_workspace_change_set_conflicts,
+    build_workspace_change_set,
+    canonicalize_artifact_materialization_proposals,
+    validate_artifact_materialization,
+    validate_workspace_change_set,
+)
+from agentic_sdlc.workspace_integration import (
+    GovernedWorkspaceRuntime,
+    RepositoryContextPathProvider,
+    WorkspaceIntegrationError,
+    advance_governed_workspace_session,
+    establish_governed_workspace_session,
+    mark_workspace_integrity_unprovable,
+    provide_repository_context,
+)
+from agentic_sdlc.workspace_integration_contracts import (
+    GovernedWorkspaceSession,
+    TaskAttemptExitDecision,
+    TaskAttemptExitDisposition,
+    WorkspaceBinding,
+    WorkspaceBoundTaskExecutionRequest,
+    WorkspaceDispatchMode,
+    WorkspaceExecutionWave,
+    WorkspaceIntegrityStatus,
+    WorkspaceWaveConflictEvidence,
+    build_workspace_bound_task_execution_request,
+    build_workspace_wave_conflict_evidence,
+)
+from agentic_sdlc.workspace_mutation import (
+    WorkspaceMutationIssueCode,
+    WorkspaceMutationResult,
+    WorkspaceMutationStatus,
+    apply_workspace_change_set,
+)
+from agentic_sdlc.workspace_runtime import WorkspaceRuntimeError, snapshot_isolated_workspace
 
 
 def requirements_intake(state: WorkflowState) -> WorkflowState:
-    """Preserve submitted requirements and initialize governed V0.4 state."""
+    """Preserve submitted requirements and initialize governed workflow state."""
 
     original_requirements = list(state.get("requirements", []))
     normalized_texts = [
@@ -101,7 +185,6 @@ def requirements_intake(state: WorkflowState) -> WorkflowState:
         "task_graph_feedback": "",
         "task_graph_review_history": [],
         "safe_stop_reason": "",
-        "synchronization_complete": False,
         "exit_gate_passed": False,
         "workflow_status": "pending",
         "errors": [],
@@ -491,10 +574,1035 @@ def approve_task_graph(state: WorkflowState) -> WorkflowState:
     }
 
 
-def safe_stop(state: WorkflowState) -> WorkflowState:
-    """Terminate governed execution without approving or executing task work."""
+def initialize_task_graph_execution_node(
+    state: WorkflowState,
+    *,
+    workspace_runtime: GovernedWorkspaceRuntime,
+) -> WorkflowState:
+    """Initialize runtime state only for the human-approved canonical graph."""
 
-    if state.get("requirement_analysis_status") == "failed":
+    if state.get("task_graph_decision") != "APPROVE" or not state.get(
+        "approved_task_graph"
+    ):
+        raise ValueError("TaskGraph execution requires an approved TaskGraph.")
+    graph = _task_graph_from_data(state["approved_task_graph"])
+    execution = initialize_task_graph_execution(graph)
+    run_id = state.get("run_id", "")
+    try:
+        workspace = workspace_runtime.establish_workspace_for_run(run_id)
+        session, snapshot = establish_governed_workspace_session(
+            workspace, run_id=run_id
+        )
+    except (WorkspaceIntegrationError, WorkspaceRuntimeError) as error:
+        failed = fail_task_graph_integrity(graph, execution)
+        reason = "Governed workspace session could not be established."
+        return {
+            "task_graph_execution": failed,
+            "safe_stop_reason": reason,
+            "workflow_status": "pending",
+            "errors": [*state.get("errors", []), str(error)],
+            "trace": ["[initialize_task_graph_execution] workspace unavailable"],
+        }
+    return {
+        "task_graph_execution": execution,
+        "governed_workspace_session": session,
+        "workspace_snapshots": [snapshot],
+        "serialized_conflict_retry_task_ids": [],
+        "workflow_status": "pending",
+        "trace": [f"[initialize_task_graph_execution] {graph.graph_id} pending"],
+    }
+
+
+@dataclass
+class _WaveAttemptRecord:
+    """Ephemeral single-threaded orchestration state for one wave member."""
+
+    task_id: str
+    attempt_number: int
+    request: TaskExecutionRequest | None = None
+    workspace_request: WorkspaceBoundTaskExecutionRequest | None = None
+    result: TaskExecutionResult | None = None
+    artifacts: tuple[EngineeringArtifact, ...] = ()
+    validation: TaskExecutionValidationResult | None = None
+    intents: tuple[ArtifactMaterializationIntent, ...] = ()
+    materialization_validation: ArtifactMaterializationValidationResult | None = None
+    change_set: WorkspaceChangeSet | None = None
+    change_set_validation: WorkspaceChangeSetValidationResult | None = None
+    mutation_result: WorkspaceMutationResult | None = None
+    conflict_evidence_id: str | None = None
+    failure: TaskExecutionFailure | None = None
+    recovery_decision: TaskExecutionRecoveryDecision | None = None
+    exit_decision: TaskAttemptExitDecision | None = None
+    eligible: bool = False
+    succeeded: bool = False
+
+
+def execute_task_graph_step(
+    state: WorkflowState,
+    *,
+    executor: TaskExecutor,
+    workspace_runtime: GovernedWorkspaceRuntime,
+    repository_context_path_provider: RepositoryContextPathProvider,
+) -> WorkflowState:
+    """Execute, reconcile, mutate, and settle one governed workspace-bound wave."""
+
+    spec = _spec_from_state(state)
+    graph = _task_graph_from_data(state["approved_task_graph"])
+    execution = _execution_from_state(state["task_graph_execution"])
+    if execution.status is TaskGraphExecutionStatus.FAILED:
+        return {
+            "task_graph_execution": execution,
+            "trace": [
+                "[execute_task_graph_step] initialization failure retained"
+            ],
+        }
+    session = _workspace_session_from_state(state)
+    authoritative_snapshot = _authoritative_workspace_snapshot(state, session)
+    try:
+        workspace = workspace_runtime.workspace_for_run(session.run_id)
+        live_snapshot = snapshot_isolated_workspace(workspace)
+    except (WorkspaceIntegrationError, WorkspaceRuntimeError):
+        return _predispatch_integrity_failure(state, graph, execution, session)
+    if (
+        session.integrity_status is not WorkspaceIntegrityStatus.VERIFIED
+        or workspace.workspace_id != session.workspace_id
+        or live_snapshot != authoritative_snapshot
+    ):
+        return _predispatch_integrity_failure(state, graph, execution, session)
+
+    serialized_queue = tuple(state.get("serialized_conflict_retry_task_ids", []))
+    if serialized_queue:
+        wave_task_ids = (serialized_queue[0],)
+        started = start_serialized_task_wave(
+            graph, execution, serialized_queue[0]
+        )
+        dispatch_mode = WorkspaceDispatchMode.SERIALIZED_CONFLICT_RETRY
+    else:
+        wave_task_ids = ready_task_wave_ids(graph, execution)
+        started = start_task_wave(graph, execution, wave_task_ids)
+        dispatch_mode = WorkspaceDispatchMode.PARALLEL
+    if not wave_task_ids:
+        raise TaskExecutionError(
+            "A nonterminal TaskGraph execution has no READY task to dispatch."
+        )
+    runtime_by_task = {item.task_id: item for item in started.task_states}
+    wave_number = _next_task_execution_wave_number(state)
+    binding = WorkspaceBinding(
+        workspace_id=session.workspace_id,
+        snapshot_id=authoritative_snapshot.snapshot_id,
+    )
+    wave = TaskExecutionWave(
+        wave_number=wave_number,
+        task_attempts=tuple(
+            TaskExecutionWaveAttempt(
+                task_id=task_id,
+                attempt_number=runtime_by_task[task_id].attempt_count,
+            )
+            for task_id in wave_task_ids
+        ),
+    )
+    workspace_wave = WorkspaceExecutionWave(
+        wave_number=wave_number,
+        dispatch_mode=dispatch_mode,
+        binding=binding,
+    )
+    records = [
+        _WaveAttemptRecord(
+            task_id=attempt.task_id,
+            attempt_number=attempt.attempt_number,
+        )
+        for attempt in wave.task_attempts
+    ]
+
+    hard_stop_reason: str | None = None
+    # Request and bounded repository-context construction are sequential.
+    for record in records:
+        try:
+            artifacts, validations = _dependency_evidence(
+                state, graph, started, record.task_id
+            )
+            prior_recovery = _prior_recovery_decision(
+                state, record.task_id, record.attempt_number
+            )
+            record.request = build_task_execution_request(
+                spec,
+                graph,
+                started,
+                record.task_id,
+                artifacts,
+                validations,
+                prior_recovery_decision=prior_recovery,
+            )
+            requested_paths = _repository_context_paths(
+                state,
+                graph,
+                record.task_id,
+                record.attempt_number,
+                repository_context_path_provider,
+            )
+            repository_context = provide_repository_context(
+                workspace,
+                session,
+                authoritative_snapshot,
+                requested_paths,
+            )
+            record.workspace_request = build_workspace_bound_task_execution_request(
+                record.request,
+                binding,
+                repository_context,
+            )
+        except WorkspaceIntegrationError as error:
+            if error.code.value in {
+                "WORKSPACE_ID",
+                "SNAPSHOT_ID",
+                "INTEGRITY",
+                "WORKSPACE_DRIFT",
+                "RUNTIME",
+            }:
+                hard_stop_reason = (
+                    "Workspace integrity became unprovable while building "
+                    "repository context."
+                )
+                break
+            record.failure, record.recovery_decision = (
+                _classify_non_validation_failure(
+                    task_id=record.task_id,
+                    attempt_number=record.attempt_number,
+                    phase=TaskExecutionFailurePhase.REQUEST_BUILD,
+                    failure_kind=TaskExecutionRecoveryFailureKind.REQUEST_BUILD,
+                    retryable=False,
+                    error=error,
+                    request=record.request,
+                )
+            )
+        except TaskExecutionContractError as error:
+            record.failure, record.recovery_decision = (
+                _classify_non_validation_failure(
+                    task_id=record.task_id,
+                    attempt_number=record.attempt_number,
+                    phase=TaskExecutionFailurePhase.REQUEST_BUILD,
+                    failure_kind=TaskExecutionRecoveryFailureKind.REQUEST_BUILD,
+                    retryable=False,
+                    error=error,
+                )
+            )
+
+    # Worker threads invoke only the injected executor. Collection and every
+    # application-owned operation remain on this orchestration thread.
+    if hard_stop_reason is None:
+        futures: dict[str, Future[TaskExecutionResult]] = {}
+        with ThreadPoolExecutor(
+            max_workers=MAX_PARALLEL_TASK_EXECUTIONS,
+            thread_name_prefix="task-executor",
+        ) as pool:
+            for record in records:
+                if record.workspace_request is not None:
+                    futures[record.task_id] = pool.submit(
+                        executor.execute, record.workspace_request
+                    )
+            for record in records:
+                future = futures.get(record.task_id)
+                if future is None:
+                    continue
+                try:
+                    record.result = future.result()
+                except TaskExecutorError as error:
+                    record.failure, record.recovery_decision = (
+                        _classify_non_validation_failure(
+                            task_id=record.task_id,
+                            attempt_number=record.attempt_number,
+                            phase=TaskExecutionFailurePhase.EXECUTOR,
+                            failure_kind=TaskExecutionRecoveryFailureKind.EXECUTOR,
+                            retryable=error.retryable,
+                            error=error,
+                            request=record.request,
+                        )
+                    )
+                except Exception:
+                    error = TaskExecutorError(
+                        "TaskExecutor raised an unexpected exception.",
+                        retryable=False,
+                    )
+                    record.failure, record.recovery_decision = (
+                        _classify_non_validation_failure(
+                            task_id=record.task_id,
+                            attempt_number=record.attempt_number,
+                            phase=TaskExecutionFailurePhase.EXECUTOR,
+                            failure_kind=TaskExecutionRecoveryFailureKind.EXECUTOR,
+                            retryable=False,
+                            error=error,
+                            request=record.request,
+                        )
+                    )
+
+    # Canonicalization, validation, and recovery classification are sequential
+    # in the authorized wave order, independent of physical completion timing.
+    for record in records if hard_stop_reason is None else ():
+        if record.result is None or record.request is None:
+            continue
+        try:
+            record.artifacts = canonicalize_execution_result(
+                record.request,
+                record.result,
+                created_at=datetime.now(UTC).isoformat(),
+            )
+        except TaskExecutionContractError as error:
+            record.failure, record.recovery_decision = (
+                _classify_non_validation_failure(
+                    task_id=record.task_id,
+                    attempt_number=record.attempt_number,
+                    phase=TaskExecutionFailurePhase.CANONICALIZATION,
+                    failure_kind=(
+                        TaskExecutionRecoveryFailureKind.CANONICALIZATION
+                    ),
+                    retryable=isinstance(error, TaskExecutionCorrelationError),
+                    error=error,
+                    request=record.request,
+                )
+            )
+            continue
+
+        record.validation = validate_execution_result(
+            record.request, record.result, record.artifacts
+        )
+        if not record.validation.passed:
+            retryable, feedback = classify_validation_failure(record.validation)
+            record.recovery_decision = decide_task_execution_recovery(
+                task_id=record.task_id,
+                attempt_number=record.attempt_number,
+                request_id=record.request.request_id,
+                attempt_id=record.request.attempt_id,
+                failure_kind=TaskExecutionRecoveryFailureKind.VALIDATION,
+                retryable=retryable,
+                feedback=feedback,
+            )
+            continue
+        try:
+            record.intents = canonicalize_artifact_materialization_proposals(
+                record.result, record.artifacts
+            )
+        except WorkspaceContractError as error:
+            record.recovery_decision = decide_task_execution_recovery(
+                task_id=record.task_id,
+                attempt_number=record.attempt_number,
+                request_id=record.request.request_id,
+                attempt_id=record.request.attempt_id,
+                failure_kind=TaskExecutionRecoveryFailureKind.MATERIALIZATION,
+                retryable=True,
+                feedback=f"MATERIALIZATION failed: {error}",
+            )
+            continue
+        record.materialization_validation = validate_artifact_materialization(
+            record.request.task,
+            record.validation,
+            record.artifacts,
+            record.intents,
+        )
+        if not record.materialization_validation.passed:
+            record.recovery_decision = decide_task_execution_recovery(
+                task_id=record.task_id,
+                attempt_number=record.attempt_number,
+                request_id=record.request.request_id,
+                attempt_id=record.request.attempt_id,
+                failure_kind=TaskExecutionRecoveryFailureKind.MATERIALIZATION,
+                retryable=_materialization_validation_is_retryable(
+                    record.materialization_validation
+                ),
+                feedback=_materialization_feedback(record.materialization_validation),
+            )
+            continue
+        if record.intents:
+            try:
+                record.change_set = build_workspace_change_set(
+                    authoritative_snapshot,
+                    record.validation,
+                    record.artifacts,
+                    record.materialization_validation,
+                )
+                record.change_set_validation = validate_workspace_change_set(
+                    record.change_set,
+                    authoritative_snapshot,
+                    record.artifacts,
+                    record.materialization_validation,
+                )
+            except WorkspaceContractError as error:
+                record.recovery_decision = decide_task_execution_recovery(
+                    task_id=record.task_id,
+                    attempt_number=record.attempt_number,
+                    request_id=record.request.request_id,
+                    attempt_id=record.request.attempt_id,
+                    failure_kind=TaskExecutionRecoveryFailureKind.MATERIALIZATION,
+                    retryable=False,
+                    feedback=f"MATERIALIZATION failed: {error}",
+                )
+                continue
+            if not record.change_set_validation.passed:
+                record.recovery_decision = decide_task_execution_recovery(
+                    task_id=record.task_id,
+                    attempt_number=record.attempt_number,
+                    request_id=record.request.request_id,
+                    attempt_id=record.request.attempt_id,
+                    failure_kind=TaskExecutionRecoveryFailureKind.MATERIALIZATION,
+                    retryable=False,
+                    feedback="Prepared workspace change set failed validation.",
+                )
+                continue
+        record.eligible = True
+
+    conflict_evidence: WorkspaceWaveConflictEvidence | None = None
+    conflict_retry_ids: list[str] = []
+    eligible_change_sets = tuple(
+        record.change_set
+        for record in records
+        if record.eligible and record.change_set is not None
+    )
+    if hard_stop_reason is None and len(eligible_change_sets) >= 2:
+        analysis = analyze_workspace_change_set_conflicts(eligible_change_sets)
+        conflict_evidence = build_workspace_wave_conflict_evidence(
+            wave_number, analysis
+        )
+        conflicting_task_ids = {
+            participant.task_id
+            for conflict in analysis.conflicts
+            for participant in conflict.participants
+        }
+        for record in records:
+            if record.task_id not in conflicting_task_ids:
+                continue
+            record.eligible = False
+            record.conflict_evidence_id = conflict_evidence.conflict_evidence_id
+            record.recovery_decision = decide_task_execution_recovery(
+                task_id=record.task_id,
+                attempt_number=record.attempt_number,
+                request_id=record.request.request_id if record.request else None,
+                attempt_id=record.request.attempt_id if record.request else None,
+                failure_kind=TaskExecutionRecoveryFailureKind.WORKSPACE_CONFLICT,
+                retryable=True,
+                feedback="Same-wave materialization targeted a conflicting path.",
+            )
+            if record.recovery_decision.action is TaskExecutionRecoveryAction.RETRY:
+                conflict_retry_ids.append(record.task_id)
+
+    new_snapshots: list[WorkspaceSnapshot] = []
+    for record in records if hard_stop_reason is None else ():
+        if not record.eligible:
+            continue
+        if record.change_set is None:
+            record.succeeded = True
+            continue
+        if record.change_set_validation is None:
+            raise TaskExecutionError("Materializing attempt lacks change-set validation.")
+        record.mutation_result = apply_workspace_change_set(
+            workspace, record.change_set, record.change_set_validation
+        )
+        if record.mutation_result.status is WorkspaceMutationStatus.APPLIED:
+            try:
+                observed = snapshot_isolated_workspace(workspace)
+            except WorkspaceRuntimeError:
+                hard_stop_reason = "Applied workspace postimage could not be verified."
+                break
+            if observed.snapshot_id != record.mutation_result.post_mutation_snapshot_id:
+                hard_stop_reason = "Applied workspace postimage identity is inconsistent."
+                break
+            session = advance_governed_workspace_session(session, observed)
+            if observed.snapshot_id != authoritative_snapshot.snapshot_id and all(
+                item.snapshot_id != observed.snapshot_id
+                for item in state.get("workspace_snapshots", [])
+            ) and all(item.snapshot_id != observed.snapshot_id for item in new_snapshots):
+                new_snapshots.append(observed)
+            record.succeeded = True
+        elif record.mutation_result.status is WorkspaceMutationStatus.ROLLBACK_FAILED:
+            hard_stop_reason = "Workspace rollback failed; integrity is unprovable."
+            break
+        else:
+            retryable = _mutation_result_is_retryable(record.mutation_result)
+            record.recovery_decision = decide_task_execution_recovery(
+                task_id=record.task_id,
+                attempt_number=record.attempt_number,
+                request_id=record.request.request_id if record.request else None,
+                attempt_id=record.request.attempt_id if record.request else None,
+                failure_kind=TaskExecutionRecoveryFailureKind.WORKSPACE_MUTATION,
+                retryable=retryable,
+                feedback=_mutation_feedback(record.mutation_result),
+            )
+            if record.mutation_result.status is WorkspaceMutationStatus.ROLLED_BACK:
+                try:
+                    rolled_back = snapshot_isolated_workspace(workspace)
+                except WorkspaceRuntimeError:
+                    hard_stop_reason = "Rolled-back workspace could not be verified."
+                    break
+                if rolled_back.snapshot_id != session.authoritative_snapshot_id:
+                    hard_stop_reason = "Rolled-back workspace differs from authority."
+                    break
+
+    if hard_stop_reason is not None:
+        session = mark_workspace_integrity_unprovable(session)
+        settled = _settle_integrity_failure(graph, started, records)
+        serialized_next: list[str] = []
+    else:
+        for record in records:
+            record.exit_decision = _task_attempt_exit_decision(record)
+        settled = _settle_task_execution_wave(graph, started, records)
+        serialized_next = _next_serialized_conflict_queue(
+            serialized_queue,
+            dispatch_mode,
+            records,
+            conflict_retry_ids,
+            settled,
+        )
+
+    if hard_stop_reason is not None:
+        for record in records:
+            if record.exit_decision is None:
+                record.exit_decision = _integrity_hard_stop_exit_decision(record)
+
+    terminal_decisions = [
+        record.recovery_decision
+        for record in records
+        if record.recovery_decision is not None
+        and record.recovery_decision.action is TaskExecutionRecoveryAction.FAIL_TASK
+    ]
+    stop_reason = " | ".join(
+        _terminal_stop_reason(decision) for decision in terminal_decisions
+    )
+    update: WorkflowState = {
+        "task_graph_execution": settled,
+        "governed_workspace_session": session,
+        "workspace_snapshots": new_snapshots,
+        "task_execution_waves": [wave],
+        "workspace_execution_waves": [workspace_wave],
+        "serialized_conflict_retry_task_ids": serialized_next,
+        "task_execution_requests": [
+            record.request for record in records if record.request is not None
+        ],
+        "workspace_bound_task_execution_requests": [
+            record.workspace_request
+            for record in records
+            if record.workspace_request is not None
+        ],
+        "task_execution_results": [
+            record.result for record in records if record.result is not None
+        ],
+        "engineering_artifacts": [
+            artifact for record in records for artifact in record.artifacts
+        ],
+        "task_execution_validations": [
+            record.validation
+            for record in records
+            if record.validation is not None
+        ],
+        "task_execution_failures": [
+            record.failure for record in records if record.failure is not None
+        ],
+        "task_execution_recovery_decisions": [
+            record.recovery_decision
+            for record in records
+            if record.recovery_decision is not None
+        ],
+        "artifact_materialization_intents": [
+            intent for record in records for intent in record.intents
+        ],
+        "artifact_materialization_validations": [
+            record.materialization_validation
+            for record in records
+            if record.materialization_validation is not None
+        ],
+        "workspace_change_sets": [
+            record.change_set for record in records if record.change_set is not None
+        ],
+        "workspace_change_set_validations": [
+            record.change_set_validation
+            for record in records
+            if record.change_set_validation is not None
+        ],
+        "workspace_conflict_evidence": (
+            [conflict_evidence] if conflict_evidence is not None else []
+        ),
+        "workspace_mutation_results": [
+            record.mutation_result
+            for record in records
+            if record.mutation_result is not None
+        ],
+        "task_attempt_exit_decisions": [
+            record.exit_decision
+            for record in records
+            if record.exit_decision is not None
+        ],
+        "trace": [
+            f"[execute_task_graph_step] wave {wave_number} "
+            f"{record.task_id} {_wave_record_outcome(record)}"
+            for record in records
+        ],
+    }
+    if hard_stop_reason:
+        update["safe_stop_reason"] = hard_stop_reason
+    elif stop_reason:
+        update["safe_stop_reason"] = stop_reason
+    return update
+
+
+def _workspace_session_from_state(state: WorkflowState) -> GovernedWorkspaceSession:
+    value = state.get("governed_workspace_session")
+    if value is None:
+        raise TaskExecutionError("Task execution requires a governed workspace session.")
+    if isinstance(value, GovernedWorkspaceSession):
+        return value
+    return GovernedWorkspaceSession.model_validate(value)
+
+
+def _authoritative_workspace_snapshot(
+    state: WorkflowState,
+    session: GovernedWorkspaceSession,
+) -> WorkspaceSnapshot:
+    matching = [
+        item if isinstance(item, WorkspaceSnapshot) else WorkspaceSnapshot.model_validate(item)
+        for item in state.get("workspace_snapshots", [])
+        if (
+            item.snapshot_id
+            if isinstance(item, WorkspaceSnapshot)
+            else item.get("snapshot_id")
+        )
+        == session.authoritative_snapshot_id
+    ]
+    if len(matching) != 1:
+        raise TaskExecutionError(
+            "Governed session requires exactly one authoritative snapshot record."
+        )
+    return matching[0]
+
+
+def _predispatch_integrity_failure(
+    state: WorkflowState,
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    session: GovernedWorkspaceSession,
+) -> WorkflowState:
+    failed = fail_task_graph_integrity(graph, execution)
+    reason = "Live isolated workspace differs from its authoritative snapshot."
+    return {
+        "task_graph_execution": failed,
+        "governed_workspace_session": mark_workspace_integrity_unprovable(session),
+        "serialized_conflict_retry_task_ids": [],
+        "safe_stop_reason": reason,
+        "trace": ["[execute_task_graph_step] workspace integrity unprovable"],
+    }
+
+
+def _repository_context_paths(
+    state: WorkflowState,
+    graph: TaskGraph,
+    task_id: str,
+    attempt_number: int,
+    provider: RepositoryContextPathProvider,
+) -> tuple[str, ...]:
+    task = next(item for item in graph.tasks if item.task_id == task_id)
+    applied_change_set_ids = {
+        result.change_set_id
+        for result in state.get("workspace_mutation_results", [])
+        if result.status is WorkspaceMutationStatus.APPLIED
+    }
+    dependency_paths = tuple(
+        change.path
+        for change_set in state.get("workspace_change_sets", [])
+        if change_set.task_id in task.depends_on
+        and change_set.change_set_id in applied_change_set_ids
+        for change in change_set.file_changes
+    )
+    prior_decision = _prior_recovery_decision(state, task_id, attempt_number)
+    retry_paths: tuple[str, ...] = ()
+    if prior_decision is not None and prior_decision.failure_kind in {
+        TaskExecutionRecoveryFailureKind.WORKSPACE_CONFLICT,
+        TaskExecutionRecoveryFailureKind.WORKSPACE_MUTATION,
+    }:
+        retry_paths = tuple(
+            change.path
+            for change_set in state.get("workspace_change_sets", [])
+            if change_set.task_id == task_id
+            and change_set.attempt_number == attempt_number - 1
+            for change in change_set.file_changes
+        )
+    return provider.paths_for_attempt(
+        task,
+        dependency_paths=tuple(sorted(set(dependency_paths))),
+        retry_paths=tuple(sorted(set(retry_paths))),
+    )
+
+
+def _materialization_feedback(
+    validation: ArtifactMaterializationValidationResult,
+) -> str:
+    codes = ", ".join(sorted({issue.code.value for issue in validation.issues}))
+    return f"Materialization proposal validation failed: {codes}."
+
+
+def _materialization_validation_is_retryable(
+    validation: ArtifactMaterializationValidationResult,
+) -> bool:
+    """Classify only executor-correctable materialization issues as retryable."""
+
+    codes = {issue.code for issue in validation.issues}
+    return bool(codes) and codes <= {
+        ArtifactMaterializationIssueCode.POLICY,
+        ArtifactMaterializationIssueCode.DUPLICATE_ARTIFACT,
+        ArtifactMaterializationIssueCode.DUPLICATE_PATH,
+        ArtifactMaterializationIssueCode.PATH_POLICY,
+    }
+
+
+def _mutation_result_is_retryable(result: WorkspaceMutationResult) -> bool:
+    if result.status is WorkspaceMutationStatus.ROLLBACK_FAILED:
+        return False
+    codes = {issue.code for issue in result.issues}
+    if result.status is WorkspaceMutationStatus.REJECTED:
+        return bool(codes) and codes <= {
+            WorkspaceMutationIssueCode.STALE_PRECONDITION
+        }
+    if result.status is WorkspaceMutationStatus.ROLLED_BACK:
+        return bool(codes) and codes <= {
+            WorkspaceMutationIssueCode.STALE_PRECONDITION,
+            WorkspaceMutationIssueCode.WORKSPACE_UNAVAILABLE,
+            WorkspaceMutationIssueCode.CREATE_FAILURE,
+            WorkspaceMutationIssueCode.MODIFY_FAILURE,
+            WorkspaceMutationIssueCode.POSTIMAGE_MISMATCH,
+        }
+    return False
+
+
+def _mutation_feedback(result: WorkspaceMutationResult) -> str:
+    codes = ", ".join(sorted({issue.code.value for issue in result.issues}))
+    return f"Workspace mutation {result.status.value}: {codes or 'no issue code'}."
+
+
+def _task_attempt_exit_decision(
+    record: _WaveAttemptRecord,
+) -> TaskAttemptExitDecision:
+    evidence = _record_evidence_ids(record)
+    if record.succeeded:
+        disposition = TaskAttemptExitDisposition.SUCCEED_TASK
+        reason = "GOVERNED_EXIT_PASSED"
+    elif record.recovery_decision is not None and (
+        record.recovery_decision.action is TaskExecutionRecoveryAction.RETRY
+    ):
+        disposition = TaskAttemptExitDisposition.RETRY_TASK
+        reason = f"{record.recovery_decision.failure_kind.value}_RETRY"
+    else:
+        disposition = TaskAttemptExitDisposition.FAIL_TASK
+        reason = (
+            f"{record.recovery_decision.failure_kind.value}_TERMINAL"
+            if record.recovery_decision is not None
+            else "UNCLASSIFIED_TERMINAL"
+        )
+    return TaskAttemptExitDecision(
+        task_id=record.task_id,
+        attempt_number=record.attempt_number,
+        request_id=record.request.request_id if record.request else None,
+        attempt_id=record.request.attempt_id if record.request else None,
+        disposition=disposition,
+        reason_code=reason,
+        evidence_ids=evidence,
+    )
+
+
+def _safe_stop_exit_decision(record: _WaveAttemptRecord) -> TaskAttemptExitDecision:
+    return TaskAttemptExitDecision(
+        task_id=record.task_id,
+        attempt_number=record.attempt_number,
+        request_id=record.request.request_id if record.request else None,
+        attempt_id=record.request.attempt_id if record.request else None,
+        disposition=TaskAttemptExitDisposition.SAFE_STOP_RUN,
+        reason_code="WORKSPACE_INTEGRITY_UNPROVABLE",
+        evidence_ids=_record_evidence_ids(record),
+    )
+
+
+def _integrity_hard_stop_exit_decision(
+    record: _WaveAttemptRecord,
+) -> TaskAttemptExitDecision:
+    """Preserve completed success or terminal failure before peer integrity loss."""
+
+    if record.succeeded or (
+        record.recovery_decision is not None
+        and record.recovery_decision.action is TaskExecutionRecoveryAction.FAIL_TASK
+    ):
+        return _task_attempt_exit_decision(record)
+    return _safe_stop_exit_decision(record)
+
+
+def _record_evidence_ids(record: _WaveAttemptRecord) -> tuple[str, ...]:
+    values = {
+        value
+        for value in (
+            record.request.request_id if record.request else None,
+            (
+                record.materialization_validation.materialization_validation_id
+                if record.materialization_validation
+                else None
+            ),
+            record.change_set.change_set_id if record.change_set else None,
+            record.conflict_evidence_id,
+            record.mutation_result.mutation_id if record.mutation_result else None,
+        )
+        if value
+    }
+    return tuple(sorted(values))
+
+
+def _settle_integrity_failure(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    records: list[_WaveAttemptRecord],
+) -> TaskGraphExecutionState:
+    settled = execution
+    for record in records:
+        if (
+            not record.succeeded
+            and record.recovery_decision is not None
+            and record.recovery_decision.action
+            is TaskExecutionRecoveryAction.FAIL_TASK
+        ):
+            settled = mark_task_failed(graph, settled, record.task_id)
+    for record in records:
+        if not record.succeeded and not (
+            record.recovery_decision is not None
+            and record.recovery_decision.action
+            is TaskExecutionRecoveryAction.FAIL_TASK
+        ):
+            settled = abort_running_task(graph, settled, record.task_id)
+    for record in records:
+        if record.succeeded:
+            settled = mark_task_succeeded(graph, settled, record.task_id)
+    return settled
+
+
+def _next_serialized_conflict_queue(
+    current: tuple[str, ...],
+    mode: WorkspaceDispatchMode,
+    records: list[_WaveAttemptRecord],
+    new_conflict_retry_ids: list[str],
+    settled: TaskGraphExecutionState,
+) -> list[str]:
+    if settled.status is TaskGraphExecutionStatus.FAILED:
+        return []
+    if mode is WorkspaceDispatchMode.SERIALIZED_CONFLICT_RETRY:
+        record = records[0]
+        if record.succeeded:
+            return list(current[1:])
+        return list(current)
+    return list(dict.fromkeys(new_conflict_retry_ids))
+
+
+def _next_task_execution_wave_number(state: WorkflowState) -> int:
+    """Derive the next wave number from contiguous append-only history."""
+
+    waves = state.get("task_execution_waves", [])
+    actual = tuple(wave.wave_number for wave in waves)
+    expected = tuple(range(1, len(waves) + 1))
+    if actual != expected:
+        raise TaskExecutionError(
+            "Task execution wave history must be contiguous and ordered."
+        )
+    return len(waves) + 1
+
+
+def _dependency_evidence(
+    state: WorkflowState,
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    task_id: str,
+) -> tuple[tuple[EngineeringArtifact, ...], tuple[TaskExecutionValidationResult, ...]]:
+    """Select current direct-dependency evidence in canonical dependency order."""
+
+    task = next(task for task in graph.tasks if task.task_id == task_id)
+    states = {item.task_id: item for item in execution.task_states}
+    requests = state.get("task_execution_requests", [])
+    all_artifacts = state.get("engineering_artifacts", [])
+    all_validations = state.get("task_execution_validations", [])
+    artifacts_by_id = {
+        artifact.artifact_id: artifact for artifact in all_artifacts
+    }
+    selected_artifacts: list[EngineeringArtifact] = []
+    selected_validations: list[TaskExecutionValidationResult] = []
+    for dependency_id in task.depends_on:
+        attempt_number = states[dependency_id].attempt_count
+        source_requests = [
+            candidate
+            for candidate in requests
+            if candidate.task_id == dependency_id
+            and candidate.attempt_number == attempt_number
+        ]
+        if len(source_requests) != 1:
+            continue
+        source_request = source_requests[0]
+        matching_validations = [
+            candidate
+            for candidate in all_validations
+            if candidate.task_id == dependency_id
+            and candidate.request_id == source_request.request_id
+            and candidate.attempt_id == source_request.attempt_id
+            and candidate.passed
+        ]
+        selected_validations.extend(matching_validations)
+        for validation in matching_validations:
+            selected_artifacts.extend(
+                artifacts_by_id[artifact_id]
+                for artifact_id in validation.artifact_ids
+                if artifact_id in artifacts_by_id
+            )
+    return tuple(selected_artifacts), tuple(selected_validations)
+
+
+def _prior_recovery_decision(
+    state: WorkflowState,
+    task_id: str,
+    attempt_number: int,
+) -> TaskExecutionRecoveryDecision | None:
+    """Select exactly the immediately prior application-owned retry decision."""
+
+    if attempt_number == 1:
+        return None
+    matching = [
+        decision
+        for decision in state.get("task_execution_recovery_decisions", [])
+        if decision.task_id == task_id
+        and decision.attempt_number == attempt_number - 1
+    ]
+    if len(matching) != 1:
+        raise TaskExecutionContractError(
+            f"Task {task_id} attempt {attempt_number} requires exactly one "
+            "immediately prior recovery decision."
+        )
+    return matching[0]
+
+
+def _classify_non_validation_failure(
+    *,
+    task_id: str,
+    attempt_number: int,
+    phase: TaskExecutionFailurePhase,
+    failure_kind: TaskExecutionRecoveryFailureKind,
+    retryable: bool,
+    error: Exception,
+    request: TaskExecutionRequest | None = None,
+) -> tuple[TaskExecutionFailure, TaskExecutionRecoveryDecision]:
+    """Create immutable failure and recovery evidence without settlement."""
+
+    feedback = _safe_recovery_feedback(failure_kind, error)
+    decision = decide_task_execution_recovery(
+        task_id=task_id,
+        attempt_number=attempt_number,
+        request_id=request.request_id if request is not None else None,
+        attempt_id=request.attempt_id if request is not None else None,
+        failure_kind=failure_kind,
+        retryable=retryable,
+        feedback=feedback,
+    )
+    failure = TaskExecutionFailure(
+        task_id=task_id,
+        attempt_number=attempt_number,
+        request_id=request.request_id if request is not None else None,
+        attempt_id=request.attempt_id if request is not None else None,
+        phase=phase,
+        error_type=type(error).__name__,
+        message=str(error),
+    )
+    return failure, decision
+
+
+def _safe_recovery_feedback(
+    failure_kind: TaskExecutionRecoveryFailureKind,
+    error: Exception,
+) -> str:
+    """Create concise feedback without stack traces or provider internals."""
+
+    return f"{failure_kind.value} failed: {error}"
+
+
+def _settle_task_execution_wave(
+    graph: TaskGraph,
+    execution: TaskGraphExecutionState,
+    records: list[_WaveAttemptRecord],
+) -> TaskGraphExecutionState:
+    """Settle a classified quiescent wave in deterministic canonical phases."""
+
+    for record in records:
+        if not record.succeeded and record.recovery_decision is None:
+            raise TaskExecutionError(
+                f"Task {record.task_id} has no classified wave outcome."
+            )
+
+    settled = execution
+    # Retry transitions must occur while the graph is still RUNNING, even when
+    # another member will terminally fail this same wave.
+    for record in records:
+        decision = record.recovery_decision
+        if (
+            decision is not None
+            and decision.action is TaskExecutionRecoveryAction.RETRY
+        ):
+            settled = prepare_task_retry(graph, settled, record.task_id)
+
+    # Terminal failures freeze all future dispatch before successful peers settle.
+    for record in records:
+        decision = record.recovery_decision
+        if (
+            decision is not None
+            and decision.action is TaskExecutionRecoveryAction.FAIL_TASK
+        ):
+            settled = mark_task_failed(graph, settled, record.task_id)
+
+    # Peers that were already RUNNING retain their valid evidence and may settle
+    # after graph failure without unlocking new work.
+    for record in records:
+        if record.succeeded:
+            settled = mark_task_succeeded(graph, settled, record.task_id)
+    return settled
+
+
+def _terminal_stop_reason(decision: TaskExecutionRecoveryDecision) -> str:
+    return (
+        f"Task {decision.task_id} terminally failed after "
+        f"{decision.failure_kind.value}: {decision.reason} "
+        f"Feedback: {decision.feedback}"
+    )
+
+
+def _wave_record_outcome(record: _WaveAttemptRecord) -> str:
+    if record.succeeded:
+        return "succeeded"
+    if (
+        record.exit_decision is not None
+        and record.exit_decision.disposition
+        is TaskAttemptExitDisposition.SAFE_STOP_RUN
+    ):
+        return "hard safe stop"
+    if record.recovery_decision is None:
+        raise TaskExecutionError(
+            f"Task {record.task_id} has no classified wave outcome."
+        )
+    if record.recovery_decision.action is TaskExecutionRecoveryAction.RETRY:
+        return (
+            "scheduled retry after "
+            f"{record.recovery_decision.failure_kind.value.lower()}"
+        )
+    return "terminally failed"
+
+
+def safe_stop(state: WorkflowState) -> WorkflowState:
+    """Terminate governed planning or a failed quiescent graph execution."""
+
+    execution_value = state.get("task_graph_execution")
+    stopped_execution: TaskGraphExecutionState | None = None
+    if execution_value is not None and _execution_from_state(
+        execution_value
+    ).status is TaskGraphExecutionStatus.FAILED:
+        stopped_execution = safe_stop_task_graph_execution(
+            _task_graph_from_data(state["approved_task_graph"]),
+            _execution_from_state(execution_value),
+        )
+        reason = state.get("safe_stop_reason") or (
+            "TaskGraph execution failed and was stopped safely."
+        )
+    elif state.get("requirement_analysis_status") == "failed":
         reason = state.get("requirement_analysis_error") or (
             REQUIREMENT_ANALYSIS_ATTEMPTS_REASON
         )
@@ -512,94 +1620,22 @@ def safe_stop(state: WorkflowState) -> WorkflowState:
         reason = TASK_GRAPH_REJECTED_REASON
     else:
         reason = MAX_TASK_GRAPH_REVISIONS_REASON
-    return {
+    update: WorkflowState = {
         "safe_stop_reason": reason,
-        "synchronization_complete": False,
         "exit_gate_passed": False,
         "workflow_status": "safe_stopped",
         "errors": [*state.get("errors", []), reason],
         "trace": ["[safe_stop] complete"],
     }
-
-
-def architecture_task(state: WorkflowState) -> WorkflowState:
-    """Preserve the deterministic architecture artifact after graph approval."""
-
-    task_count = len(state["approved_task_graph"]["tasks"])
-    architecture: ArchitectureArtifact = {
-        "summary": (
-            f"A small conceptual service design supporting {task_count} approved "
-            "engineering tasks; the tasks are not executed in V0.4."
-        ),
-        "components": [
-            "API layer — accepts long URLs and exposes short-link redirects.",
-            "URL shortening service — creates unique short codes.",
-            "Persistence abstraction — maps short codes to original URLs.",
-            "Redirect handler — resolves known codes and reports unknown ones.",
-        ],
-        "design_notes": [
-            "Keep transport, shortening logic, and storage concerns separate.",
-            "Define the storage boundary now; choose a concrete database later.",
-            "Treat approved ambiguities as unresolved until their linked tasks decide them.",
-        ],
-    }
-    return {"architecture": architecture, "trace": ["[architecture_task] complete"]}
-
-
-def test_plan_task(state: WorkflowState) -> WorkflowState:
-    """Preserve a deterministic test artifact after graph approval."""
-
-    test_plan: TestPlanArtifact = {
-        "strategy": (
-            "Verify each approved requirement at the service boundary; V0.4 plans "
-            "the work but does not execute these tests."
-        ),
-        "cases": [
-            {
-                "name": "Valid URL shortening",
-                "purpose": "A valid long URL produces a usable short URL.",
-            },
-            {
-                "name": "Unique short-code creation",
-                "purpose": "Distinct stored URLs do not receive colliding codes.",
-            },
-            {
-                "name": "Redirect correctness",
-                "purpose": "A known short code redirects to its original URL.",
-            },
-            {
-                "name": "Unknown short code",
-                "purpose": "An unknown code returns the defined error response.",
-            },
-        ],
-    }
-    return {"test_plan": test_plan, "trace": ["[test_plan_task] complete"]}
-
-
-def synchronize(state: WorkflowState) -> WorkflowState:
-    """Confirm that both deterministic demonstration branches reached the join."""
-
-    missing: list[str] = []
-    if not state.get("architecture", {}).get("components"):
-        missing.append("architecture")
-    if not state.get("test_plan", {}).get("cases"):
-        missing.append("test plan")
-    if missing:
-        reason = "Synchronization failed; missing output: " + ", ".join(missing)
-        return {
-            "synchronization_complete": False,
-            "workflow_status": "synchronization_failed",
-            "errors": [*state.get("errors", []), reason],
-            "trace": ["[synchronize] failed"],
-        }
-    return {
-        "synchronization_complete": True,
-        "trace": ["[synchronize] complete"],
-    }
+    if stopped_execution is not None:
+        update["task_graph_execution"] = stopped_execution
+    return update
 
 
 def exit_gate(state: WorkflowState) -> WorkflowState:
-    """Validate all required V0.4 outputs without executing engineering tasks."""
+    """Validate governed planning and deterministic TaskGraph execution outputs."""
+
+    execution = state.get("task_graph_execution")
 
     validations = {
         "processed requirements": bool(
@@ -623,19 +1659,29 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
             and state.get("approved_task_graph")
             and state.get("task_graph_review_history")
         ),
-        "successful synchronization": bool(state.get("synchronization_complete")),
+        "successful TaskGraph execution": bool(
+            execution is not None
+            and _execution_from_state(execution).status
+            is TaskGraphExecutionStatus.SUCCEEDED
+        ),
+        "complete execution evidence": bool(
+            _has_complete_final_execution_evidence(state)
+        ),
+        "verified workspace integrity": bool(
+            state.get("governed_workspace_session")
+            and _workspace_session_from_state(state).integrity_status
+            is WorkspaceIntegrityStatus.VERIFIED
+        ),
+        "complete workspace execution evidence": bool(
+            _has_complete_final_workspace_evidence(state)
+        ),
     }
     missing = [label for label, passed in validations.items() if not passed]
     if missing:
         reason = "Exit gate failed; incomplete output: " + ", ".join(missing)
-        status = (
-            "synchronization_failed"
-            if not state.get("synchronization_complete")
-            else "exit_gate_failed"
-        )
         return {
             "exit_gate_passed": False,
-            "workflow_status": status,
+            "workflow_status": "exit_gate_failed",
             "errors": [*state.get("errors", []), reason],
             "trace": ["[exit_gate] failed"],
         }
@@ -644,6 +1690,132 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
         "workflow_status": "success",
         "trace": ["[exit_gate] passed"],
     }
+
+
+def _has_complete_final_execution_evidence(state: WorkflowState) -> bool:
+    """Require one exact successful evidence chain for every final task attempt."""
+
+    graph_data = state.get("approved_task_graph")
+    execution_value = state.get("task_graph_execution")
+    if not graph_data or execution_value is None:
+        return False
+    graph = _task_graph_from_data(graph_data)
+    execution = _execution_from_state(execution_value)
+    runtime_states = {item.task_id: item for item in execution.task_states}
+    requests = state.get("task_execution_requests", [])
+    results = state.get("task_execution_results", [])
+    validations = state.get("task_execution_validations", [])
+    artifacts = state.get("engineering_artifacts", [])
+
+    for task in graph.tasks:
+        runtime = runtime_states.get(task.task_id)
+        if (
+            runtime is None
+            or runtime.status is not TaskExecutionStatus.SUCCEEDED
+            or runtime.attempt_count < 1
+        ):
+            return False
+        final_requests = [
+            request
+            for request in requests
+            if request.task_id == task.task_id
+            and request.attempt_number == runtime.attempt_count
+        ]
+        if len(final_requests) != 1:
+            return False
+        request = final_requests[0]
+        final_results = [
+            result
+            for result in results
+            if result.task_id == task.task_id
+            and result.request_id == request.request_id
+            and result.attempt_id == request.attempt_id
+        ]
+        if len(final_results) != 1:
+            return False
+        final_validations = [
+            validation
+            for validation in validations
+            if validation.task_id == task.task_id
+            and validation.request_id == request.request_id
+            and validation.attempt_id == request.attempt_id
+            and validation.passed
+        ]
+        if len(final_validations) != 1:
+            return False
+        final_artifacts = sorted(
+            (
+                artifact
+                for artifact in artifacts
+                if artifact.task_id == task.task_id
+                and artifact.request_id == request.request_id
+                and artifact.attempt_id == request.attempt_id
+                and artifact.attempt_number == runtime.attempt_count
+            ),
+            key=lambda artifact: (artifact.output_index, artifact.artifact_id),
+        )
+        if tuple(artifact.artifact_id for artifact in final_artifacts) != (
+            final_validations[0].artifact_ids
+        ):
+            return False
+    return True
+
+
+def _has_complete_final_workspace_evidence(state: WorkflowState) -> bool:
+    graph_data = state.get("approved_task_graph")
+    execution_value = state.get("task_graph_execution")
+    if not graph_data or execution_value is None:
+        return False
+    graph = _task_graph_from_data(graph_data)
+    execution = _execution_from_state(execution_value)
+    runtime = {item.task_id: item for item in execution.task_states}
+    decisions = state.get("task_attempt_exit_decisions", [])
+    materialization_validations = state.get(
+        "artifact_materialization_validations", []
+    )
+    change_sets = state.get("workspace_change_sets", [])
+    mutations = state.get("workspace_mutation_results", [])
+    mutation_by_change_set = {item.change_set_id: item for item in mutations}
+    for task in graph.tasks:
+        task_runtime = runtime.get(task.task_id)
+        if task_runtime is None:
+            return False
+        matching_decisions = [
+            item
+            for item in decisions
+            if item.task_id == task.task_id
+            and item.attempt_number == task_runtime.attempt_count
+            and item.disposition is TaskAttemptExitDisposition.SUCCEED_TASK
+        ]
+        if len(matching_decisions) != 1:
+            return False
+        matching_materialization = [
+            item
+            for item in materialization_validations
+            if item.task_id == task.task_id
+            and item.request_id == matching_decisions[0].request_id
+            and item.attempt_id == matching_decisions[0].attempt_id
+            and item.passed
+        ]
+        if len(matching_materialization) != 1:
+            return False
+        validation = matching_materialization[0]
+        if not validation.intents:
+            if task.materialization_policy is TaskMaterializationPolicy.REQUIRED:
+                return False
+            continue
+        matching_change_sets = [
+            item
+            for item in change_sets
+            if item.materialization_validation_id
+            == validation.materialization_validation_id
+        ]
+        if len(matching_change_sets) != 1:
+            return False
+        mutation = mutation_by_change_set.get(matching_change_sets[0].change_set_id)
+        if mutation is None or mutation.status is not WorkspaceMutationStatus.APPLIED:
+            return False
+    return True
 
 
 def _validated_approval_response(
@@ -723,3 +1895,9 @@ def _spec_from_state(state: WorkflowState) -> ApprovedRequirementSpec:
 
 def _task_graph_from_data(data: TaskGraphData) -> TaskGraph:
     return TaskGraph.model_validate_json(json.dumps(data))
+
+
+def _execution_from_state(data: object) -> TaskGraphExecutionState:
+    if isinstance(data, TaskGraphExecutionState):
+        return data
+    return TaskGraphExecutionState.model_validate(data)

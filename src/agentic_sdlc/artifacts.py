@@ -1,4 +1,4 @@
-"""Write compact, reviewable artifacts after a terminal V0.4 workflow run."""
+"""Write compact, reviewable artifacts after a terminal governed workflow run."""
 
 from __future__ import annotations
 
@@ -14,11 +14,17 @@ ARTIFACT_FILENAMES = (
     "approved_requirement_spec.json",
     "task_graph.json",
     "task_graph.md",
-    "architecture.md",
-    "test_plan.md",
+    "task_execution.json",
+    "workspace_execution.json",
+    "engineering_artifacts.json",
     "summary.md",
 )
-LEGACY_ARTIFACT_FILENAMES = ("decomposition.json", "implementation_plan.md")
+LEGACY_ARTIFACT_FILENAMES = (
+    "architecture.md",
+    "test_plan.md",
+    "decomposition.json",
+    "implementation_plan.md",
+)
 
 
 def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
@@ -65,12 +71,19 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
         paths["task_graph.md"].write_text(
             _task_graph_markdown(state, graph), encoding="utf-8"
         )
-    if is_success:
-        paths["architecture.md"].write_text(
-            _architecture_markdown(state), encoding="utf-8"
+    if "task_execution.json" in generated:
+        _write_json(paths["task_execution.json"], _execution_evidence(state))
+        _write_json(
+            paths["engineering_artifacts.json"],
+            [
+                artifact.model_dump(mode="json")
+                for artifact in state.get("engineering_artifacts", [])
+            ],
         )
-        paths["test_plan.md"].write_text(
-            _test_plan_markdown(state), encoding="utf-8"
+    if "workspace_execution.json" in generated:
+        _write_json(
+            paths["workspace_execution.json"],
+            _workspace_execution_evidence(state),
         )
     paths["summary.md"].write_text(
         _summary_markdown(state, generated), encoding="utf-8"
@@ -86,6 +99,14 @@ def _safe_stop_filenames(state: WorkflowState) -> tuple[str, ...]:
         filenames.append("approved_requirement_spec.json")
     if state.get("candidate_task_graph"):
         filenames.extend(["task_graph.json", "task_graph.md"])
+    if state.get("task_graph_execution"):
+        filenames.extend(
+            [
+                "task_execution.json",
+                "workspace_execution.json",
+                "engineering_artifacts.json",
+            ]
+        )
     filenames.append("summary.md")
     return tuple(filenames)
 
@@ -161,6 +182,20 @@ def _requirement_analysis_markdown(state: WorkflowState) -> str:
 def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
     semantics = state["task_graph_semantics"]
     tasks = {task["task_id"]: task for task in graph["tasks"]}
+    runtime_states = {
+        item.task_id: item
+        for item in (
+            state["task_graph_execution"].task_states
+            if state.get("task_graph_execution")
+            else ()
+        )
+    }
+    wave_memberships: dict[str, list[str]] = {}
+    for wave in state.get("task_execution_waves", []):
+        for attempt in wave.task_attempts:
+            wave_memberships.setdefault(attempt.task_id, []).append(
+                f"{wave.wave_number} (attempt {attempt.attempt_number})"
+            )
     lines = [
         "# Engineering Task Dependency Graph",
         "",
@@ -168,7 +203,12 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
         f"- Version: {graph['version']}",
         f"- Requirement specification: {graph['requirement_spec_id']}",
         f"- Content hash: `{graph['content_hash']}`",
-        "- Execution status: not executed (planning only)",
+        "- Execution status: "
+        + (
+            state["task_graph_execution"].status.value
+            if state.get("task_graph_execution")
+            else "not started"
+        ),
         "",
         "## Derived execution layers",
         "",
@@ -180,13 +220,25 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
         lines.extend([f"### Layer {layer_number}{parallel}", ""])
         for task_id in task_ids:
             task = tasks[task_id]
+            runtime = runtime_states.get(task_id)
             depends_on = ", ".join(task["depends_on"]) or "ENTRY"
             lines.extend(
                 [
                     f"#### {task_id} — {task['title']}",
                     "",
                     f"- Type: {task['task_type']}",
+                    f"- Materialization policy: {task['materialization_policy']}",
                     f"- Depends on: {depends_on}",
+                    "- Runtime status: "
+                    + (
+                        runtime.status.value
+                        if runtime is not None
+                        else "not started"
+                    ),
+                    "- Attempts: "
+                    + (str(runtime.attempt_count) if runtime is not None else "0"),
+                    "- Execution waves: "
+                    + (", ".join(wave_memberships.get(task_id, ())) or "None"),
                     "- Requirements: "
                     + (", ".join(task["requirement_refs"]) or "None"),
                     "- Acceptance criteria: "
@@ -220,37 +272,124 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _architecture_markdown(state: WorkflowState) -> str:
-    architecture = state["architecture"]
-    return "\n".join(
-        [
-            "# Architecture",
-            "",
-            architecture["summary"],
-            "",
-            "## Conceptual components",
-            "",
-            *(f"- {component}" for component in architecture["components"]),
-            "",
-            "## Design notes",
-            "",
-            *(f"- {note}" for note in architecture["design_notes"]),
-        ]
-    ) + "\n"
+def _execution_evidence(state: WorkflowState) -> dict[str, object]:
+    execution = state["task_graph_execution"]
+    return {
+        "task_graph_execution": execution.model_dump(mode="json"),
+        "waves": [
+            wave.model_dump(mode="json")
+            for wave in state.get("task_execution_waves", [])
+        ],
+        "requests": [
+            request.model_dump(mode="json")
+            for request in state.get("task_execution_requests", [])
+        ],
+        "results": [
+            result.model_dump(mode="json")
+            for result in state.get("task_execution_results", [])
+        ],
+        "validations": [
+            validation.model_dump(mode="json")
+            for validation in state.get("task_execution_validations", [])
+        ],
+        "failures": [
+            failure.model_dump(mode="json")
+            for failure in state.get("task_execution_failures", [])
+        ],
+        "recovery_decisions": [
+            decision.model_dump(mode="json")
+            for decision in state.get("task_execution_recovery_decisions", [])
+        ],
+    }
 
 
-def _test_plan_markdown(state: WorkflowState) -> str:
-    test_plan = state["test_plan"]
-    lines = ["# Test Plan", "", test_plan["strategy"], "", "## Cases", ""]
-    for test_case in test_plan["cases"]:
-        lines.append(f"- **{test_case['name']}** — {test_case['purpose']}")
-    return "\n".join(lines) + "\n"
+def _workspace_execution_evidence(state: WorkflowState) -> dict[str, object]:
+    session = state.get("governed_workspace_session")
+    return {
+        "session": session.model_dump(mode="json") if session is not None else None,
+        "snapshots": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_snapshots", [])
+        ],
+        "waves": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_execution_waves", [])
+        ],
+        "bound_requests": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_bound_task_execution_requests", [])
+        ],
+        "materialization_intents": [
+            item.model_dump(mode="json")
+            for item in state.get("artifact_materialization_intents", [])
+        ],
+        "materialization_validations": [
+            item.model_dump(mode="json")
+            for item in state.get("artifact_materialization_validations", [])
+        ],
+        "change_sets": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_change_sets", [])
+        ],
+        "change_set_validations": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_change_set_validations", [])
+        ],
+        "conflicts": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_conflict_evidence", [])
+        ],
+        "mutations": [
+            item.model_dump(mode="json")
+            for item in state.get("workspace_mutation_results", [])
+        ],
+        "task_attempt_exit_decisions": [
+            item.model_dump(mode="json")
+            for item in state.get("task_attempt_exit_decisions", [])
+        ],
+    }
 
 
 def _summary_markdown(
     state: WorkflowState, generated_filenames: tuple[str, ...]
 ) -> str:
     safe_stopped = state["workflow_status"] == "safe_stopped"
+    execution = state.get("task_graph_execution")
+    task_attempts = (
+        sum(item.attempt_count for item in execution.task_states)
+        if execution is not None
+        else 0
+    )
+    task_count = len(execution.task_states) if execution is not None else 0
+    retries = sum(
+        decision.action.value == "RETRY"
+        for decision in state.get("task_execution_recovery_decisions", [])
+    )
+    waves = state.get("task_execution_waves", [])
+    maximum_wave_width = max(
+        (len(wave.task_attempts) for wave in waves), default=0
+    )
+    session = state.get("governed_workspace_session")
+    mutations = state.get("workspace_mutation_results", [])
+    materialized_changes = tuple(
+        f"{change.path} ({change.operation.value})"
+        for change_set in state.get("workspace_change_sets", [])
+        if any(
+            result.change_set_id == change_set.change_set_id
+            and result.status.value == "APPLIED"
+            for result in mutations
+        )
+        for change in change_set.file_changes
+    )
+    mutation_outcomes = tuple(result.status.value for result in mutations)
+    conflict_count = sum(
+        item.analysis.has_conflicts
+        for item in state.get("workspace_conflict_evidence", [])
+    )
+    rollback_count = sum(
+        outcome in {"ROLLED_BACK", "ROLLBACK_FAILED"}
+        for outcome in mutation_outcomes
+    )
     lines = [
         "# Workflow Summary",
         "",
@@ -266,12 +405,32 @@ def _summary_markdown(
         "- Task planning: " + state.get("task_planning_status", "not reached"),
         "- Task-graph review: "
         + (state.get("task_graph_decision") or "not reached"),
-        "- Synchronization: "
+        "- TaskGraph execution: "
         + (
-            "not reached"
-            if safe_stopped
-            else ("complete" if state["synchronization_complete"] else "failed")
+            state["task_graph_execution"].status.value
+            if state.get("task_graph_execution")
+            else "not reached"
         ),
+        f"- Task attempts: {task_attempts} across {task_count} tasks",
+        f"- Retries performed: {retries}",
+        f"- Execution waves: {len(waves)}",
+        f"- Maximum parallel wave width: {maximum_wave_width}",
+        "- Workspace integrity: "
+        + (session.integrity_status.value if session is not None else "not reached"),
+        "- Final authoritative workspace snapshot: "
+        + (
+            session.authoritative_snapshot_id
+            if session is not None
+            else "not reached"
+        ),
+        f"- Workspace mutations: {len(mutations)}",
+        "- Workspace mutation outcomes: "
+        + (", ".join(mutation_outcomes) or "None"),
+        f"- Conflicting wave reconciliations: {conflict_count}",
+        f"- Rollback outcomes: {rollback_count}",
+        "- Materialized desired paths: "
+        + (", ".join(sorted(set(materialized_changes))) or "None"),
+        "- Generated code/tests executed: no",
         "- Exit gate: "
         + (
             "not reached"
@@ -284,17 +443,22 @@ def _summary_markdown(
         lines.extend(
             [
                 f"Execution stopped safely: {state['safe_stop_reason']}",
-                "No engineering task was executed.",
+                (
+                    "Execution evidence was retained for every attempted task."
+                    if state.get("task_graph_execution")
+                    else "No engineering task was executed."
+                ),
                 "",
             ]
         )
     else:
         lines.extend(
             [
-                "The governed V0.4 workflow converted the approved analysis into an "
-                "immutable requirement specification, validated and approved an "
-                "LLM-proposed engineering dependency graph, and completed the "
-                "existing deterministic artifact branches without executing tasks.",
+                "The governed V0.5 workflow executed bounded READY waves from the "
+                "human-approved TaskGraph, joined concurrent executor calls, "
+                "canonicalized and reconciled results in deterministic scheduler "
+                "order, applied eligible isolated-workspace mutations serially, "
+                "and allowed only the complete governed exit gate to settle tasks.",
                 "",
             ]
         )

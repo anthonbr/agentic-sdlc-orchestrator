@@ -1,0 +1,38 @@
+{
+  "source_root": "artifacts/demo-run/generated-project",
+  "workspace_id": "WORKSPACE-6cf208d0-90fa-53d5-89b6-bf18dc321fd9",
+  "baseline_snapshot_id": "WORKSPACE-SNAPSHOT-4F18F9BE43CB",
+  "files": [
+    {
+      "path": "README.md",
+      "source_content_hash": "91a82a5c66ce0f72fbd536552dbdcd08ac8984c943b6bb5d8f3d7d229767170f",
+      "seeded_content_hash": "91a82a5c66ce0f72fbd536552dbdcd08ac8984c943b6bb5d8f3d7d229767170f"
+    },
+    {
+      "path": "pyproject.toml",
+      "source_content_hash": "556cde48e45fa84d7643bb2eee1a98ed4c16848cda8794192b8800368e61ac5a",
+      "seeded_content_hash": "556cde48e45fa84d7643bb2eee1a98ed4c16848cda8794192b8800368e61ac5a"
+    },
+    {
+      "path": "src/url_shortener/__init__.py",
+      "source_content_hash": "963f04540aec0d8b045dabf85032425fd30806ee53bb6bb0b49e21c50a8ec187",
+      "seeded_content_hash": "963f04540aec0d8b045dabf85032425fd30806ee53bb6bb0b49e21c50a8ec187"
+    },
+    {
+      "path": "src/url_shortener/app.py",
+      "source_content_hash": "c19bc87abdea1704307115b073ac265ffb80b62bdebe9716d527247b7efe40ad",
+      "seeded_content_hash": "c19bc87abdea1704307115b073ac265ffb80b62bdebe9716d527247b7efe40ad"
+    },
+    {
+      "path": "src/url_shortener/service.py",
+      "source_content_hash": "1f2746d67b7f0a392886334e67ef5298619970acb38f0d2a6d55ce275891fb64",
+      "seeded_content_hash": "1f2746d67b7f0a392886334e67ef5298619970acb38f0d2a6d55ce275891fb64"
+    },
+    {
+      "path": "tests/test_service.py",
+      "source_content_hash": "9a677eef639d3c42187059c3b9a4026b4163e1baa8f82fa0d24cbaf4144ed29e",
+      "seeded_content_hash": "9a677eef639d3c42187059c3b9a4026b4163e1baa8f82fa0d24cbaf4144ed29e"
+    }
+  ],
+  "verified": true
+}

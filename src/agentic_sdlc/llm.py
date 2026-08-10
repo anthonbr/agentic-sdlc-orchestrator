@@ -99,6 +99,7 @@ class OpenAIRequirementAnalysisClient:
                     },
                 ],
                 text_format=RequirementAnalysis,
+                store=False,
             )
         except ValidationError as error:
             raise RequirementAnalysisClientError(
@@ -127,7 +128,7 @@ class OpenAIRequirementAnalysisClient:
         api_key = self._api_key or os.getenv("OPENAI_API_KEY", "")
         if not api_key.strip() or api_key == "YOUR_KEY_HERE":
             raise MissingOpenAIAPIKeyError()
-        return OpenAI(api_key=api_key)
+        return OpenAI(api_key=api_key, max_retries=0)
 
 
 class FakeRequirementAnalysisClient:
@@ -226,6 +227,7 @@ class OpenAITaskPlanningClient:
                     },
                 ],
                 text_format=ProposedTaskGraph,
+                store=False,
             )
         except ValidationError as error:
             raise TaskPlanningClientError(
@@ -256,7 +258,7 @@ class OpenAITaskPlanningClient:
                 "OPENAI_API_KEY is not configured; task planning cannot run.",
                 retryable=False,
             )
-        return OpenAI(api_key=api_key)
+        return OpenAI(api_key=api_key, max_retries=0)
 
 
 class FakeTaskPlanningClient:

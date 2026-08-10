@@ -1,0 +1,159 @@
+[
+  {
+    "artifact_id": "ARTIFACT-C2BCE70B16FE-O001",
+    "lineage_id": "74afeb95-ad96-5053-a229-f693d662ccdc",
+    "artifact_type": "DESIGN",
+    "logical_name": "brownfield-impact-analysis",
+    "content": "# Brownfield redirect-analytics impact analysis\n\n## Existing architecture and flow\n\n- `src/url_shortener/service.py` contains the process-local in-memory\n  `URLShortener` domain service and its code-to-URL lookup.\n- `src/url_shortener/app.py` is the thin WSGI adapter. Its current generic route\n  resolves `GET /{code}` through `URLShortenerApplication._resolve`, then\n  `URLShortener.resolve(code)`, the in-memory lookup, and HTTP 302 `Location`.\n- `tests/test_service.py` is the current executable domain and HTTP regression\n  suite, and `README.md` is the user/API documentation.\n- `pyproject.toml` needs no dependency change for this in-memory enhancement.\n\n## Shared service contract and enhanced flow\n\n- `URLShortener.redirect_count(code: str) -> int` returns the current successful-\n  resolution count for a known code and raises the existing\n  `UnknownShortCodeError` for an unknown or empty code. Reading it never changes\n  the count.\n- Successful `GET /{code}` resolution validates that the code exists, increments\n  that code's successful-resolution count, returns the URL, and preserves the\n  existing HTTP 302 response.\n- `GET /analytics/{code}` must be recognized before the generic `GET /{code}`\n  branch, then return `code` plus `redirect_count` without incrementing it; an\n  unknown analytics code returns HTTP 404.\n- Lookup and successful count increment occur while holding the existing service\n  lock. Analytics reads use the same lock, avoiding lost increments while\n  preserving the current synchronization model.\n- Unknown resolution attempts, shortening, and analytics lookup do not increment\n  counts. Re-shortening a known URL must not reset its accumulated count.\n- Existing shortening and redirect behavior remains intact. Storage stays\n  process-local and in-memory; no database or external dependency is required.\n\n## Expected mutation targets\n\n- `src/url_shortener/service.py`\n- `src/url_shortener/app.py`\n- `tests/test_service.py`\n- `README.md`\n\n## Explicitly unchanged\n\n- `pyproject.toml`: no dependency change is required.\n- `src/url_shortener/__init__.py`: no public-export change is expected.\n",
+    "content_hash": "c2bce70b16fee91f4c91c254e7accbf811a843afc303540e26c3dcbe4da24caa",
+    "output_index": 1,
+    "requirement_spec_id": "SPEC-D4FFE034718F-V001",
+    "graph_id": "GRAPH-4DB70BBA06EE-V001",
+    "task_id": "TASK-001",
+    "request_id": "91cf2a81-a106-595c-bebd-122582a689f9",
+    "attempt_id": "1a1b9395-8256-5226-acbc-f5b30ce09381",
+    "attempt_number": 1,
+    "requirement_refs": [
+      "FR-001",
+      "FR-002",
+      "FR-003",
+      "FR-004",
+      "NFR-001",
+      "CON-001"
+    ],
+    "acceptance_criteria_refs": [
+      "AC-001",
+      "AC-002",
+      "AC-003"
+    ],
+    "risk_refs": [
+      "RISK-001"
+    ],
+    "ambiguity_refs": [],
+    "created_at": "2026-08-10T12:00:00+00:00"
+  },
+  {
+    "artifact_id": "ARTIFACT-7A3A97A7CFD1-O001",
+    "lineage_id": "889246e3-1bd8-5665-9ba5-0b28cce53fc8",
+    "artifact_type": "SOURCE",
+    "logical_name": "url-shortener-service-analytics",
+    "content": "\"\"\"In-memory URL-shortening domain service.\"\"\"\n\nfrom __future__ import annotations\n\nimport base64\nimport hashlib\nfrom threading import Lock\nfrom urllib.parse import urlsplit\n\n\nclass URLShortenerError(Exception):\n    \"\"\"Base class for domain-level URL-shortener failures.\"\"\"\n\n\nclass InvalidURLError(URLShortenerError):\n    \"\"\"Raised when a submitted URL is not an absolute HTTP(S) URL.\"\"\"\n\n\nclass UnknownShortCodeError(URLShortenerError):\n    \"\"\"Raised when no original URL exists for a short code.\"\"\"\n\n\nclass URLShortener:\n    \"\"\"Deterministic, collision-safe, process-local URL repository.\"\"\"\n\n    def __init__(self) -> None:\n        self._url_by_code: dict[str, str] = {}\n        self._code_by_url: dict[str, str] = {}\n        self._redirect_count_by_code: dict[str, int] = {}\n        self._lock = Lock()\n\n    def shorten(self, url: str) -> str:\n        \"\"\"Return a stable unique code for one valid absolute HTTP(S) URL.\"\"\"\n\n        validated = _validate_url(url)\n        with self._lock:\n            existing = self._code_by_url.get(validated)\n            if existing is not None:\n                return existing\n\n            nonce = 0\n            while True:\n                code = _candidate_code(validated, nonce)\n                owner = self._url_by_code.get(code)\n                if owner is None or owner == validated:\n                    self._url_by_code[code] = validated\n                    self._code_by_url[validated] = code\n                    self._redirect_count_by_code[code] = 0\n                    return code\n                nonce += 1\n\n    def resolve(self, code: str) -> str:\n        \"\"\"Return the original URL for a known code.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                original_url = self._url_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n            self._redirect_count_by_code[code] += 1\n            return original_url\n\n    def redirect_count(self, code: str) -> int:\n        \"\"\"Return the successful-resolution count without changing it.\"\"\"\n\n        if not isinstance(code, str) or not code:\n            raise UnknownShortCodeError(\"Unknown short code.\")\n        with self._lock:\n            try:\n                return self._redirect_count_by_code[code]\n            except KeyError as error:\n                raise UnknownShortCodeError(\n                    f\"Unknown short code: {code}.\"\n                ) from error\n\n\ndef _validate_url(url: str) -> str:\n    if not isinstance(url, str) or not url or url != url.strip():\n        raise InvalidURLError(\"URL must be a non-empty absolute HTTP(S) URL.\")\n    if any(character.isspace() for character in url):\n        raise InvalidURLError(\"URL must not contain whitespace.\")\n    try:\n        parsed = urlsplit(url)\n        port = parsed.port\n    except ValueError as error:\n        raise InvalidURLError(\"URL authority is malformed.\") from error\n    if (\n        parsed.scheme.lower() not in {\"http\", \"https\"}\n        or not parsed.netloc\n        or parsed.hostname is None\n        or (port is not None and not 1 <= port <= 65535)\n    ):\n        raise InvalidURLError(\"URL must be an absolute HTTP(S) URL.\")\n    return url\n\n\ndef _candidate_code(url: str, nonce: int) -> str:\n    digest = hashlib.sha256(f\"{url}\\0{nonce}\".encode(\"utf-8\")).digest()\n    return base64.urlsafe_b64encode(digest[:6]).decode(\"ascii\").rstrip(\"=\")\n",
+    "content_hash": "7a3a97a7cfd1910eba9a6c5d5866b9b1974e68a5a8b7ea9873834500482941c0",
+    "output_index": 1,
+    "requirement_spec_id": "SPEC-D4FFE034718F-V001",
+    "graph_id": "GRAPH-4DB70BBA06EE-V001",
+    "task_id": "TASK-002",
+    "request_id": "99238e56-62b6-5555-bb51-0ef9727b9449",
+    "attempt_id": "84208530-fb30-53a9-a7ec-9d51c81d03d0",
+    "attempt_number": 1,
+    "requirement_refs": [
+      "FR-001",
+      "FR-002",
+      "FR-003",
+      "FR-004"
+    ],
+    "acceptance_criteria_refs": [
+      "AC-001",
+      "AC-002",
+      "AC-003"
+    ],
+    "risk_refs": [
+      "RISK-001"
+    ],
+    "ambiguity_refs": [],
+    "created_at": "2026-08-10T12:00:00+00:00"
+  },
+  {
+    "artifact_id": "ARTIFACT-1D70216AC140-O001",
+    "lineage_id": "fccea07c-6534-54dd-9deb-08e307ae6910",
+    "artifact_type": "SOURCE",
+    "logical_name": "url-shortener-analytics-http-api",
+    "content": "\"\"\"Thin dependency-free WSGI adapter for the URL-shortener service.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport os\nfrom collections.abc import Callable, Iterable\nfrom typing import Any\nfrom urllib.parse import unquote\nfrom wsgiref.simple_server import make_server\n\nfrom url_shortener.service import InvalidURLError, UnknownShortCodeError, URLShortener\n\nStartResponse = Callable[[str, list[tuple[str, str]]], Any]\n\n\nclass URLShortenerApplication:\n    \"\"\"WSGI application exposing shorten and resolve operations.\"\"\"\n\n    def __init__(\n        self,\n        service: URLShortener | None = None,\n        *,\n        base_url: str = \"http://127.0.0.1:8000\",\n    ) -> None:\n        self.service = service or URLShortener()\n        self.base_url = base_url.rstrip(\"/\")\n\n    def __call__(\n        self, environ: dict[str, Any], start_response: StartResponse\n    ) -> Iterable[bytes]:\n        method = str(environ.get(\"REQUEST_METHOD\", \"GET\")).upper()\n        path = str(environ.get(\"PATH_INFO\", \"/\"))\n        if path == \"/shorten\":\n            if method == \"POST\":\n                return self._shorten(environ, start_response)\n            return _json_response(\n                start_response,\n                \"405 Method Not Allowed\",\n                {\"error\": \"method_not_allowed\"},\n            )\n        if method == \"GET\" and path.startswith(\"/analytics/\"):\n            return self._analytics(\n                unquote(path[len(\"/analytics/\") :]), start_response\n            )\n        if method == \"GET\" and path.startswith(\"/\") and path != \"/\":\n            return self._resolve(unquote(path[1:]), start_response)\n        return _json_response(\n            start_response, \"404 Not Found\", {\"error\": \"not_found\"}\n        )\n\n    def _shorten(\n        self, environ: dict[str, Any], start_response: StartResponse\n    ) -> Iterable[bytes]:\n        try:\n            length = int(environ.get(\"CONTENT_LENGTH\") or \"0\")\n            if length < 1 or length > 1_000_000:\n                raise ValueError\n            stream = environ[\"wsgi.input\"]\n            payload = json.loads(stream.read(length).decode(\"utf-8\"))\n            if not isinstance(payload, dict) or not isinstance(payload.get(\"url\"), str):\n                raise ValueError\n        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError):\n            return _json_response(\n                start_response,\n                \"400 Bad Request\",\n                {\"error\": \"invalid_request\", \"message\": \"Expected JSON with a URL.\"},\n            )\n        try:\n            code = self.service.shorten(payload[\"url\"])\n        except InvalidURLError as error:\n            return _json_response(\n                start_response,\n                \"400 Bad Request\",\n                {\"error\": \"invalid_url\", \"message\": str(error)},\n            )\n        return _json_response(\n            start_response,\n            \"201 Created\",\n            {\"code\": code, \"short_url\": f\"{self.base_url}/{code}\"},\n        )\n\n    def _analytics(\n        self, code: str, start_response: StartResponse\n    ) -> Iterable[bytes]:\n        try:\n            redirect_count = self.service.redirect_count(code)\n        except UnknownShortCodeError:\n            return _json_response(\n                start_response,\n                \"404 Not Found\",\n                {\"error\": \"unknown_code\", \"code\": code},\n            )\n        return _json_response(\n            start_response,\n            \"200 OK\",\n            {\"code\": code, \"redirect_count\": redirect_count},\n        )\n\n    def _resolve(self, code: str, start_response: StartResponse) -> Iterable[bytes]:\n        try:\n            original_url = self.service.resolve(code)\n        except UnknownShortCodeError:\n            return _json_response(\n                start_response,\n                \"404 Not Found\",\n                {\"error\": \"unknown_code\", \"code\": code},\n            )\n        start_response(\n            \"302 Found\",\n            [(\"Location\", original_url), (\"Content-Length\", \"0\")],\n        )\n        return [b\"\"]\n\n\ndef _json_response(\n    start_response: StartResponse, status: str, payload: dict[str, object]\n) -> list[bytes]:\n    body = json.dumps(payload, sort_keys=True).encode(\"utf-8\")\n    start_response(\n        status,\n        [\n            (\"Content-Type\", \"application/json; charset=utf-8\"),\n            (\"Content-Length\", str(len(body))),\n        ],\n    )\n    return [body]\n\n\ndef main() -> None:\n    host = os.environ.get(\"URL_SHORTENER_HOST\", \"127.0.0.1\")\n    port = int(os.environ.get(\"URL_SHORTENER_PORT\", \"8000\"))\n    application = URLShortenerApplication(base_url=f\"http://{host}:{port}\")\n    with make_server(host, port, application) as server:\n        print(f\"URL shortener listening on http://{host}:{port}\")\n        server.serve_forever()\n\n\nif __name__ == \"__main__\":\n    main()\n",
+    "content_hash": "1d70216ac140473ffa04c9106d829d21162f6e796fa5017077f90e766f31c57d",
+    "output_index": 1,
+    "requirement_spec_id": "SPEC-D4FFE034718F-V001",
+    "graph_id": "GRAPH-4DB70BBA06EE-V001",
+    "task_id": "TASK-003",
+    "request_id": "b5185c89-6571-5cdc-a2a4-f416a851568a",
+    "attempt_id": "91557219-7ecf-5229-92b7-6ba670c51ace",
+    "attempt_number": 1,
+    "requirement_refs": [
+      "FR-001",
+      "FR-002",
+      "FR-003",
+      "FR-004"
+    ],
+    "acceptance_criteria_refs": [
+      "AC-001",
+      "AC-002",
+      "AC-003"
+    ],
+    "risk_refs": [
+      "RISK-001"
+    ],
+    "ambiguity_refs": [],
+    "created_at": "2026-08-10T12:00:00+00:00"
+  },
+  {
+    "artifact_id": "ARTIFACT-ACC52131E578-O001",
+    "lineage_id": "32c26dea-7c4e-5cdd-8dda-80bfd867b88f",
+    "artifact_type": "TEST",
+    "logical_name": "url-shortener-analytics-tests",
+    "content": "\"\"\"Executable tests for the generated URL-shortener project.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nimport unittest\nfrom io import BytesIO\nfrom typing import Any\n\nfrom url_shortener.app import URLShortenerApplication\nfrom url_shortener.service import InvalidURLError, UnknownShortCodeError, URLShortener\n\n\ndef invoke_wsgi(\n    application: URLShortenerApplication,\n    method: str,\n    path: str,\n    payload: dict[str, object] | None = None,\n) -> tuple[str, dict[str, str], bytes]:\n    body = b\"\" if payload is None else json.dumps(payload).encode(\"utf-8\")\n    environ: dict[str, Any] = {\n        \"REQUEST_METHOD\": method,\n        \"PATH_INFO\": path,\n        \"CONTENT_LENGTH\": str(len(body)),\n        \"wsgi.input\": BytesIO(body),\n    }\n    captured: dict[str, object] = {}\n\n    def start_response(status: str, headers: list[tuple[str, str]]) -> None:\n        captured[\"status\"] = status\n        captured[\"headers\"] = dict(headers)\n\n    response = b\"\".join(application(environ, start_response))\n    return (\n        str(captured[\"status\"]),\n        dict(captured[\"headers\"]),  # type: ignore[arg-type]\n        response,\n    )\n\n\nclass URLShortenerServiceTests(unittest.TestCase):\n    def setUp(self) -> None:\n        self.service = URLShortener()\n\n    def test_shortening_valid_url_returns_code(self) -> None:\n        code = self.service.shorten(\"https://example.com/path\")\n        self.assertRegex(code, r\"^[A-Za-z0-9_-]{8}$\")\n\n    def test_different_urls_receive_distinct_codes(self) -> None:\n        first = self.service.shorten(\"https://example.com/first\")\n        second = self.service.shorten(\"https://example.com/second\")\n        self.assertNotEqual(first, second)\n\n    def test_repeated_shortening_is_idempotent(self) -> None:\n        url = \"https://example.com/repeated\"\n        self.assertEqual(self.service.shorten(url), self.service.shorten(url))\n\n    def test_known_code_resolves_to_original_url(self) -> None:\n        url = \"https://example.com/original\"\n        self.assertEqual(self.service.resolve(self.service.shorten(url)), url)\n\n    def test_redirect_count_starts_at_zero(self) -> None:\n        code = self.service.shorten(\"https://example.com/count\")\n        self.assertEqual(self.service.redirect_count(code), 0)\n\n    def test_successful_resolves_increment_exactly_once_each(self) -> None:\n        url = \"https://example.com/counted\"\n        code = self.service.shorten(url)\n        self.assertEqual(self.service.resolve(code), url)\n        self.assertEqual(self.service.resolve(code), url)\n        self.assertEqual(self.service.redirect_count(code), 2)\n\n    def test_redirect_count_lookup_does_not_increment(self) -> None:\n        code = self.service.shorten(\"https://example.com/observe\")\n        self.service.resolve(code)\n        self.assertEqual(self.service.redirect_count(code), 1)\n        self.assertEqual(self.service.redirect_count(code), 1)\n\n    def test_unknown_resolution_has_no_analytics_state(self) -> None:\n        with self.assertRaises(UnknownShortCodeError):\n            self.service.resolve(\"missing\")\n        with self.assertRaises(UnknownShortCodeError):\n            self.service.redirect_count(\"missing\")\n\n    def test_reshortening_preserves_redirect_count(self) -> None:\n        url = \"https://example.com/reshorten\"\n        code = self.service.shorten(url)\n        self.service.resolve(code)\n        self.assertEqual(self.service.shorten(url), code)\n        self.assertEqual(self.service.redirect_count(code), 1)\n\n    def test_unknown_code_raises_domain_error(self) -> None:\n        with self.assertRaises(UnknownShortCodeError):\n            self.service.resolve(\"missing\")\n\n    def test_invalid_urls_are_rejected(self) -> None:\n        for url in (\"\", \"example.com\", \"/relative\", \"ftp://example.com\", \"https://bad host\"):\n            with self.subTest(url=url), self.assertRaises(InvalidURLError):\n                self.service.shorten(url)\n\n\nclass URLShortenerHTTPTests(unittest.TestCase):\n    def setUp(self) -> None:\n        self.application = URLShortenerApplication(\n            URLShortener(), base_url=\"http://short.test\"\n        )\n\n    def test_post_shorten_returns_created_response(self) -> None:\n        status, _, body = invoke_wsgi(\n            self.application,\n            \"POST\",\n            \"/shorten\",\n            {\"url\": \"https://example.com/http\"},\n        )\n        payload = json.loads(body)\n        self.assertEqual(status, \"201 Created\")\n        self.assertEqual(payload[\"short_url\"], f\"http://short.test/{payload['code']}\")\n\n    def test_post_shorten_rejects_invalid_url(self) -> None:\n        status, _, body = invoke_wsgi(\n            self.application,\n            \"POST\",\n            \"/shorten\",\n            {\"url\": \"ftp://example.com/not-supported\"},\n        )\n        self.assertEqual(status, \"400 Bad Request\")\n        self.assertEqual(json.loads(body)[\"error\"], \"invalid_url\")\n\n    def test_get_shorten_rejects_wrong_method(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/shorten\")\n        self.assertEqual(status, \"405 Method Not Allowed\")\n        self.assertEqual(json.loads(body)[\"error\"], \"method_not_allowed\")\n\n    def test_get_known_code_redirects(self) -> None:\n        url = \"https://example.com/redirect\"\n        code = self.application.service.shorten(url)\n        status, headers, body = invoke_wsgi(self.application, \"GET\", f\"/{code}\")\n        self.assertEqual(status, \"302 Found\")\n        self.assertEqual(headers[\"Location\"], url)\n        self.assertEqual(body, b\"\")\n\n    def test_get_analytics_tracks_only_successful_redirects(self) -> None:\n        code = self.application.service.shorten(\"https://example.com/analytics\")\n\n        status, _, body = invoke_wsgi(self.application, \"GET\", f\"/analytics/{code}\")\n        self.assertEqual(status, \"200 OK\")\n        self.assertEqual(json.loads(body), {\"code\": code, \"redirect_count\": 0})\n        status, _, body = invoke_wsgi(self.application, \"GET\", f\"/analytics/{code}\")\n        self.assertEqual(json.loads(body)[\"redirect_count\"], 0)\n\n        self.assertEqual(invoke_wsgi(self.application, \"GET\", f\"/{code}\")[0], \"302 Found\")\n        status, _, body = invoke_wsgi(self.application, \"GET\", f\"/analytics/{code}\")\n        self.assertEqual(json.loads(body)[\"redirect_count\"], 1)\n        self.assertEqual(invoke_wsgi(self.application, \"GET\", f\"/{code}\")[0], \"302 Found\")\n        status, _, body = invoke_wsgi(self.application, \"GET\", f\"/analytics/{code}\")\n        self.assertEqual(json.loads(body)[\"redirect_count\"], 2)\n\n    def test_get_unknown_analytics_code_returns_not_found(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/analytics/unknown\")\n        self.assertEqual(status, \"404 Not Found\")\n        self.assertEqual(json.loads(body)[\"error\"], \"unknown_code\")\n\n    def test_get_unknown_code_returns_not_found(self) -> None:\n        status, _, body = invoke_wsgi(self.application, \"GET\", \"/unknown\")\n        self.assertEqual(status, \"404 Not Found\")\n        self.assertEqual(json.loads(body)[\"error\"], \"unknown_code\")\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n",
+    "content_hash": "acc52131e578113856c05eb0e80ee67fbffdc0c67c70d3cb2643c4c27956f2fb",
+    "output_index": 1,
+    "requirement_spec_id": "SPEC-D4FFE034718F-V001",
+    "graph_id": "GRAPH-4DB70BBA06EE-V001",
+    "task_id": "TASK-004",
+    "request_id": "d6cba32f-b693-5a39-9f73-68cb836b1152",
+    "attempt_id": "750c0ac0-0a2e-56c5-bcd8-160abc4655d7",
+    "attempt_number": 1,
+    "requirement_refs": [
+      "FR-001",
+      "FR-002",
+      "FR-003",
+      "FR-004"
+    ],
+    "acceptance_criteria_refs": [
+      "AC-001",
+      "AC-002",
+      "AC-003"
+    ],
+    "risk_refs": [
+      "RISK-001"
+    ],
+    "ambiguity_refs": [],
+    "created_at": "2026-08-10T12:00:00+00:00"
+  },
+  {
+    "artifact_id": "ARTIFACT-8174355FBD96-O001",
+    "lineage_id": "93f04e0f-ab56-5207-ae33-e976e3789aa7",
+    "artifact_type": "DOCUMENTATION",
+    "logical_name": "url-shortener-analytics-documentation",
+    "content": "# Governed URL Shortener Demo\n\nThis dependency-free Python URL shortener was originally produced by the\ngoverned greenfield scenario and then enhanced by the governed brownfield analytics\nscenario. The brownfield workflow seeded the verified existing six-file application\ninto a disposable isolated workspace, reasoned over bounded repository context, and\ntransactionally modified four existing files to add successful-redirect analytics\nwhile preserving existing shortening and redirect behavior.\n\n## Architecture\n\n`URLShortener` contains the domain rules and process-local in-memory mappings.\n`URLShortenerApplication` is a thin WSGI adapter. The service accepts absolute\nHTTP(S) URLs, generates stable collision-checked short codes, resolves known\ncodes, counts successful resolutions, exposes per-code analytics, and reports typed\nerrors for invalid URLs and unknown codes.\n\nStorage is deliberately in-memory and is lost when the process exits. URL\nexpiration remains unresolved by the approved specification and is not\nimplemented.\n\n## Run\n\nPython 3.11 or newer is required. No third-party runtime dependency is needed.\n\n```bash\nPYTHONPATH=src python -m url_shortener.app\n```\n\nThe server binds to `127.0.0.1:8000` by default. Override it with\n`URL_SHORTENER_HOST` and `URL_SHORTENER_PORT`.\n\n## Test\n\n```bash\nPYTHONPATH=src python -m unittest discover -s tests -v\n```\n\nTests run entirely in-process and require no network access.\n\n## HTTP API\n\nShorten a URL:\n\n```bash\ncurl -i -X POST http://127.0.0.1:8000/shorten \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"url\":\"https://example.com/path\"}'\n```\n\nThe `201 Created` JSON response contains `code` and `short_url`. Resolve the code:\n\n```bash\ncurl -i http://127.0.0.1:8000/<code>\n```\n\nA known code returns `302 Found`; an unknown code returns `404 Not Found`.\nEach successful redirect increments that code's process-local count.\n\nInspect analytics without incrementing the count:\n\n```bash\ncurl -i http://127.0.0.1:8000/analytics/<code>\n```\n\nA known code returns `200 OK` with JSON such as\n`{\"code\": \"abc12345\", \"redirect_count\": 7}`. An unknown analytics code\nreturns `404 Not Found`. Analytics lookup itself does not increment the count.\n\n## Assumptions and trade-offs\n\n- Repeated shortening of the same URL returns the existing code.\n- SHA-256-derived candidates plus collision checking provide deterministic codes.\n- Redirect counts are process-local, in-memory, and reset when the process\n  restarts. Persistence, expiration, authentication, and repository promotion\n  remain outside this prototype.\n- The orchestrator does not execute this generated source or its tests. Execution\n  commands above are manual reviewer/development actions against the exported copy.\n",
+    "content_hash": "8174355fbd96acd58f76d280c4d61105d04a290c7c5e0006d87c6a894094727d",
+    "output_index": 1,
+    "requirement_spec_id": "SPEC-D4FFE034718F-V001",
+    "graph_id": "GRAPH-4DB70BBA06EE-V001",
+    "task_id": "TASK-005",
+    "request_id": "909ed7d9-ea95-56d4-b766-7b270578597d",
+    "attempt_id": "6dacc74a-81c5-50b4-893c-d9b080b62cc2",
+    "attempt_number": 1,
+    "requirement_refs": [
+      "FR-001",
+      "FR-002",
+      "FR-003",
+      "FR-004"
+    ],
+    "acceptance_criteria_refs": [
+      "AC-001",
+      "AC-002",
+      "AC-003"
+    ],
+    "risk_refs": [
+      "RISK-001"
+    ],
+    "ambiguity_refs": [],
+    "created_at": "2026-08-10T12:00:00+00:00"
+  }
+]

@@ -1,4 +1,4 @@
-"""Static LangGraph control plane for the governed V0.4 workflow."""
+"""Static LangGraph control plane for governed planning and TaskGraph execution."""
 
 from __future__ import annotations
 
@@ -20,10 +20,11 @@ from agentic_sdlc.llm import (
 )
 from agentic_sdlc.nodes import (
     approve_task_graph,
-    architecture_task,
     build_approved_requirement_spec,
     entry_gate,
+    execute_task_graph_step,
     exit_gate,
+    initialize_task_graph_execution_node,
     normalize_and_validate_task_graph,
     prepare_requirement_analysis_retry,
     prepare_requirement_analysis_revision,
@@ -33,10 +34,8 @@ from agentic_sdlc.nodes import (
     requirement_analysis_task,
     requirements_intake,
     safe_stop,
-    synchronize,
     task_decomposition_task,
     task_graph_review,
-    test_plan_task,
     validate_requirement_analysis,
 )
 from agentic_sdlc.state import (
@@ -46,6 +45,13 @@ from agentic_sdlc.state import (
     MAX_TASK_PLANNING_ATTEMPTS,
     ApprovalResponse,
     WorkflowState,
+)
+from agentic_sdlc.task_execution import TaskGraphExecutionStatus
+from agentic_sdlc.task_executor import OpenAITaskExecutor, TaskExecutor
+from agentic_sdlc.workspace_integration import (
+    DeterministicRepositoryContextPathProvider,
+    GovernedWorkspaceRuntime,
+    RepositoryContextPathProvider,
 )
 
 
@@ -168,14 +174,38 @@ def route_after_task_graph_review(
     raise ValueError("Task-graph review did not record a valid decision.")
 
 
+def route_after_task_graph_execution_step(
+    state: WorkflowState,
+) -> Literal["execute_task_graph_step", "exit_gate", "safe_stop"]:
+    """Route the static loop from authoritative runtime execution status."""
+
+    status = state["task_graph_execution"].status
+    if status is TaskGraphExecutionStatus.RUNNING:
+        return "execute_task_graph_step"
+    if status is TaskGraphExecutionStatus.SUCCEEDED:
+        return "exit_gate"
+    if status is TaskGraphExecutionStatus.FAILED:
+        return "safe_stop"
+    raise ValueError(f"Unsupported TaskGraph execution route: {status.value}.")
+
+
 def build_workflow(
     requirement_analyst: RequirementAnalysisClient | None = None,
     task_planner: TaskPlanningClient | None = None,
+    task_executor: TaskExecutor | None = None,
+    workspace_runtime: GovernedWorkspaceRuntime | None = None,
+    repository_context_path_provider: RepositoryContextPathProvider | None = None,
 ) -> CompiledStateGraph:
     """Build the explicit static control graph; engineering tasks stay data."""
 
     analyst = requirement_analyst or OpenAIRequirementAnalysisClient()
     planner = task_planner or OpenAITaskPlanningClient()
+    executor = task_executor or OpenAITaskExecutor()
+    active_workspace_runtime = workspace_runtime or GovernedWorkspaceRuntime()
+    path_provider = (
+        repository_context_path_provider
+        or DeterministicRepositoryContextPathProvider()
+    )
     builder = StateGraph(WorkflowState)
 
     builder.add_node("requirements_intake", requirements_intake)
@@ -206,10 +236,23 @@ def build_workflow(
     builder.add_node("task_graph_review", task_graph_review)
     builder.add_node("prepare_task_graph_revision", prepare_task_graph_revision)
     builder.add_node("approve_task_graph", approve_task_graph)
+    builder.add_node(
+        "initialize_task_graph_execution",
+        partial(
+            initialize_task_graph_execution_node,
+            workspace_runtime=active_workspace_runtime,
+        ),
+    )
+    builder.add_node(
+        "execute_task_graph_step",
+        partial(
+            execute_task_graph_step,
+            executor=executor,
+            workspace_runtime=active_workspace_runtime,
+            repository_context_path_provider=path_provider,
+        ),
+    )
     builder.add_node("safe_stop", safe_stop)
-    builder.add_node("architecture_task", architecture_task)
-    builder.add_node("test_plan_task", test_plan_task)
-    builder.add_node("synchronize", synchronize)
     builder.add_node("exit_gate", exit_gate)
 
     builder.add_edge(START, "requirements_intake")
@@ -288,11 +331,18 @@ def build_workflow(
     builder.add_edge("prepare_task_graph_revision", "task_decomposition_task")
     builder.add_edge("safe_stop", END)
 
-    # Approved engineering tasks remain data. Only these static demo nodes fan out.
-    builder.add_edge("approve_task_graph", "architecture_task")
-    builder.add_edge("approve_task_graph", "test_plan_task")
-    builder.add_edge(["architecture_task", "test_plan_task"], "synchronize")
-    builder.add_edge("synchronize", "exit_gate")
+    # Dynamic TASK-### records remain data interpreted by this fixed static loop.
+    builder.add_edge("approve_task_graph", "initialize_task_graph_execution")
+    builder.add_edge("initialize_task_graph_execution", "execute_task_graph_step")
+    builder.add_conditional_edges(
+        "execute_task_graph_step",
+        route_after_task_graph_execution_step,
+        {
+            "execute_task_graph_step": "execute_task_graph_step",
+            "exit_gate": "exit_gate",
+            "safe_stop": "safe_stop",
+        },
+    )
     builder.add_edge("exit_gate", END)
 
     return builder.compile(checkpointer=InMemorySaver())
@@ -310,10 +360,19 @@ def run_workflow(
 ) -> WorkflowState:
     """Run or resume one checkpointed workflow thread."""
 
-    config = {"configurable": {"thread_id": thread_id}}
+    config = {
+        "configurable": {"thread_id": thread_id},
+        "recursion_limit": 100,
+    }
     active_workflow = workflow or WORKFLOW
+    prepared_input: WorkflowState | Command = workflow_input
+    if isinstance(workflow_input, dict):
+        prepared_input = cast(
+            WorkflowState,
+            {**workflow_input, "run_id": thread_id},
+        )
     final_state = cast(
-        WorkflowState, active_workflow.invoke(workflow_input, config=config)
+        WorkflowState, active_workflow.invoke(prepared_input, config=config)
     )
     if (
         artifact_dir is not None

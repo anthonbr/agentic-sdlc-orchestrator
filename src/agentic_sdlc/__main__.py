@@ -22,7 +22,7 @@ def write_workflow_diagram(output_path: Path) -> None:
 
 
 def main(arguments: list[str] | None = None) -> int:
-    """Run the one V0.4 command without introducing a CLI dependency."""
+    """Run the governed demonstration without introducing a CLI dependency."""
 
     args = list(sys.argv[1:] if arguments is None else arguments)
     if args != ["demo"]:
@@ -157,6 +157,10 @@ def _prompt_for_task_graph_decision(payload: dict[str, Any]) -> ApprovalResponse
             task = tasks[task_id]
             print(f"  {task_id}  {task['title']}")
             print(f"    Type: {task['task_type']}")
+            print(
+                "    Materialization policy: "
+                f"{task['materialization_policy']}"
+            )
             print(
                 "    Depends on: "
                 + (", ".join(task["depends_on"]) or "ENTRY")
