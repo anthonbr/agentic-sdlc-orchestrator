@@ -14,9 +14,9 @@ the software-development lifecycle.
 - **V0.4 — Governed LLM task planning:** a human-approved requirement
   specification, LLM-proposed engineering task dependencies, deterministic graph
   normalization/validation, and human TaskGraph approval.
-- **V0.5 runtime foundation (current slice):** separate execution state and a
-  deterministic interpreter for readiness, task transitions, dependency
-  unlocking, failure, and safe stop.
+- **V0.5 runtime foundation (current slices):** separate execution state, a
+  deterministic interpreter for readiness and transitions, and application-owned
+  execution contracts, artifact canonicalization, and structural validation.
 
 The current V0.5 slice interprets an approved plan but deliberately does **not
 execute engineering work**, call an LLM task executor, write application code, or
@@ -107,6 +107,60 @@ work; failure remains sticky, and `SAFE_STOPPED` requires no task to remain
 This module is not wired into the LangGraph workflow yet. Multiple tasks can be
 ready at once, representing future parallel execution, but this slice adds no
 concurrency, LLM task executor, repository mutation, or dynamic LangGraph nodes.
+
+### Execution contract and artifact boundary
+
+The deterministic contract layer stops before scheduler settlement:
+
+```text
+TaskExecutionRequest
+    -> future executor
+    -> TaskExecutionResult
+    -> EngineeringArtifact(s)
+    -> TaskExecutionValidationResult
+    -> no automatic scheduler transition yet
+```
+
+`TaskExecutionRequest` is application-owned context for one already-running task
+attempt. UUIDv5 request and attempt identities are derived from the approved spec,
+graph, task, and attempt number. Every request contains the approved normalized
+problem statement, requirement type, and assumptions, plus only the canonical
+FR/NFR/CON/AC/RISK/AMB items referenced by that task. It does not contain the raw
+conversation or requirement-analysis history. Dependency artifacts must be
+canonical outputs from the current successful attempt of a declared direct
+dependency; arbitrary or transitive artifacts are rejected.
+
+`TaskExecutionResult` is a non-authoritative semantic proposal. It may contain a
+summary, typed logical outputs, assumptions, and risks, but it cannot declare task
+success or assign canonical IDs, lineage, hashes, or runtime state. Application
+code converts each output into an immutable `EngineeringArtifact`, preserving
+content while assigning provenance, an attempt-specific artifact ID, and a stable
+artifact-slot lineage based on task lineage, output ordinal, type, and logical
+name. Semantic cross-attempt reconciliation after output reordering or renaming is
+deferred.
+
+An artifact content hash covers canonical output content and authoritative
+spec/graph/task/request/attempt/reference provenance, including output ordinal. It
+excludes the application-supplied creation timestamp and the derived artifact and
+lineage IDs. Artifact production does not equal acceptance: deterministic
+`TaskExecutionValidationResult` records the separate judgment and the exact ordered
+artifact IDs it evaluated, and no `accepted` flag is stored on the artifact. A
+source task's `SUCCEEDED` runtime state is necessary but not sufficient for its
+artifacts to become downstream context. The request builder also requires matching
+successful validation evidence for each dependency's complete canonical artifact
+set; missing, failed, partial, extra, stale, or mismatched evidence is rejected.
+Every declared direct dependency requires evidence, including an explicitly
+validated empty artifact-ID set when it produced no artifacts; omitting both its
+artifacts and validation is not evidence of an empty accepted output. Fan-in
+context is ordered by declared dependency and then canonical output order.
+
+Initial validation checks correlation, required output presence, nonblank logical
+names and contents, canonical artifact count, provenance, identity/hash integrity,
+and output correspondence. V0.4 `expected_outputs` values are free-form descriptive
+obligations, so this slice requires at least one output when obligations exist but
+does not claim semantic one-to-one matching. A `SOURCE` artifact remains data only;
+it is not written to the repository. No OpenAI task executor or filesystem/shell
+execution exists in this slice.
 
 ## Governed planning and lineage
 
@@ -229,7 +283,9 @@ Tests inject scripted `FakeRequirementAnalysisClient` and
 cover structured parsing, retries, safe stops, identity assignment, lineage,
 reference integrity, DAG validation, derived parallel/join semantics, both human
 approval loops, artifacts, the preserved static parallel branches, and isolated
-deterministic TaskGraph runtime transitions.
+deterministic TaskGraph runtime transitions. Execution-contract tests additionally
+cover approved-context filtering, direct dependency artifact flow, canonical
+identity/provenance, executor trust boundaries, and separate validation.
 
 ## Deliberately deferred
 
