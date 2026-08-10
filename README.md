@@ -19,9 +19,11 @@ the software-development lifecycle.
   contracts and artifacts, a bounded OpenAI executor, and a static governed loop
   that interprets the approved engineering TaskGraph through bounded parallel
   execution waves and governed mutation of one disposable isolated workspace.
-- **V0.6 — Governed ambiguity resolution (Checkpoint 1):** deterministic
+- **V0.6 — Governed ambiguity resolution:** deterministic
   requirement planning readiness, clarification through the existing immutable
-  analysis-revision loop, and stale TaskGraph/source-spec execution protection.
+  analysis-revision loop, stale TaskGraph/source-spec execution protection, and a
+  reproducible third reviewer scenario that resolves an intentionally ambiguous
+  URL-expiration requirement before planning and governed brownfield execution.
 
 The V0.5 execution slices execute approved engineering tasks as bounded semantic
 LLM calls and may transactionally materialize validated desired files only beneath
@@ -704,6 +706,54 @@ smoke checks are executed only manually by development/evaluation tooling, never
 the orchestrator. This scenario adds neither Git/promotion authority, shell
 authority, dynamic replanning, a database, autonomous browsing, nor a general
 repository-copy capability.
+
+### Deterministic governed ambiguity-resolution demo
+
+`artifacts/ambiguity-demo-run/` is the third network-free reviewer scenario. It
+seeds the verified V0.5 brownfield analytics export, then submits the intentionally
+underspecified requirement: “Enhance the URL shortener so shortened URLs
+automatically expire after a period of time.” Scripted Revision 0 records six
+actionable product ambiguities and sets `needs_clarification=true`; deterministic
+planning readiness becomes `BLOCKED`. The requirement-review interrupt offers only
+REQUEST_CHANGES and REJECT, and the evidence records zero planner invocations, no
+approved specification, and no TaskGraph at this point.
+
+The scenario follows the normal REQUEST_CHANGES path with exact human clarification
+for a fixed 24-hour, creation-based, process-local TTL. Immutable Revision 1 becomes
+`READY`, receives human approval, and is packaged by the normal canonical
+`ApprovedRequirementSpec` builder. Only that revised authority reaches the scripted
+planner. Its four-task TaskGraph performs non-mutating impact analysis, one governed
+service implementation, then parallel deterministic test and documentation work.
+The graph's existing source-spec ID/version fields match the revised authority.
+
+Governed execution modifies three existing files and preserves the WSGI adapter,
+package export, and project metadata. The exported application uses an injected
+timezone-aware clock to prove redirect and analytics behavior immediately before,
+at, and after the 24-hour boundary without sleeping. It adds no persistence,
+configurable TTL, migration, or background scheduler. Reviewer tooling validates
+the final export after the orchestrator exit gate; the orchestrator itself retains
+no command-execution authority.
+
+Regenerate and inspect the evidence without an API key or network access:
+
+```bash
+.venv/bin/python -m tests.demo_ambiguity_scenario
+.venv/bin/pytest -q tests/test_ambiguity_demo.py
+cd artifacts/ambiguity-demo-run/expiration-project
+PYTHONPATH=src python -m unittest discover -s tests -v
+```
+
+`ambiguity_resolution.json` is the concise machine-readable governance story;
+`summary.md` is the one-minute evaluator path. The remaining requirement,
+TaskGraph, execution, workspace, engineering-artifact, seed, and exported-product
+files preserve the normal reviewer formats. These deterministic adapters coexist
+with, and do not weaken, the production OpenAI clients.
+
+This scenario demonstrates governed replanning only at the
+requirements-to-planning boundary. If authority changes during execution,
+Checkpoint 1 still marks the graph stale, prohibits further dispatch, safely stops,
+and requires the existing governed planning lifecycle. V0.6 does not rewrite a live
+TaskGraph, recalculate active dependencies, or migrate execution state.
 
 ## Tests
 
