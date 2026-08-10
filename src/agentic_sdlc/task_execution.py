@@ -6,11 +6,13 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentic_sdlc.requirement_spec import ApprovedRequirementSpec
 from agentic_sdlc.task_graph import TaskGraph
 
 
 MAX_TASK_EXECUTION_ATTEMPTS = 3
 MAX_PARALLEL_TASK_EXECUTIONS = 2
+STALE_TASK_GRAPH_REASON = "STALE_TASK_GRAPH"
 
 
 class TaskExecutionStatus(StrEnum):
@@ -137,9 +139,33 @@ class TaskExecutionRecoveryDecision(BaseModel):
     feedback: str
 
 
-def initialize_task_graph_execution(graph: TaskGraph) -> TaskGraphExecutionState:
-    """Create a side-effect-free runtime snapshot from canonical dependencies."""
+def validate_task_graph_source_authority(
+    graph: TaskGraph,
+    authoritative_requirement_spec: ApprovedRequirementSpec,
+) -> None:
+    """Reject a graph that is not bound to current approved requirement authority."""
 
+    if graph.requirement_spec_id != authoritative_requirement_spec.spec_id or (
+        graph.requirement_spec_version != authoritative_requirement_spec.version
+    ):
+        raise TaskExecutionError(
+            f"{STALE_TASK_GRAPH_REASON}: TaskGraph {graph.graph_id} references "
+            f"{graph.requirement_spec_id} version {graph.requirement_spec_version}, "
+            "but current requirement authority is "
+            f"{authoritative_requirement_spec.spec_id} version "
+            f"{authoritative_requirement_spec.version}. Governed replanning is "
+            "required."
+        )
+
+
+def initialize_task_graph_execution(
+    graph: TaskGraph,
+    *,
+    authoritative_requirement_spec: ApprovedRequirementSpec,
+) -> TaskGraphExecutionState:
+    """Create runtime state only when the graph matches current authority."""
+
+    validate_task_graph_source_authority(graph, authoritative_requirement_spec)
     if not graph.tasks:
         raise TaskExecutionError("Cannot initialize an empty TaskGraph.")
     return TaskGraphExecutionState(
@@ -368,7 +394,7 @@ def fail_task_graph_integrity(
     graph: TaskGraph,
     execution: TaskGraphExecutionState,
 ) -> TaskGraphExecutionState:
-    """Freeze future dispatch when live workspace authority is unprovable."""
+    """Freeze future dispatch when live execution authority is unprovable."""
 
     _validate_execution_matches_graph(graph, execution)
     if execution.status not in {
@@ -376,7 +402,7 @@ def fail_task_graph_integrity(
         TaskGraphExecutionStatus.RUNNING,
     }:
         raise TaskExecutionError(
-            "Workspace-integrity failure requires a dispatchable graph execution."
+            "Execution-integrity failure requires a dispatchable graph execution."
         )
     return TaskGraphExecutionState(
         graph_id=execution.graph_id,

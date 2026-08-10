@@ -21,7 +21,13 @@ from agentic_sdlc.prompts import (
     REQUIREMENT_ANALYSIS_PROMPT_VERSION,
     TASK_PLANNING_PROMPT_VERSION,
 )
-from agentic_sdlc.requirement_analysis import RequirementAnalysis
+from agentic_sdlc.requirement_analysis import (
+    RequirementAnalysis,
+    RequirementPlanningReadiness,
+    RequirementPlanningReadinessError,
+    RequirementPlanningReadinessStatus,
+    determine_requirement_planning_readiness,
+)
 from agentic_sdlc.requirement_spec import (
     ApprovedRequirementSpec,
     build_approved_requirement_spec as package_approved_requirement_spec,
@@ -40,6 +46,7 @@ from agentic_sdlc.state import (
     RequirementAnalysisData,
     RequirementAnalysisFailure,
     RequirementAnalysisRecord,
+    RequirementPlanningReadinessData,
     TaskGraphData,
     TaskGraphRecord,
     TaskGraphSemanticsData,
@@ -55,6 +62,7 @@ from agentic_sdlc.task_graph import (
 )
 from agentic_sdlc.task_execution import (
     MAX_PARALLEL_TASK_EXECUTIONS,
+    STALE_TASK_GRAPH_REASON,
     TaskExecutionError,
     TaskExecutionFailure,
     TaskExecutionFailurePhase,
@@ -77,6 +85,7 @@ from agentic_sdlc.task_execution import (
     safe_stop_task_graph_execution,
     start_task_wave,
     start_serialized_task_wave,
+    validate_task_graph_source_authority,
 )
 from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifact,
@@ -284,25 +293,37 @@ def validate_requirement_analysis(state: WorkflowState) -> WorkflowState:
             "requirement_analysis_failures": [failure],
             "trace": ["[validate_requirement_analysis] failed"],
         }
+    revision_number = state.get("requirement_analysis_revision_count", 0)
+    readiness = determine_requirement_planning_readiness(
+        analysis, analysis_revision=revision_number
+    )
     analysis_data = cast(RequirementAnalysisData, analysis.model_dump(mode="json"))
+    readiness_data = cast(
+        RequirementPlanningReadinessData, readiness.model_dump(mode="json")
+    )
     record: RequirementAnalysisRecord = {
         "sequence": len(state.get("requirement_analysis_history", [])) + 1,
-        "revision_number": state.get("requirement_analysis_revision_count", 0),
+        "revision_number": revision_number,
         "attempt_number": state["requirement_analysis_attempt_count"],
         "prompt_version": REQUIREMENT_ANALYSIS_PROMPT_VERSION,
         "model_name": state["requirement_analysis_model"],
         "reviewer_feedback": state.get("requirement_review_feedback", ""),
         "analysis": analysis_data,
+        "planning_readiness": readiness_data,
     }
     return {
         "requirement_analysis_candidate": None,
         "requirement_analysis": analysis_data,
+        "requirement_planning_readiness": readiness_data,
         "requirement_analysis_status": "validated",
         "requirement_analysis_retryable": False,
         "requirement_analysis_error": "",
         "requirement_analysis_history": [record],
         "workflow_status": "awaiting_approval",
-        "trace": ["[validate_requirement_analysis] passed"],
+        "trace": [
+            "[validate_requirement_analysis] passed; planning readiness "
+            f"{readiness.status.value}"
+        ],
     }
 
 
@@ -320,6 +341,10 @@ def prepare_requirement_analysis_retry(state: WorkflowState) -> WorkflowState:
 def requirement_analysis_review(state: WorkflowState) -> WorkflowState:
     """Pause for human authority over one validated requirement analysis."""
 
+    readiness = _requirement_planning_readiness_from_state(state)
+    allowed_decisions = ["REQUEST_CHANGES", "REJECT"]
+    if readiness.status is RequirementPlanningReadinessStatus.READY:
+        allowed_decisions.insert(0, "APPROVE")
     response = cast(
         ApprovalResponse,
         interrupt(
@@ -328,16 +353,25 @@ def requirement_analysis_review(state: WorkflowState) -> WorkflowState:
                 "checkpoint": "requirement_analysis",
                 "message": "Requirement analysis requires human review.",
                 "requirement_analysis": state["requirement_analysis"],
+                "planning_readiness": readiness.model_dump(mode="json"),
                 "revision_number": state.get(
                     "requirement_analysis_revision_count", 0
                 ),
-                "allowed_decisions": ["APPROVE", "REQUEST_CHANGES", "REJECT"],
+                "allowed_decisions": allowed_decisions,
             }
         ),
     )
     decision, feedback = _validated_approval_response(
         response, checkpoint="requirement-analysis"
     )
+    if (
+        decision == "APPROVE"
+        and readiness.status is RequirementPlanningReadinessStatus.BLOCKED
+    ):
+        raise RequirementPlanningReadinessError(
+            f"{readiness.reason_code.value}: blocked requirement analysis cannot "
+            "be approved for planning."
+        )
     revision_number = state.get("requirement_analysis_revision_count", 0)
     event: ApprovalEvent = {
         "sequence": len(state.get("requirement_review_history", [])) + 1,
@@ -585,8 +619,21 @@ def initialize_task_graph_execution_node(
         "approved_task_graph"
     ):
         raise ValueError("TaskGraph execution requires an approved TaskGraph.")
+    spec = _spec_from_state(state)
     graph = _task_graph_from_data(state["approved_task_graph"])
-    execution = initialize_task_graph_execution(graph)
+    try:
+        execution = initialize_task_graph_execution(
+            graph, authoritative_requirement_spec=spec
+        )
+    except TaskExecutionError as error:
+        if not str(error).startswith(f"{STALE_TASK_GRAPH_REASON}:"):
+            raise
+        return {
+            "safe_stop_reason": STALE_TASK_GRAPH_REASON,
+            "workflow_status": "pending",
+            "errors": [*state.get("errors", []), str(error)],
+            "trace": ["[initialize_task_graph_execution] stale TaskGraph blocked"],
+        }
     run_id = state.get("run_id", "")
     try:
         workspace = workspace_runtime.establish_workspace_for_run(run_id)
@@ -655,6 +702,17 @@ def execute_task_graph_step(
             "trace": [
                 "[execute_task_graph_step] initialization failure retained"
             ],
+        }
+    try:
+        validate_task_graph_source_authority(graph, spec)
+    except TaskExecutionError as error:
+        failed = fail_task_graph_integrity(graph, execution)
+        return {
+            "task_graph_execution": failed,
+            "safe_stop_reason": STALE_TASK_GRAPH_REASON,
+            "workflow_status": "pending",
+            "errors": [*state.get("errors", []), str(error)],
+            "trace": ["[execute_task_graph_step] stale TaskGraph blocked"],
         }
     session = _workspace_session_from_state(state)
     authoritative_snapshot = _authoritative_workspace_snapshot(state, session)
@@ -1602,6 +1660,8 @@ def safe_stop(state: WorkflowState) -> WorkflowState:
         reason = state.get("safe_stop_reason") or (
             "TaskGraph execution failed and was stopped safely."
         )
+    elif state.get("safe_stop_reason"):
+        reason = state["safe_stop_reason"]
     elif state.get("requirement_analysis_status") == "failed":
         reason = state.get("requirement_analysis_error") or (
             REQUIREMENT_ANALYSIS_ATTEMPTS_REASON
@@ -1885,6 +1945,28 @@ def _pydantic_failure_reason(prefix: str, error: ValidationError) -> str:
     first_error = error.errors(include_url=False)[0]
     location = ".".join(str(part) for part in first_error["loc"]) or "root"
     return f"{prefix} failed at {location}: {first_error['msg']}."
+
+
+def _requirement_planning_readiness_from_state(
+    state: WorkflowState,
+) -> RequirementPlanningReadiness:
+    analysis = RequirementAnalysis.model_validate(state["requirement_analysis"])
+    expected = determine_requirement_planning_readiness(
+        analysis,
+        analysis_revision=state.get("requirement_analysis_revision_count", 0),
+    )
+    stored_value = state.get("requirement_planning_readiness")
+    if stored_value is None:
+        raise ValueError("Validated requirement analysis lacks a readiness decision.")
+    stored = RequirementPlanningReadiness.model_validate_json(
+        json.dumps(stored_value)
+    )
+    if stored != expected:
+        raise ValueError(
+            "Stored requirement planning readiness does not match the current "
+            "validated analysis revision."
+        )
+    return stored
 
 
 def _spec_from_state(state: WorkflowState) -> ApprovedRequirementSpec:

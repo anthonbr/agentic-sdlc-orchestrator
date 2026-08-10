@@ -38,6 +38,7 @@ from agentic_sdlc.nodes import (
     task_graph_review,
     validate_requirement_analysis,
 )
+from agentic_sdlc.requirement_analysis import RequirementPlanningReadinessError
 from agentic_sdlc.state import (
     MAX_REQUIREMENT_ANALYSIS_ATTEMPTS,
     MAX_REQUIREMENT_REVISIONS,
@@ -112,6 +113,17 @@ def route_after_requirement_review(
 
     decision = state.get("requirement_review_decision")
     if decision == "APPROVE":
+        readiness = state.get("requirement_planning_readiness")
+        if readiness is None or readiness["status"] != "READY":
+            reason_code = (
+                readiness["reason_code"]
+                if readiness is not None
+                else "MISSING_REQUIREMENT_PLANNING_READINESS"
+            )
+            raise RequirementPlanningReadinessError(
+                f"{reason_code}: blocked requirement analysis cannot advance to "
+                "approved specification creation."
+            )
         return "build_approved_requirement_spec"
     if decision == "REJECT":
         return "safe_stop"
@@ -187,6 +199,16 @@ def route_after_task_graph_execution_step(
     if status is TaskGraphExecutionStatus.FAILED:
         return "safe_stop"
     raise ValueError(f"Unsupported TaskGraph execution route: {status.value}.")
+
+
+def route_after_task_graph_execution_initialization(
+    state: WorkflowState,
+) -> Literal["execute_task_graph_step", "safe_stop"]:
+    """Do not enter execution when source authority blocked initialization."""
+
+    if state.get("task_graph_execution") is None:
+        return "safe_stop"
+    return "execute_task_graph_step"
 
 
 def build_workflow(
@@ -333,7 +355,14 @@ def build_workflow(
 
     # Dynamic TASK-### records remain data interpreted by this fixed static loop.
     builder.add_edge("approve_task_graph", "initialize_task_graph_execution")
-    builder.add_edge("initialize_task_graph_execution", "execute_task_graph_step")
+    builder.add_conditional_edges(
+        "initialize_task_graph_execution",
+        route_after_task_graph_execution_initialization,
+        {
+            "execute_task_graph_step": "execute_task_graph_step",
+            "safe_stop": "safe_stop",
+        },
+    )
     builder.add_conditional_edges(
         "execute_task_graph_step",
         route_after_task_graph_execution_step,

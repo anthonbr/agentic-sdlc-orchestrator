@@ -109,8 +109,11 @@ def _prompt_for_requirement_analysis_decision(
     _print_analysis_list("Acceptance criteria", analysis["acceptance_criteria"])
     _print_analysis_list("Risks", analysis["risks"])
     print(f"Needs clarification: {analysis['needs_clarification']}")
+    readiness = payload["planning_readiness"]
+    print(f"Planning readiness: {readiness['status']}")
+    print(f"Readiness reason: {readiness['reason_code'] or 'None'}")
     print(f"Confidence: {analysis['confidence']:.2f}")
-    return _prompt_for_decision()
+    return _prompt_for_decision(payload["allowed_decisions"])
 
 
 def _print_analysis_list(label: str, values: list[str]) -> None:
@@ -185,16 +188,36 @@ def _prompt_for_task_graph_decision(payload: dict[str, Any]) -> ApprovalResponse
     print(
         "EXIT predecessors: " + ", ".join(semantics["exit_predecessor_tasks"])
     )
-    return _prompt_for_decision()
+    return _prompt_for_decision(payload["allowed_decisions"])
 
 
-def _prompt_for_decision() -> ApprovalResponse:
-    choices = {"a": "APPROVE", "c": "REQUEST_CHANGES", "r": "REJECT"}
+def _prompt_for_decision(
+    allowed_decisions: list[str] | None = None,
+) -> ApprovalResponse:
+    all_choices = {"a": "APPROVE", "c": "REQUEST_CHANGES", "r": "REJECT"}
+    allowed = set(
+        all_choices.values() if allowed_decisions is None else allowed_decisions
+    )
+    choices = {
+        key: decision for key, decision in all_choices.items() if decision in allowed
+    }
+    if not choices:
+        raise ValueError("Human review exposes no supported decisions.")
+    labels = {
+        "a": "[A] Approve",
+        "c": "[C] Request changes",
+        "r": "[R] Reject",
+    }
+    prompt = "  ".join(labels[key] for key in all_choices if key in choices) + ": "
+    expected = ", ".join(key.upper() for key in choices)
     while True:
-        choice = input("[A] Approve  [C] Request changes  [R] Reject: ").strip().lower()
+        choice = input(prompt).strip().lower()
         if choice in choices:
             break
-        print("Please enter A, C, or R.")
+        if len(choices) == 3:
+            print("Please enter A, C, or R.")
+        else:
+            print(f"Please enter {expected.replace(', ', ' or ')}.")
 
     feedback = ""
     if choice == "c":

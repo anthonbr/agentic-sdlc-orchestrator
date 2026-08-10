@@ -14,13 +14,16 @@ the software-development lifecycle.
 - **V0.4 — Governed LLM task planning:** a human-approved requirement
   specification, LLM-proposed engineering task dependencies, deterministic graph
   normalization/validation, and human TaskGraph approval.
-- **V0.5 — Governed TaskGraph execution runtime (current slices):** separate
+- **V0.5 — Governed TaskGraph execution runtime:** separate
   execution state, deterministic readiness and transitions, application-owned
   contracts and artifacts, a bounded OpenAI executor, and a static governed loop
   that interprets the approved engineering TaskGraph through bounded parallel
   execution waves and governed mutation of one disposable isolated workspace.
+- **V0.6 — Governed ambiguity resolution (Checkpoint 1):** deterministic
+  requirement planning readiness, clarification through the existing immutable
+  analysis-revision loop, and stale TaskGraph/source-spec execution protection.
 
-The current V0.5 slices execute approved engineering tasks as bounded semantic
+The V0.5 execution slices execute approved engineering tasks as bounded semantic
 LLM calls and may transactionally materialize validated desired files only beneath
 one factory-created disposable workspace. They do **not** mutate the orchestrator
 checkout or an authoritative repository, run generated code or commands, perform
@@ -49,11 +52,11 @@ flowchart TD
     validateAnalysis -->|invalid| analysisRetry
     analysisRetry --> analyst
     analyst -->|exhausted/non-retryable| safe[safe_stop]
-    validateAnalysis -->|valid| requirementReview[requirement_analysis_review]
+    validateAnalysis -->|valid; READY or BLOCKED| requirementReview[requirement_analysis_review]
     requirementReview -->|request changes| analysisRevision[prepare analysis revision]
     analysisRevision --> analyst
     requirementReview -->|reject/revision limit| safe
-    requirementReview -->|approve| spec[build_approved_requirement_spec]
+    requirementReview -->|READY + approve| spec[build_approved_requirement_spec]
     spec --> planner[task_decomposition_task]
     planner --> validateGraph[normalize_and_validate_task_graph]
     planner -->|provider failure| graphRetry[bounded task-planning retry]
@@ -66,10 +69,12 @@ flowchart TD
     graphReview -->|reject/revision limit| safe
     graphReview -->|approve| approved[approve_task_graph]
     approved --> initExecution[initialize_task_graph_execution]
+    initExecution -->|stale source specification| safe
     initExecution --> execute[execute_task_graph_step]
     execute -->|RUNNING| execute
     execute -->|SUCCEEDED| exit[exit_gate]
     execute -->|FAILED| safe
+    execute -->|stale source specification| safe
     safe --> END
     exit --> END
 ```
@@ -110,6 +115,15 @@ freezes new dispatch. Already-running peers may settle without unlocking more
 work; failure remains sticky, and `SAFE_STOPPED` requires no task to remain
 `RUNNING`. Slice 5 adds a controlled `RUNNING -> READY` recovery transition;
 `start_task()` remains the only operation that starts and counts a new attempt.
+
+Before runtime initialization and before every execution-loop advance, the
+approved TaskGraph's existing `requirement_spec_id` and
+`requirement_spec_version` must match the currently authoritative approved
+requirement specification. A mismatch produces `STALE_TASK_GRAPH`, creates or
+dispatches no task work, and reaches governed safe stop before workspace access
+or mutation. Replanning continues through the existing planning lifecycle; V0.6
+does not mutate a live DAG, migrate execution state, or automatically construct a
+replacement graph.
 
 Multiple tasks can be ready at once. The scheduler selects at most
 `MAX_PARALLEL_TASK_EXECUTIONS = 2` in canonical TaskGraph order, starts the whole
@@ -483,6 +497,22 @@ validated intent passes the governed isolated-workspace mutation gate.
 
 ## Governed planning and lineage
 
+Every validated requirement-analysis revision receives an immutable deterministic
+planning-readiness decision. `needs_clarification=true` requires at least one
+nonblank ambiguity item and yields `BLOCKED` with reason code
+`UNRESOLVED_REQUIREMENT_AMBIGUITY`; `needs_clarification=false` yields `READY`.
+An `AMB-###` item does not mechanically block planning, so a knowingly accepted or
+non-blocking ambiguity may remain explicit on a ready analysis.
+
+Blocked requirement review exposes only `REQUEST_CHANGES` and `REJECT`, and the
+domain path rejects an attempted `APPROVE`. `REQUEST_CHANGES` uses the existing
+bounded revision loop: the prior analysis, its ambiguity and readiness evidence,
+the human decision, and exact feedback remain in history while the analyst creates
+the next revision. No approved requirement specification or TaskGraph-planner call
+is permitted until the current revision is ready. Human approval then packages only
+that ready revision as the authoritative `ApprovedRequirementSpec` consumed by the
+planner.
+
 After requirement-analysis approval, deterministic code packages the exact
 approved text into an immutable `ApprovedRequirementSpec`. There is no second LLM
 rewrite between approval and specification creation.
@@ -540,9 +570,10 @@ Human graph revisions are separately limited to three. Rejection or exhaustion
 safe-stops without executing tasks.
 
 The models include versions, content hashes, lineage IDs, and optional predecessor
-IDs so a future milestone can represent `SPEC-v1 -> GRAPH-v1` followed by
-`SPEC-v2 -> GRAPH-v2` without mutating history. V0.4 does not implement upstream
-change reconciliation or execution-state migration.
+IDs so `SPEC-v1 -> GRAPH-v1` can be followed by `SPEC-v2 -> GRAPH-v2` without
+mutating history. V0.6 prohibits execution of `GRAPH-v1` under `SPEC-v2` authority
+and requires governed replanning; it does not implement live upstream-change
+reconciliation, DAG mutation, or execution-state migration.
 
 ## Setup and run
 

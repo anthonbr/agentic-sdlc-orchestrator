@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pytest import raises
 
+from agentic_sdlc.requirement_spec import ApprovedRequirementSpec
 from agentic_sdlc.task_execution import (
     MAX_PARALLEL_TASK_EXECUTIONS,
     MAX_TASK_EXECUTION_ATTEMPTS,
@@ -68,6 +69,35 @@ def _graph(*tasks: Task, graph_id: str = "GRAPH-TEST-V001") -> TaskGraph:
     )
 
 
+def _spec(
+    *, spec_id: str = "SPEC-TEST-V001", version: int = 1
+) -> ApprovedRequirementSpec:
+    return ApprovedRequirementSpec(
+        spec_id=spec_id,
+        lineage_id="spec-lineage",
+        version=version,
+        supersedes_spec_id=None,
+        source_analysis_revision=0,
+        created_at="2026-08-09T12:00:00+00:00",
+        content_hash="1" * 64,
+        normalized_problem_statement="Build the governed test service.",
+        requirement_type="greenfield",
+        assumptions=(),
+        functional_requirements=(),
+        nonfunctional_requirements=(),
+        constraints=(),
+        acceptance_criteria=(),
+        risks=(),
+        ambiguities=(),
+    )
+
+
+def _initialize(graph: TaskGraph) -> TaskGraphExecutionState:
+    return initialize_task_graph_execution(
+        graph, authoritative_requirement_spec=_spec()
+    )
+
+
 def _status(
     execution: TaskGraphExecutionState, task_id: str
 ) -> TaskExecutionStatus:
@@ -90,7 +120,7 @@ def _fan_out_with_running_peers() -> tuple[TaskGraph, TaskGraphExecutionState]:
         _task("TASK-002", "TASK-001"),
         _task("TASK-003", "TASK-001"),
     )
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
     execution = start_task(graph, execution, "TASK-001")
     execution = mark_task_succeeded(graph, execution, "TASK-001")
     execution = start_task(graph, execution, "TASK-002")
@@ -101,7 +131,7 @@ def _fan_out_with_running_peers() -> tuple[TaskGraph, TaskGraphExecutionState]:
 def test_initialization_assigns_ready_blocked_and_zero_attempts() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002", "TASK-001"))
 
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
 
     assert execution.graph_id == graph.graph_id
     assert execution.status is TaskGraphExecutionStatus.PENDING
@@ -110,9 +140,32 @@ def test_initialization_assigns_ready_blocked_and_zero_attempts() -> None:
     assert [state.attempt_count for state in execution.task_states] == [0, 0]
 
 
+def test_initialization_accepts_graph_bound_to_current_requirement_authority() -> None:
+    graph = _graph(_task("TASK-001"))
+
+    execution = initialize_task_graph_execution(
+        graph, authoritative_requirement_spec=_spec()
+    )
+
+    assert execution.status is TaskGraphExecutionStatus.PENDING
+    assert _status(execution, "TASK-001") is TaskExecutionStatus.READY
+
+
+def test_initialization_rejects_stale_task_graph_source_authority() -> None:
+    graph = _graph(_task("TASK-001"))
+
+    with raises(TaskExecutionError, match="^STALE_TASK_GRAPH:"):
+        initialize_task_graph_execution(
+            graph,
+            authoritative_requirement_spec=_spec(
+                spec_id="SPEC-TEST-V002", version=2
+            ),
+        )
+
+
 def test_ready_task_ids_preserve_canonical_graph_order() -> None:
     graph = _graph(_task("TASK-010"), _task("TASK-002"), _task("TASK-007"))
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
 
     assert ready_task_ids(graph, execution) == (
         "TASK-010",
@@ -123,7 +176,7 @@ def test_ready_task_ids_preserve_canonical_graph_order() -> None:
 
 def test_ready_task_wave_is_canonical_and_capped_at_fixed_parallel_limit() -> None:
     graph = _graph(_task("TASK-010"), _task("TASK-002"), _task("TASK-007"))
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
 
     assert MAX_PARALLEL_TASK_EXECUTIONS == 2
     assert ready_task_wave_ids(graph, execution) == ("TASK-010", "TASK-002")
@@ -131,7 +184,7 @@ def test_ready_task_wave_is_canonical_and_capped_at_fixed_parallel_limit() -> No
 
 def test_ready_task_wave_is_empty_for_terminal_execution() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002"))
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
     execution = start_task_wave(graph, execution, ("TASK-001", "TASK-002"))
     execution = mark_task_failed(graph, execution, "TASK-001")
     execution = mark_task_succeeded(graph, execution, "TASK-002")
@@ -142,7 +195,7 @@ def test_ready_task_wave_is_empty_for_terminal_execution() -> None:
 
 def test_start_task_wave_authorizes_all_members_in_order_and_counts_attempts() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002"), _task("TASK-003"))
-    initial = initialize_task_graph_execution(graph)
+    initial = _initialize(graph)
 
     started = start_task_wave(graph, initial, ("TASK-001", "TASK-002"))
 
@@ -157,7 +210,7 @@ def test_start_task_wave_authorizes_all_members_in_order_and_counts_attempts() -
 
 def test_start_task_wave_rejects_noncanonical_selection_before_authorization() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002"), _task("TASK-003"))
-    initial = initialize_task_graph_execution(graph)
+    initial = _initialize(graph)
 
     with raises(TaskExecutionError, match="canonical bounded READY"):
         start_task_wave(graph, initial, ("TASK-002", "TASK-001"))
@@ -171,7 +224,7 @@ def test_start_task_wave_rejects_noncanonical_selection_before_authorization() -
 
 def test_serialized_fallback_authorizes_one_explicit_ready_retry() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002"))
-    initial = initialize_task_graph_execution(graph)
+    initial = _initialize(graph)
 
     started = start_serialized_task_wave(graph, initial, "TASK-002")
 
@@ -184,7 +237,7 @@ def test_workspace_integrity_failure_aborts_running_peer_before_safe_stop() -> N
     graph = _graph(_task("TASK-001"), _task("TASK-002"))
     running = start_task_wave(
         graph,
-        initialize_task_graph_execution(graph),
+        _initialize(graph),
         ("TASK-001", "TASK-002"),
     )
 
@@ -200,7 +253,7 @@ def test_workspace_integrity_failure_aborts_running_peer_before_safe_stop() -> N
 
 def test_predispatch_integrity_failure_freezes_ready_graph() -> None:
     graph = _graph(_task("TASK-001"))
-    initial = initialize_task_graph_execution(graph)
+    initial = _initialize(graph)
 
     failed = fail_task_graph_integrity(graph, initial)
 
@@ -211,7 +264,7 @@ def test_predispatch_integrity_failure_freezes_ready_graph() -> None:
 
 def test_start_task_transitions_ready_to_running_and_increments_attempt() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002"))
-    initial = initialize_task_graph_execution(graph)
+    initial = _initialize(graph)
 
     running = start_task(graph, initial, "TASK-001")
 
@@ -230,7 +283,7 @@ def test_linear_chain_unlocks_and_completes_graph() -> None:
         _task("TASK-002", "TASK-001"),
         _task("TASK-003", "TASK-002"),
     )
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
 
     execution = start_task(graph, execution, "TASK-001")
     execution = mark_task_succeeded(graph, execution, "TASK-001")
@@ -257,7 +310,7 @@ def test_fan_out_unlocks_multiple_ready_tasks() -> None:
         _task("TASK-002", "TASK-001"),
         _task("TASK-003", "TASK-001"),
     )
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
 
     execution = start_task(graph, execution, "TASK-001")
     execution = mark_task_succeeded(graph, execution, "TASK-001")
@@ -273,7 +326,7 @@ def test_fan_in_waits_for_every_dependency() -> None:
         _task("TASK-002"),
         _task("TASK-003", "TASK-001", "TASK-002"),
     )
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
 
     execution = start_task(graph, execution, "TASK-001")
     execution = mark_task_succeeded(graph, execution, "TASK-001")
@@ -288,7 +341,7 @@ def test_fan_in_waits_for_every_dependency() -> None:
 
 def test_failure_marks_graph_failed_and_does_not_unlock_dependents() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002", "TASK-001"))
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
     execution = start_task(graph, execution, "TASK-001")
 
     failed = mark_task_failed(graph, execution, "TASK-001")
@@ -302,7 +355,7 @@ def test_failure_marks_graph_failed_and_does_not_unlock_dependents() -> None:
 def test_failed_execution_can_transition_to_safe_stopped() -> None:
     graph = _graph(_task("TASK-001"))
     execution = start_task(
-        graph, initialize_task_graph_execution(graph), "TASK-001"
+        graph, _initialize(graph), "TASK-001"
     )
     failed = mark_task_failed(graph, execution, "TASK-001")
 
@@ -315,7 +368,7 @@ def test_failed_execution_can_transition_to_safe_stopped() -> None:
 
 def test_cannot_start_blocked_running_or_succeeded_task() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002", "TASK-001"))
-    initial = initialize_task_graph_execution(graph)
+    initial = _initialize(graph)
     with raises(TaskExecutionError, match="BLOCKED"):
         start_task(graph, initial, "TASK-002")
 
@@ -330,7 +383,7 @@ def test_cannot_start_blocked_running_or_succeeded_task() -> None:
 
 def test_non_running_task_cannot_be_marked_succeeded_or_failed() -> None:
     graph = _graph(_task("TASK-001"))
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
 
     with raises(TaskExecutionError, match="cannot succeed from READY"):
         mark_task_succeeded(graph, execution, "TASK-001")
@@ -340,7 +393,7 @@ def test_non_running_task_cannot_be_marked_succeeded_or_failed() -> None:
 
 def test_unknown_task_ids_are_rejected() -> None:
     graph = _graph(_task("TASK-001"))
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
 
     with raises(TaskExecutionError, match="Unknown task ID"):
         start_task(graph, execution, "TASK-999")
@@ -353,7 +406,7 @@ def test_unknown_task_ids_are_rejected() -> None:
 def test_failed_graph_rejects_dispatch_and_non_running_task_settlement() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002"))
     execution = start_task(
-        graph, initialize_task_graph_execution(graph), "TASK-001"
+        graph, _initialize(graph), "TASK-001"
     )
     failed = mark_task_failed(graph, execution, "TASK-001")
 
@@ -396,7 +449,7 @@ def test_failure_freezes_dispatch_of_other_ready_work() -> None:
         _task("TASK-002"),
         _task("TASK-003"),
     )
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
     execution = start_task(graph, execution, "TASK-001")
     execution = mark_task_failed(graph, execution, "TASK-001")
 
@@ -414,7 +467,7 @@ def test_successful_settlement_after_failure_does_not_unlock_downstream() -> Non
         _task("TASK-002"),
         _task("TASK-003", "TASK-002"),
     )
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
     execution = start_task(graph, execution, "TASK-001")
     execution = start_task(graph, execution, "TASK-002")
     execution = mark_task_failed(graph, execution, "TASK-001")
@@ -429,7 +482,7 @@ def test_successful_settlement_after_failure_does_not_unlock_downstream() -> Non
 
 def test_safe_stop_is_rejected_while_a_peer_is_still_running() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002"))
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
     execution = start_task(graph, execution, "TASK-001")
     execution = start_task(graph, execution, "TASK-002")
     execution = mark_task_failed(graph, execution, "TASK-001")
@@ -446,7 +499,7 @@ def test_safe_stop_is_rejected_while_a_peer_is_still_running() -> None:
 
 def test_safe_stop_succeeds_after_running_peers_settle() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002"))
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
     execution = start_task(graph, execution, "TASK-001")
     execution = start_task(graph, execution, "TASK-002")
     execution = mark_task_failed(graph, execution, "TASK-001")
@@ -465,7 +518,7 @@ def test_safe_stop_succeeds_after_running_peers_settle() -> None:
 
 def test_safe_stop_requires_failed_graph_execution() -> None:
     graph = _graph(_task("TASK-001"))
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
 
     with raises(TaskExecutionError, match="Only a FAILED"):
         safe_stop_task_graph_execution(graph, execution)
@@ -474,7 +527,7 @@ def test_safe_stop_requires_failed_graph_execution() -> None:
 def test_execution_cannot_be_used_with_another_graph() -> None:
     first = _graph(_task("TASK-001"), graph_id="GRAPH-ONE-V001")
     second = _graph(_task("TASK-001"), graph_id="GRAPH-TWO-V001")
-    execution = initialize_task_graph_execution(first)
+    execution = _initialize(first)
 
     with raises(TaskExecutionError, match="does not match"):
         ready_task_ids(second, execution)
@@ -507,7 +560,7 @@ def test_runtime_transitions_do_not_mutate_approved_task_graph() -> None:
         _task("TASK-002", "TASK-001"),
     )
     planning_snapshot = graph.model_dump(mode="json")
-    execution = initialize_task_graph_execution(graph)
+    execution = _initialize(graph)
     execution = start_task(graph, execution, "TASK-001")
     execution = mark_task_succeeded(graph, execution, "TASK-001")
     execution = start_task(graph, execution, "TASK-002")
@@ -529,7 +582,7 @@ def test_prepare_retry_returns_running_task_to_ready_without_counting_attempt() 
         _task("TASK-003", "TASK-001"),
     )
     running = start_task(
-        graph, initialize_task_graph_execution(graph), "TASK-001"
+        graph, _initialize(graph), "TASK-001"
     )
 
     retry_ready = prepare_task_retry(graph, running, "TASK-001")
@@ -548,13 +601,13 @@ def test_prepare_retry_returns_running_task_to_ready_without_counting_attempt() 
 
 def test_prepare_retry_rejects_invalid_task_and_graph_states_or_exhaustion() -> None:
     graph = _graph(_task("TASK-001"), _task("TASK-002"))
-    initial = initialize_task_graph_execution(graph)
+    initial = _initialize(graph)
     one_running = start_task(graph, initial, "TASK-002")
     with raises(TaskExecutionError, match="READY"):
         prepare_task_retry(graph, one_running, "TASK-001")
 
     blocked_graph = _graph(_task("TASK-001"), _task("TASK-002", "TASK-001"))
-    blocked_initial = initialize_task_graph_execution(blocked_graph)
+    blocked_initial = _initialize(blocked_graph)
     blocked_running = start_task(blocked_graph, blocked_initial, "TASK-001")
     with raises(TaskExecutionError, match="BLOCKED"):
         prepare_task_retry(blocked_graph, blocked_running, "TASK-002")

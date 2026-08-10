@@ -1,6 +1,9 @@
 """Agentic SDLC Orchestrator."""
 
-from agentic_sdlc.requirement_analysis import RequirementAnalysis
+from agentic_sdlc.requirement_analysis import (
+    RequirementAnalysis,
+    RequirementPlanningReadiness,
+)
 from agentic_sdlc.requirement_spec import ApprovedRequirementSpec
 from agentic_sdlc.state import demo_input
 from agentic_sdlc.task_graph import ProposedTaskGraph, TaskGraph
@@ -10,6 +13,7 @@ __all__ = [
     "ApprovedRequirementSpec",
     "ProposedTaskGraph",
     "RequirementAnalysis",
+    "RequirementPlanningReadiness",
     "TaskGraph",
     "build_workflow",
     "demo_input",
