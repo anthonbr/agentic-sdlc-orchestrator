@@ -395,10 +395,7 @@ def validate_workspace_change_set(
             "Referenced SOURCE artifacts do not exactly match the supplied set.",
         )
 
-    expected_id = _change_set_id(
-        _change_set_payload_from_change_set(change_set)
-    )
-    if change_set.change_set_id != expected_id:
+    if not workspace_change_set_identity_is_valid(change_set):
         _add_issue(
             issues,
             WorkspaceChangeSetIssueCode.CHANGE_SET_ID,
@@ -406,6 +403,16 @@ def validate_workspace_change_set(
             "Change-set identity does not match its canonical contents.",
         )
     return _validation_result(change_set, snapshot, issues)
+
+
+def workspace_change_set_identity_is_valid(
+    change_set: WorkspaceChangeSet,
+) -> bool:
+    """Return whether a change set ID still binds its canonical contents."""
+
+    return change_set.change_set_id == _change_set_id(
+        _change_set_payload_from_change_set(change_set)
+    )
 
 
 def validate_workspace_change_set_preimages(

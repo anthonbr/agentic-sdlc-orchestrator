@@ -200,8 +200,76 @@ sorted and reported deterministically: two `NO_CHANGE` observations are compatib
 while any overlap containing `CREATE` or `MODIFY` fails closed, even for identical
 desired contents or mutation plus `NO_CHANGE`. No AI merge or completion-order
 selection occurs. This slice performs no writes, deletes, copying, Git operations,
-shell execution, or task-settlement integration; transactional mutation and
-postimage verification remain deferred.
+shell execution, or task-settlement integration; the separate bounded runtime below
+is the only component authorized to realize a validated change set.
+
+### Isolated transactional workspace mutation
+
+`workspace_contracts.py` remains the pure, I/O-free desired-state layer. The first
+real filesystem authority is the separately bounded `IsolatedWorkspace`
+capability: application code creates a unique empty directory, binds its canonical
+root and filesystem identity to a non-empty workspace ID, and passes that capability
+rather than an arbitrary path. The runtime never implicitly targets the
+orchestrator checkout, copies a source repository, or creates a Git worktree.
+
+The runtime snapshots regular files beneath the isolated root without following
+symlinks and builds the existing canonical `WorkspaceSnapshot`; binary files use
+raw-byte SHA-256 while ordinary UTF-8 files match the existing complete-content
+hash. Symlinks, special files, replaced roots, non-directory parents, protected or
+noncanonical paths, and physical name aliases are rejected. Immediately before
+effects, every target is re-inspected against the real filesystem. This runtime
+containment layer supplements rather than replaces the pure lexical path policy.
+
+Mutation requires a passed, issue-free `WorkspaceChangeSetValidationResult` that
+correlates exactly with the change set, its base snapshot, and the isolated
+workspace. Before any snapshot or effect, the mutator also recomputes the current
+canonical change-set identity so stale validation cannot authorize copied or
+tampered desired-state contents. The current real snapshot is then checked through
+targeted optimistic preimages. Global snapshot drift alone is not a rejection:
+disjoint change sets derived from the same base may be applied serially when each
+target's own expected preimage still matches.
+
+After whole-change-set preflight, changes are applied in canonical path order.
+`CREATE` uses exclusive creation beneath safely created and transaction-tracked
+parents; `MODIFY` rechecks its preimage, preserves prior mode bits, and uses a
+same-directory temporary file plus atomic replacement; `NO_CHANGE` performs no
+write and only verifies state. SOURCE content remains complete desired file data,
+and neither the LLM nor `TaskExecutor` can claim an operation occurred or assign a
+mutation outcome.
+
+Internal MODIFY staging files are transaction-owned effects. A failed staging
+operation is a clean rejection only after staging-file removal and absence are
+verified. If initial cleanup fails, the normal rollback path retries removal using
+captured identity, content, and mode evidence; verified removal yields
+`ROLLED_BACK`, while residue that cannot be safely removed or verified yields
+`ROLLBACK_FAILED`. Random staging paths remain private runtime details.
+
+A transaction-owned effect is never represented as `REJECTED` merely because an
+operational cleanup or inspection failed before its evidence record was finalized.
+Descriptor-close failures remain bounded runtime or mutation evidence without
+replacing an earlier primary failure. A parent directory is recorded as a possible
+effect immediately after successful creation; unavailable ownership metadata then
+fails closed as `ROLLBACK_FAILED` rather than forgetting filesystem residue.
+
+Every desired postimage is verified from a fresh real snapshot. A handled failure
+after effects begin triggers reverse-order rollback: transaction-created files are
+removed only while their recorded device/inode and captured transaction-owned
+content hash and mode still match (including safely captured partial CREATE state),
+modified files are restored only while the transaction-written identity, content,
+and mode remain intact, and transaction-created directories are removed
+deepest-first only when they are still the same empty directories. Exact prior bytes
+and mode bits are verified after restore.
+Intervening content or mode changes are preserved and produce fail-closed
+`ROLLBACK_FAILED` evidence rather than being overwritten or deleted.
+The immutable result is `APPLIED`, pre-effect `REJECTED`, verified `ROLLED_BACK`, or
+explicit `ROLLBACK_FAILED`, with canonical per-file and structured issue evidence.
+
+These guarantees are process-level transactions for handled failures, not
+crash-consistent journaling, power-loss durability, ACID filesystem isolation, or
+hostile same-host process containment. Workspaces are retained for inspection; no
+automatic cleanup, TaskGraph settlement integration, filesystem retry, concurrent
+filesystem mutation, Git/shell operation, generated-code execution, or promotion
+into an authoritative repository exists yet.
 
 ### Bounded LLM task-executor adapter
 
@@ -478,14 +546,18 @@ bounded recovery, terminal-peer settlement, and quiescent safe stop through actu
 LangGraph routing. Workspace-contract tests cover deterministic logical snapshots,
 SOURCE desired-state interpretation, conservative path policy, derived operations,
 tamper detection, optimistic preimages, and order-independent parallel conflict
-evidence without filesystem I/O.
+evidence without filesystem I/O. Workspace-runtime and mutation tests exercise real
+isolated files, non-following snapshots, runtime containment, targeted preimages,
+exclusive creation, atomic mode-preserving replacement, postimage verification,
+fault-injected rollback, and explicit rollback-failure evidence.
 
 ## Deliberately deferred
 
 The current V0.5 slice does not include cancellation, production task/wave timeout
 policy, work-conserving streaming dispatch, fallback models or providers, delayed
-retry/backoff policy, distributed workers, transactional workspace mutation,
-repository copying or Git worktrees, DELETE support, generated-code execution,
-repository-writing agents, dynamically generated LangGraph nodes, full dynamic
-replanning, completed-task reconciliation, brownfield impact analysis, rollback,
+retry/backoff policy, distributed workers, repository copying or Git worktrees,
+DELETE support, generated-code execution,
+authoritative-repository promotion, crash-recovery journaling, dynamically generated
+LangGraph nodes, workspace mutation settlement integration, full dynamic replanning,
+completed-task reconciliation, brownfield impact analysis, cross-process rollback,
 skill loading, a persistent execution store, deployment, or a web UI.

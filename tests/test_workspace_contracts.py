@@ -26,6 +26,7 @@ from agentic_sdlc.workspace_contracts import (
     normalize_repository_path,
     validate_workspace_change_set,
     validate_workspace_change_set_preimages,
+    workspace_change_set_identity_is_valid,
     workspace_file_content_hash,
 )
 
@@ -320,6 +321,7 @@ def test_valid_change_set_passes_deterministically() -> None:
     assert first.passed is True
     assert first.issues == ()
     assert first == second
+    assert workspace_change_set_identity_is_valid(change_set) is True
 
 
 def test_change_set_validation_rejects_noncanonical_snapshot_identity() -> None:
@@ -417,6 +419,8 @@ def test_change_set_validation_detects_tampering(
 
     assert result.passed is False
     assert expected_code in _codes(result)
+    if tamper not in {"request", "attempt", "task"}:
+        assert workspace_change_set_identity_is_valid(change_set) is False
 
 
 def test_change_set_validation_detects_missing_and_non_source_artifacts() -> None:
