@@ -639,6 +639,41 @@ storage, a thin WSGI HTTP adapter, and executable `unittest` coverage. The gener
 `artifacts/workflow_diagram.png` documents the static LangGraph control plane, not
 the per-run engineering TaskGraph.
 
+### Deterministic governed brownfield analytics demo
+
+`artifacts/brownfield-demo-run/` is a separate network-free scenario that treats
+the six-file greenfield reviewer export as an approved pre-existing codebase. A
+narrow bootstrap helper copies only an explicit manifest of regular files into a
+new, empty, factory-created isolated workspace without following symlinks. It
+records the logical source root, source and seeded SHA-256 values, and the derived
+authoritative baseline snapshot. This bootstrap is scenario preparation before the
+governed session begins; it is not an agent-authored change set and never modifies
+`artifacts/demo-run/generated-project/`.
+
+The approved five-task graph first runs a `FORBIDDEN` impact analysis against five
+explicit repository files. Parallel REQUIRED implementation tasks then modify the
+service and WSGI adapter from one shared baseline binding; a later parallel wave
+modifies the existing regression-test and documentation files after observing the
+authoritative implementation postimages. Task-scoped path selection and normal
+dependency evidence provide only the required files—no autonomous browsing occurs.
+
+The scenario adds process-local successful-redirect counts and
+`GET /analytics/{code}` while preserving shortening and redirect behavior. Four
+validated change sets produce exactly four transactional `MODIFY` operations and
+zero CREATE or DELETE operations. The normal mutation evidence records targeted
+preimages, verified postimages, and authoritative snapshot progression.
+`workspace_seed.json` proves baseline population, and the normal TaskGraph,
+execution, workspace, artifact, and summary files retain full lineage.
+
+After verified success, deterministic demo tooling exports the final six-file state
+to `artifacts/brownfield-demo-run/enhanced-project/`. That reviewer copy matches the
+final authoritative snapshot; `pyproject.toml` and `src/url_shortener/__init__.py`
+remain byte-identical to the greenfield baseline. Generated tests and analytics
+smoke checks are executed only manually by development/evaluation tooling, never by
+the orchestrator. This scenario adds neither Git/promotion authority, shell
+authority, dynamic replanning, a database, autonomous browsing, nor a general
+repository-copy capability.
+
 ## Tests
 
 ```bash
@@ -681,6 +716,6 @@ retry/backoff policy, distributed workers, repository copying or Git worktrees,
 DELETE support, generated-code execution,
 authoritative-repository promotion, crash-recovery journaling, dynamically generated
 LangGraph nodes, read/write stale-context conflict detection, full dynamic
-replanning, brownfield impact analysis or autonomous repository discovery,
+replanning, autonomous repository discovery,
 cross-process rollback, skill loading, a persistent execution store, deployment,
 or a web UI.
