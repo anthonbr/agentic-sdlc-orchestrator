@@ -5,7 +5,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from agentic_sdlc.reliability_metrics import (
+    ReliabilityMetricsArtifact,
+    RunReliabilityMetrics,
+    ScenarioReliabilityMetrics,
+    derive_reliability_metrics,
+)
 from agentic_sdlc.state import ApprovalEvent, TaskGraphData, WorkflowState
+from agentic_sdlc.task_execution import TaskGraphExecutionState
+from agentic_sdlc.workspace_integration_contracts import TaskAttemptExitDecision
+from agentic_sdlc.workspace_mutation import WorkspaceMutationResult
 
 
 ARTIFACT_FILENAMES = (
@@ -24,6 +33,17 @@ LEGACY_ARTIFACT_FILENAMES = (
     "test_plan.md",
     "decomposition.json",
     "implementation_plan.md",
+)
+RELIABILITY_METRICS_FILENAME = "reliability_metrics.json"
+RELIABILITY_METRICS_SCHEMA_VERSION = "reliability-metrics-v1"
+RELIABILITY_SCENARIOS = (
+    ("greenfield", "demo-run", "artifacts/demo-run/"),
+    ("brownfield", "brownfield-demo-run", "artifacts/brownfield-demo-run/"),
+    (
+        "ambiguous requirement",
+        "ambiguity-demo-run",
+        "artifacts/ambiguity-demo-run/",
+    ),
 )
 
 
@@ -89,6 +109,65 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
         _summary_markdown(state, generated), encoding="utf-8"
     )
     return [paths[filename] for filename in generated]
+
+
+def write_reliability_metrics_artifact(
+    artifacts_dir: Path, output_path: Path | None = None
+) -> Path:
+    """Write a deterministic index of independent checked-in scenario metrics."""
+
+    runs = tuple(
+        ScenarioReliabilityMetrics(
+            scenario=scenario,
+            evidence_root=evidence_root,
+            metrics=_load_run_reliability_metrics(artifacts_dir / directory),
+        )
+        for scenario, directory, evidence_root in RELIABILITY_SCENARIOS
+    )
+    artifact = ReliabilityMetricsArtifact(
+        schema_version=RELIABILITY_METRICS_SCHEMA_VERSION,
+        runs=runs,
+    )
+    path = output_path or artifacts_dir / RELIABILITY_METRICS_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(path, artifact.model_dump(mode="json"))
+    return path
+
+
+def _load_run_reliability_metrics(evidence_dir: Path) -> RunReliabilityMetrics:
+    task_evidence = _read_json_object(evidence_dir / "task_execution.json")
+    workspace_evidence = _read_json_object(evidence_dir / "workspace_execution.json")
+    execution_value = task_evidence.get("task_graph_execution")
+    decision_values = workspace_evidence.get("task_attempt_exit_decisions")
+    mutation_values = workspace_evidence.get("mutations")
+    if not isinstance(decision_values, list) or not isinstance(mutation_values, list):
+        raise ValueError(
+            f"Reliability evidence lists are missing from {evidence_dir}."
+        )
+
+    execution = TaskGraphExecutionState.model_validate_json(
+        json.dumps(execution_value)
+    )
+    decisions = tuple(
+        TaskAttemptExitDecision.model_validate_json(json.dumps(value))
+        for value in decision_values
+    )
+    mutations = tuple(
+        WorkspaceMutationResult.model_validate_json(json.dumps(value))
+        for value in mutation_values
+    )
+    return derive_reliability_metrics(
+        task_graph_execution=execution,
+        task_attempt_exit_decisions=decisions,
+        workspace_mutation_results=mutations,
+    )
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"Expected a JSON object in {path}.")
+    return value
 
 
 def _safe_stop_filenames(state: WorkflowState) -> tuple[str, ...]:
