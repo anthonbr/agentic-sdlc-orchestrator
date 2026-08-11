@@ -1516,7 +1516,17 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
     assert f"Workflow diagram written to: {artifact_dir / 'workflow_diagram.png'}" in (
         output
     )
-    assert f"Artifacts written to: {artifact_dir}" in output
+    assert f"Run evidence written to:\n  {artifact_dir}" in output
+    packaged_dir = tmp_path / "projects" / "url-shortener" / "sdlc-artifacts"
+    assert {path.name for path in packaged_dir.iterdir()} == {
+        *ARTIFACT_FILENAMES,
+        "manifest.json",
+        "workflow_diagram.png",
+    }
+    assert {
+        path.name: path.read_bytes() for path in artifact_dir.iterdir()
+    } == {path.name: path.read_bytes() for path in packaged_dir.iterdir()}
+    assert f"Packaged SDLC evidence:\n  {packaged_dir}" in output
 
 
 def test_diagram_failure_does_not_fail_demo(
@@ -1562,7 +1572,13 @@ def test_diagram_failure_does_not_fail_demo(
     assert "workflow_diagram.png" not in {
         record["path"] for record in manifest["files"]
     }
-    assert (tmp_path / "projects" / "url-shortener" / "README.md").exists()
+    destination = tmp_path / "projects" / "url-shortener"
+    assert (destination / "README.md").exists()
+    packaged_dir = destination / "sdlc-artifacts"
+    assert not (packaged_dir / "workflow_diagram.png").exists()
+    assert {
+        path.name: path.read_bytes() for path in artifact_dir.iterdir()
+    } == {path.name: path.read_bytes() for path in packaged_dir.iterdir()}
 
 
 def test_cli_explicit_project_name_uses_the_injected_live_runtime(
@@ -1620,9 +1636,19 @@ def test_cli_explicit_project_name_uses_the_injected_live_runtime(
     assert "Project exported successfully." in output.out
     assert f"  {destination}" in output.out
     assert (destination / "README.md").exists()
+    artifact_dir = next((tmp_path / "runs").glob("*/sdlc-artifacts"))
+    assert {
+        path.name: path.read_bytes() for path in artifact_dir.iterdir()
+    } == {
+        path.name: path.read_bytes()
+        for path in (destination / "sdlc-artifacts").iterdir()
+    }
     assert runtime.resolved_workspaces
     assert runtime.resolved_workspaces[-1].root.parent == workspace_parent.resolve()
     assert runtime.resolved_workspaces[-1].root != destination
+    assert not (
+        runtime.resolved_workspaces[-1].root / "sdlc-artifacts"
+    ).exists()
 
 
 def test_failed_runnable_readiness_prevents_durable_export(

@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from agentic_sdlc.project_delivery import (
     ProjectDeliveryMode,
     project_delivery_policy_from_value,
 )
-from agentic_sdlc.state import WorkflowState
+
+if TYPE_CHECKING:
+    from agentic_sdlc.state import WorkflowState
 
 
 RUNS_DIRECTORY_NAME = "runs"
@@ -22,6 +25,8 @@ SDLC_ARTIFACT_DIRECTORY_NAME = "sdlc-artifacts"
 WORKFLOW_DIAGRAM_FILENAME = "workflow_diagram.png"
 SDLC_ARTIFACT_MANIFEST_FILENAME = "manifest.json"
 SDLC_ARTIFACT_MANIFEST_SCHEMA_VERSION = "sdlc-artifact-manifest-v1"
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_WINDOWS_DRIVE_PATTERN = re.compile(r"^[A-Za-z]:")
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +34,7 @@ class LiveRunArtifactBundle:
     """Filesystem locations owned by the orchestrator for one existing run ID."""
 
     run_id: str
+    repository_root: Path
     run_root: Path
     artifact_dir: Path
 
@@ -41,9 +47,11 @@ class LiveRunArtifactBundle:
         """Derive one run bundle without creating another run identity."""
 
         _validate_run_id_component(run_id)
-        run_root = repository_root.resolve() / RUNS_DIRECTORY_NAME / run_id
+        canonical_repository_root = repository_root.resolve()
+        run_root = canonical_repository_root / RUNS_DIRECTORY_NAME / run_id
         return cls(
             run_id=run_id,
+            repository_root=canonical_repository_root,
             run_root=run_root,
             artifact_dir=run_root / SDLC_ARTIFACT_DIRECTORY_NAME,
         )
@@ -64,6 +72,37 @@ class SDLCArtifactFileRecord(BaseModel):
     sha256: str
     size_bytes: int
 
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        if (
+            not value
+            or "\x00" in value
+            or "/" in value
+            or "\\" in value
+            or value in {".", ".."}
+            or Path(value).is_absolute()
+            or _WINDOWS_DRIVE_PATTERN.match(value)
+        ):
+            raise ValueError(
+                "SDLC artifact paths must be safe flat bundle-relative names."
+            )
+        return value
+
+    @field_validator("sha256")
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        if not _SHA256_PATTERN.fullmatch(value):
+            raise ValueError("SDLC artifact sha256 must be lowercase hexadecimal.")
+        return value
+
+    @field_validator("size_bytes")
+    @classmethod
+    def validate_size(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("SDLC artifact size_bytes must be non-negative.")
+        return value
+
 
 class SDLCArtifactManifest(BaseModel):
     """Deterministic ownership and content index for a terminal live run bundle."""
@@ -78,6 +117,39 @@ class SDLCArtifactManifest(BaseModel):
     exit_gate_passed: bool | None
     bundle_sha256: str
     files: tuple[SDLCArtifactFileRecord, ...]
+
+    @field_validator("run_id")
+    @classmethod
+    def validate_run_id(cls, value: str) -> str:
+        _validate_run_id_component(value)
+        return value
+
+    @field_validator("bundle_sha256")
+    @classmethod
+    def validate_bundle_sha256_format(cls, value: str) -> str:
+        if not _SHA256_PATTERN.fullmatch(value):
+            raise ValueError("bundle_sha256 must be lowercase hexadecimal.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_manifest_identity(self) -> SDLCArtifactManifest:
+        paths = tuple(record.path for record in self.files)
+        if paths != tuple(sorted(paths)) or len(paths) != len(set(paths)):
+            raise ValueError("SDLC artifact manifest files must be uniquely sorted.")
+        if SDLC_ARTIFACT_MANIFEST_FILENAME in paths:
+            raise ValueError("The SDLC artifact manifest cannot list itself.")
+        expected = compute_sdlc_artifact_bundle_sha256(
+            schema_version=self.schema_version,
+            run_id=self.run_id,
+            project_name=self.project_name,
+            workflow_status=self.workflow_status,
+            project_delivery_policy=self.project_delivery_policy,
+            exit_gate_passed=self.exit_gate_passed,
+            files=self.files,
+        )
+        if self.bundle_sha256 != expected:
+            raise ValueError("SDLC artifact bundle_sha256 is not canonical.")
+        return self
 
 
 def build_sdlc_artifact_manifest(
@@ -102,18 +174,15 @@ def build_sdlc_artifact_manifest(
         else None
     )
     exit_gate_passed = state.get("exit_gate_passed")
-    binding = {
-        "schema_version": SDLC_ARTIFACT_MANIFEST_SCHEMA_VERSION,
-        "run_id": run_id,
-        "project_name": project_name,
-        "workflow_status": status,
-        "project_delivery_policy": (
-            delivery_mode.value if delivery_mode is not None else None
-        ),
-        "exit_gate_passed": exit_gate_passed,
-        "files": [record.model_dump(mode="json") for record in file_records],
-    }
-    bundle_sha256 = hashlib.sha256(_canonical_json_bytes(binding)).hexdigest()
+    bundle_sha256 = compute_sdlc_artifact_bundle_sha256(
+        schema_version=SDLC_ARTIFACT_MANIFEST_SCHEMA_VERSION,
+        run_id=run_id,
+        project_name=project_name,
+        workflow_status=status,
+        project_delivery_policy=delivery_mode,
+        exit_gate_passed=exit_gate_passed,
+        files=file_records,
+    )
     return SDLCArtifactManifest(
         schema_version=SDLC_ARTIFACT_MANIFEST_SCHEMA_VERSION,
         run_id=run_id,
@@ -139,6 +208,34 @@ def write_sdlc_artifact_manifest(
         encoding="utf-8",
     )
     return path
+
+
+def compute_sdlc_artifact_bundle_sha256(
+    *,
+    schema_version: str,
+    run_id: str,
+    project_name: str | None,
+    workflow_status: str,
+    project_delivery_policy: ProjectDeliveryMode | None,
+    exit_gate_passed: bool | None,
+    files: tuple[SDLCArtifactFileRecord, ...],
+) -> str:
+    """Hash manifest binding metadata and sorted records, excluding the hash."""
+
+    binding = {
+        "schema_version": schema_version,
+        "run_id": run_id,
+        "project_name": project_name,
+        "workflow_status": workflow_status,
+        "project_delivery_policy": (
+            project_delivery_policy.value
+            if project_delivery_policy is not None
+            else None
+        ),
+        "exit_gate_passed": exit_gate_passed,
+        "files": [record.model_dump(mode="json") for record in files],
+    }
+    return hashlib.sha256(_canonical_json_bytes(binding)).hexdigest()
 
 
 def _bundle_file_records(bundle_dir: Path) -> tuple[SDLCArtifactFileRecord, ...]:
@@ -176,9 +273,11 @@ def _canonical_json_bytes(value: object) -> bytes:
 def _validate_run_id_component(run_id: str) -> None:
     if (
         not run_id.strip()
+        or "\x00" in run_id
         or run_id in {".", ".."}
         or "/" in run_id
         or "\\" in run_id
         or Path(run_id).is_absolute()
+        or _WINDOWS_DRIVE_PATTERN.match(run_id)
     ):
         raise ValueError("The run ID must be one safe filesystem path component.")

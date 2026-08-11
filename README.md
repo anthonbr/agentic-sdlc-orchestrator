@@ -21,14 +21,16 @@ For the quickest evaluation path, use these documents and retained evidence:
 
 The `artifacts/` tree is curated, checked-in evaluator/reference evidence. Normal
 live CLI runs do not rewrite it: per-run SDLC evidence is generated under the
-ignored `runs/` tree, while successful durable applications remain under the
-separate ignored `projects/` tree.
+ignored `runs/` tree, while successful durable delivery packages remain under the
+separate ignored `projects/` tree. Each successful package contains an
+application-controlled, verified `sdlc-artifacts/` copy of its retained run
+evidence.
 
 The orchestrator materializes runnable application code and tests in an isolated
 workspace, but deliberately does not execute generated code as part of its exit
 gate or autonomously perform Git promotion, CI/CD promotion, or deployment.
 
-`V0.1` through `V0.8` below are engineering milestone labels for the incremental
+`V0.1` through `V0.9` below are engineering milestone labels for the incremental
 assessment implementation; they are distinct from the Python package version in
 `pyproject.toml` and do not imply semantic compatibility with it.
 
@@ -61,6 +63,10 @@ assessment implementation; they are distinct from the Python package version in
   structured `RUNNABLE_ENTRYPOINT`, `AUTOMATED_TESTS`, and `RUN_INSTRUCTIONS`
   task roles, deterministic artifact/materialization/readiness evidence, and
   exit-gate enforcement for runnable-project workflows.
+- **V0.9 — SDLC artifact ownership and composite publication:** isolated
+  per-run evidence under `runs/<run-id>/sdlc-artifacts/`, a deterministic
+  manifest, a reserved application-owned project namespace, and projection-based
+  publication of verified project content plus verified SDLC evidence.
 
 The V0.5 execution slices execute approved engineering tasks as bounded semantic
 LLM calls and may transactionally materialize validated executable URL-shortener
@@ -711,13 +717,16 @@ For `RUNNABLE_PROJECT`, the exit gate additionally requires final project-readin
 evidence linking the approved roles to successful final attempts, canonical typed
 artifacts, passed materialization/change-set evidence, applied workspace mutations,
 and matching paths/content hashes in the authoritative final snapshot. Only after
-that gate passes does the CLI promote the authoritative regular-file snapshot into
+that gate passes does the CLI publish a composite package into
 `projects/<project-name>/`. The isolated temporary workspace remains the sole task
-execution environment. The exporter revalidates that live capability before
-copying, rejects symlinks and special files through the existing snapshot policy,
-and uses descriptor-relative, no-follow POSIX operations for staging writes and
-promotion. It fails closed when those primitives are unavailable, verifies both
-the staged and durable copies, and never overwrites an explicit destination.
+execution environment. The exporter revalidates that live capability and the
+same-run successful SDLC bundle, then builds the application files and reserved
+`sdlc-artifacts/` projection together in staging. Descriptor-relative, no-follow
+POSIX operations protect both copies and promotion. Staging and final verification
+require the application projection to equal the authoritative workspace, the
+evidence projection to equal the validated manifest bundle, and no third set of
+paths. The exporter fails closed when required primitives are unavailable and
+never overwrites an explicit destination.
 Failed, rejected, or safe-stopped runs do not create a durable project;
 automatically selected name collisions receive a deterministic run-derived suffix.
 
@@ -747,6 +756,21 @@ the workflow diagram when rendering succeeded. Diagram failure remains non-fatal
 and produces no placeholder file. The deterministic manifest binds the governed
 run ID and terminal metadata to sorted bundle-relative file paths, byte sizes, and
 SHA-256 hashes; it is an integrity index, not a signature or tamper-proof store.
+For a successful run, the independently retained run bundle is copied during
+controlled staging into the durable package:
+
+```text
+projects/<project-name>/
+├── <authoritative generated project files>
+└── sdlc-artifacts/
+    ├── manifest.json
+    └── <exact manifest-bound run evidence>
+```
+
+The top-level `sdlc-artifacts/` name is reserved from Task Agent materialization.
+It is added only by application-controlled publication and is never part of the
+agent workspace. A safe stop retains its honest partial run bundle and performs no
+durable publication.
 
 `task_graph.json` is the canonical graph. `task_graph.md` is a human-readable view
 that includes derived layers, execution status, and governance history.
@@ -787,8 +811,10 @@ authority.
 The live CLI uses the same governed promotion boundary to create a separate
 durable project under `projects/`. That directory is an output, never the agent
 workspace, and the export grants no Git, shell, package-installation, test-execution,
-deployment, or overwrite authority. This slice does not copy `sdlc-artifacts/`
-into the durable project; composite project/evidence packaging remains separate.
+deployment, or overwrite authority. Successful publication includes a verified
+copy of the retained live bundle under the reserved project-local
+`sdlc-artifacts/` namespace; the original `runs/<run-id>/sdlc-artifacts/` bundle is
+not moved or deleted.
 
 Runnable-project readiness proves that the required project surfaces and reviewer
 instructions are materially present; it is not runtime execution evidence. The

@@ -12,6 +12,7 @@ from pytest import mark, raises
 from agentic_sdlc.run_artifacts import (
     SDLC_ARTIFACT_MANIFEST_FILENAME,
     SDLC_ARTIFACT_MANIFEST_SCHEMA_VERSION,
+    SDLCArtifactManifest,
     LiveRunArtifactBundle,
     build_sdlc_artifact_manifest,
     write_sdlc_artifact_manifest,
@@ -50,7 +51,10 @@ def test_live_run_bundle_uses_existing_run_id_for_owned_paths(
     )
 
 
-@mark.parametrize("run_id", ("", " ", ".", "..", "../escape", "a/b", "a\\b"))
+@mark.parametrize(
+    "run_id",
+    ("", " ", ".", "..", "../escape", "a/b", "a\\b", "C:escape", "bad\0id"),
+)
 def test_live_run_bundle_rejects_unsafe_run_id_components(
     tmp_path: Path,
     run_id: str,
@@ -168,3 +172,24 @@ def test_manifest_rejects_a_state_owned_by_another_run(tmp_path: Path) -> None:
 
     with raises(ValueError, match="does not own"):
         build_sdlc_artifact_manifest(_terminal_state("demo-other"), bundle)
+
+
+@mark.parametrize(
+    "unsafe_path",
+    ("manifest.json", "../escape", "nested/file.json", "nested\\file.json"),
+)
+def test_manifest_model_rejects_reserved_or_escaping_file_paths(
+    tmp_path: Path,
+    unsafe_path: str,
+) -> None:
+    bundle = LiveRunArtifactBundle.under_repository(tmp_path, "demo-path-policy")
+    bundle.artifact_dir.mkdir(parents=True)
+    (bundle.artifact_dir / "summary.md").write_text("# Summary\n")
+    manifest = build_sdlc_artifact_manifest(
+        _terminal_state(bundle.run_id),
+        bundle,
+    ).model_dump(mode="json")
+    manifest["files"][0]["path"] = unsafe_path
+
+    with raises(ValueError):
+        SDLCArtifactManifest.model_validate_json(json.dumps(manifest))

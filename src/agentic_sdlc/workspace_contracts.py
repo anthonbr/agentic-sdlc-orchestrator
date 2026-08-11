@@ -17,6 +17,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agentic_sdlc.project_delivery import ProjectDeliverableRole
+from agentic_sdlc.run_artifacts import SDLC_ARTIFACT_DIRECTORY_NAME
 from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifact,
     EngineeringArtifactType,
@@ -28,7 +29,9 @@ from agentic_sdlc.task_graph import Task, TaskMaterializationPolicy
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _WINDOWS_DRIVE_PATTERN = re.compile(r"^[A-Za-z]:")
-_PROTECTED_DIRECTORY_NAMES = frozenset({".git", ".venv", "venv"})
+_PROTECTED_DIRECTORY_NAMES = frozenset(
+    {".git", ".venv", "venv", SDLC_ARTIFACT_DIRECTORY_NAME}
+)
 
 
 class WorkspaceContractError(ValueError):

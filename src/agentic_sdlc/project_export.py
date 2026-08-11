@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -10,14 +11,28 @@ import stat
 import unicodedata
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 
 from pydantic import ValidationError
 
+from agentic_sdlc.project_delivery import (
+    ProjectDeliveryMode,
+    project_delivery_policy_from_value,
+)
+from agentic_sdlc.run_artifacts import (
+    RUNS_DIRECTORY_NAME,
+    SDLC_ARTIFACT_DIRECTORY_NAME,
+    SDLC_ARTIFACT_MANIFEST_FILENAME,
+    LiveRunArtifactBundle,
+    SDLCArtifactFileRecord,
+    SDLCArtifactManifest,
+)
+
 from agentic_sdlc.state import WorkflowState, WorkflowStatus
 from agentic_sdlc.workspace_contracts import (
+    WorkspaceFileState,
     WorkspaceSnapshot,
     build_workspace_snapshot,
 )
@@ -61,7 +76,9 @@ class ProjectExportIssueCode(StrEnum):
     INELIGIBLE_WORKFLOW = "INELIGIBLE_WORKFLOW"
     INVALID_AUTHORITY = "INVALID_AUTHORITY"
     INVALID_PROJECT_NAME = "INVALID_PROJECT_NAME"
+    RESERVED_NAMESPACE = "RESERVED_NAMESPACE"
     SOURCE_INTEGRITY = "SOURCE_INTEGRITY"
+    EVIDENCE_INTEGRITY = "EVIDENCE_INTEGRITY"
     EXPORT_ROOT = "EXPORT_ROOT"
     DESTINATION_EXISTS = "DESTINATION_EXISTS"
     COPY_FAILED = "COPY_FAILED"
@@ -86,6 +103,12 @@ class ProjectExportValidation:
     post_export_snapshot_id: str | None = None
     source_matches_authority: bool = False
     export_matches_authority: bool = False
+    artifact_bundle_sha256: str | None = None
+    staged_artifact_bundle_sha256: str | None = None
+    post_export_artifact_bundle_sha256: str | None = None
+    evidence_source_valid: bool = False
+    staged_evidence_matches: bool = False
+    post_export_evidence_matches: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,11 +119,13 @@ class ProjectExportRequest:
     workspace: IsolatedWorkspace
     session: GovernedWorkspaceSession
     authoritative_snapshot: WorkspaceSnapshot
+    artifact_bundle: LiveRunArtifactBundle
     workflow_status: WorkflowStatus
     exit_gate_passed: bool
     requested_project_name: str | None
     workflow_project_name: str | None
     export_root: Path
+    project_delivery_policy: ProjectDeliveryMode
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +138,7 @@ class ProjectExportResult:
     export_root: Path
     destination_directory: Path | None
     exported_file_count: int
+    packaged_artifact_file_count: int
     validation: ProjectExportValidation
     issue_code: ProjectExportIssueCode | None = None
     failure_reason: str | None = None
@@ -122,6 +148,15 @@ class ProjectExportResult:
         """Return whether the verified durable promotion completed."""
 
         return self.status is ProjectExportStatus.SUCCEEDED
+
+
+@dataclass(frozen=True, slots=True)
+class _ValidatedSDLCArtifactBundle:
+    """Pinned live evidence identity and exact regular-file projection."""
+
+    directory_identity: tuple[int, int]
+    manifest: SDLCArtifactManifest
+    files: tuple[SDLCArtifactFileRecord, ...]
 
 
 def normalize_project_name(project_name: str) -> str:
@@ -161,6 +196,7 @@ def project_export_request_from_state(
     state: WorkflowState,
     *,
     workspace: IsolatedWorkspace,
+    artifact_bundle: LiveRunArtifactBundle,
     export_root: Path,
     requested_project_name: str | None = None,
 ) -> ProjectExportRequest:
@@ -172,6 +208,17 @@ def project_export_request_from_state(
         raise ProjectExportContractError(
             "Completed workflow has no governed workspace session."
         )
+    policy_value = state.get("project_delivery_policy")
+    if policy_value is None:
+        raise ProjectExportContractError(
+            "Completed workflow has no project delivery policy."
+        )
+    try:
+        delivery_mode = project_delivery_policy_from_value(policy_value).mode
+    except (TypeError, ValueError, ValidationError) as exc:
+        raise ProjectExportContractError(
+            "Workflow project delivery policy is invalid."
+        ) from exc
     try:
         session = (
             session_value
@@ -184,7 +231,7 @@ def project_export_request_from_state(
             else WorkspaceSnapshot.model_validate(snapshot)
             for snapshot in state.get("workspace_snapshots", [])
         )
-    except ValidationError as exc:
+    except (TypeError, ValueError, ValidationError) as exc:
         raise ProjectExportContractError(
             "Workflow workspace evidence is not a valid export contract."
         ) from exc
@@ -202,11 +249,13 @@ def project_export_request_from_state(
         workspace=workspace,
         session=session,
         authoritative_snapshot=authoritative[0],
+        artifact_bundle=artifact_bundle,
         workflow_status=state.get("workflow_status", "pending"),
         exit_gate_passed=state.get("exit_gate_passed") is True,
         requested_project_name=requested_project_name,
         workflow_project_name=state.get("project_name"),
         export_root=Path(export_root),
+        project_delivery_policy=delivery_mode,
     )
 
 
@@ -235,6 +284,15 @@ class ProjectExporter:
                 validation,
                 ProjectExportIssueCode.INVALID_AUTHORITY,
                 authority_failure,
+            )
+
+        reserved_namespace_failure = _reserved_workspace_namespace_failure(request)
+        if reserved_namespace_failure is not None:
+            return _failure_result(
+                request,
+                validation,
+                ProjectExportIssueCode.RESERVED_NAMESPACE,
+                reserved_namespace_failure,
             )
 
         try:
@@ -273,6 +331,34 @@ class ProjectExporter:
 
         try:
             _require_descriptor_relative_support()
+        except _ProjectExportFailure as exc:
+            return _failure_result(
+                request,
+                validation,
+                exc.code,
+                str(exc),
+                project_name=project_name,
+            )
+
+        try:
+            validated_artifact_bundle = _validate_live_artifact_bundle(request)
+        except _ProjectExportFailure as exc:
+            return _failure_result(
+                request,
+                validation,
+                exc.code,
+                str(exc),
+                project_name=project_name,
+            )
+        validation = replace(
+            validation,
+            artifact_bundle_sha256=(
+                validated_artifact_bundle.manifest.bundle_sha256
+            ),
+            evidence_source_valid=True,
+        )
+
+        try:
             export_root, export_root_identity = _prepare_export_root(
                 request.export_root
             )
@@ -326,6 +412,7 @@ class ProjectExporter:
                     export_root_capability=export_root_capability,
                     observed_source=observed_source,
                     validation=validation,
+                    artifact_bundle=validated_artifact_bundle,
                 )
         except _ProjectExportFailure as exc:
             return _failure_result(
@@ -348,6 +435,7 @@ def _export_with_root_capability(
     export_root_capability: _DirectoryCapability,
     observed_source: WorkspaceSnapshot,
     validation: ProjectExportValidation,
+    artifact_bundle: _ValidatedSDLCArtifactBundle,
 ) -> ProjectExportResult:
     """Run all export effects relative to one pinned export-root descriptor."""
 
@@ -367,7 +455,34 @@ def _export_with_root_capability(
             issue_code=ProjectExportIssueCode.COPY_FAILED,
         ) as staging_capability:
             staging_identity = staging_capability.identity
-            _copy_authoritative_files(request, staging_capability)
+            with _open_live_artifact_bundle(
+                request.artifact_bundle,
+                expected_identity=artifact_bundle.directory_identity,
+            ) as live_artifact_capability:
+                _validate_artifact_bundle_descriptor(
+                    live_artifact_capability,
+                    request,
+                    expected=artifact_bundle,
+                )
+                _copy_authoritative_files(request, staging_capability)
+                _copy_sdlc_artifact_files(
+                    live_artifact_capability,
+                    staging_capability,
+                    artifact_bundle,
+                )
+                _validate_artifact_bundle_descriptor(
+                    live_artifact_capability,
+                    request,
+                    expected=artifact_bundle,
+                )
+            if not _path_directory_identity_matches(
+                request.artifact_bundle.artifact_dir,
+                artifact_bundle.directory_identity,
+            ):
+                raise _ProjectExportFailure(
+                    ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+                    "Live SDLC evidence path identity changed while it was copied.",
+                )
 
             try:
                 observed_after_copy = snapshot_isolated_workspace(request.workspace)
@@ -399,26 +514,40 @@ def _export_with_root_capability(
                     "Source workspace drifted while export contents were read.",
                 )
 
+            reserved_namespace_failure = _reserved_workspace_namespace_failure(
+                request
+            )
+            if reserved_namespace_failure is not None:
+                raise _ProjectExportFailure(
+                    ProjectExportIssueCode.RESERVED_NAMESPACE,
+                    reserved_namespace_failure,
+                )
+
             try:
-                staged_snapshot = snapshot_directory_tree(
+                staged_snapshot, staged_artifact_bundle = _validate_composite_package(
                     staging_path,
-                    workspace_id=request.session.workspace_id,
+                    staging_capability,
+                    request,
+                    artifact_bundle,
+                    issue_code=ProjectExportIssueCode.COPY_FAILED,
                 )
             except WorkspaceRuntimeError as exc:
                 raise _ProjectExportFailure(
                     ProjectExportIssueCode.COPY_FAILED,
                     _runtime_failure("Staged project could not be verified", exc),
                 ) from exc
-            validation = ProjectExportValidation(
-                authoritative_snapshot_id=(
-                    request.authoritative_snapshot.snapshot_id
-                ),
+            validation = replace(
+                validation,
                 pre_export_snapshot_id=observed_source.snapshot_id,
                 staged_snapshot_id=staged_snapshot.snapshot_id,
                 source_matches_authority=True,
                 export_matches_authority=(
                     staged_snapshot == request.authoritative_snapshot
                 ),
+                staged_artifact_bundle_sha256=(
+                    staged_artifact_bundle.manifest.bundle_sha256
+                ),
+                staged_evidence_matches=True,
             )
             if not validation.export_matches_authority:
                 raise _ProjectExportFailure(
@@ -465,11 +594,23 @@ def _export_with_root_capability(
                 staging_name = None
 
                 try:
-                    exported_snapshot = snapshot_directory_tree(
-                        destination,
-                        workspace_id=request.session.workspace_id,
+                    exported_snapshot, exported_artifact_bundle = (
+                        _validate_composite_package(
+                            destination,
+                            destination_capability,
+                            request,
+                            artifact_bundle,
+                            issue_code=(
+                                ProjectExportIssueCode.POST_EXPORT_INTEGRITY
+                            ),
+                        )
                     )
                 except WorkspaceRuntimeError as exc:
+                    validation = replace(
+                        validation,
+                        export_matches_authority=False,
+                        post_export_evidence_matches=False,
+                    )
                     raise _ProjectExportFailure(
                         ProjectExportIssueCode.POST_EXPORT_INTEGRITY,
                         _runtime_failure(
@@ -477,10 +618,15 @@ def _export_with_root_capability(
                             exc,
                         ),
                     ) from exc
-                validation = ProjectExportValidation(
-                    authoritative_snapshot_id=(
-                        request.authoritative_snapshot.snapshot_id
-                    ),
+                except _ProjectExportFailure:
+                    validation = replace(
+                        validation,
+                        export_matches_authority=False,
+                        post_export_evidence_matches=False,
+                    )
+                    raise
+                validation = replace(
+                    validation,
                     pre_export_snapshot_id=observed_source.snapshot_id,
                     staged_snapshot_id=staged_snapshot.snapshot_id,
                     post_export_snapshot_id=exported_snapshot.snapshot_id,
@@ -488,6 +634,10 @@ def _export_with_root_capability(
                     export_matches_authority=(
                         exported_snapshot == request.authoritative_snapshot
                     ),
+                    post_export_artifact_bundle_sha256=(
+                        exported_artifact_bundle.manifest.bundle_sha256
+                    ),
+                    post_export_evidence_matches=True,
                 )
                 if not validation.export_matches_authority:
                     raise _ProjectExportFailure(
@@ -521,6 +671,7 @@ def _export_with_root_capability(
             export_root=export_root,
             destination_directory=destination,
             exported_file_count=len(request.authoritative_snapshot.files),
+            packaged_artifact_file_count=len(artifact_bundle.files),
             validation=validation,
         )
 
@@ -570,6 +721,8 @@ def _eligibility_failure(request: ProjectExportRequest) -> str | None:
 
 
 def _authority_failure(request: ProjectExportRequest) -> str | None:
+    if not isinstance(request.project_delivery_policy, ProjectDeliveryMode):
+        return "Export requires an explicit valid project delivery policy."
     if not request.run_id or request.session.run_id != request.run_id:
         return "Export run identity differs from the governed session."
     if request.workspace.workspace_id != request.session.workspace_id:
@@ -588,6 +741,244 @@ def _authority_failure(request: ProjectExportRequest) -> str | None:
     if canonical_snapshot != request.authoritative_snapshot:
         return "Authoritative snapshot identity is not canonical."
     return None
+
+
+def _reserved_workspace_namespace_failure(
+    request: ProjectExportRequest,
+) -> str | None:
+    reserved = SDLC_ARTIFACT_DIRECTORY_NAME.casefold()
+    if any(
+        file_state.path.split("/", 1)[0].casefold() == reserved
+        for file_state in request.authoritative_snapshot.files
+    ):
+        return (
+            "Authoritative workspace collides with the reserved top-level "
+            f"{SDLC_ARTIFACT_DIRECTORY_NAME}/ namespace."
+        )
+    try:
+        with os.scandir(request.workspace.root) as entries:
+            root_entry_names = tuple(entry.name for entry in entries)
+    except OSError as exc:
+        return (
+            "Reserved workspace namespace could not be inspected before "
+            f"publication: {exc}."
+        )
+    if not any(name.casefold() == reserved for name in root_entry_names):
+        return None
+    return (
+        "Live workspace collides with the reserved top-level "
+        f"{SDLC_ARTIFACT_DIRECTORY_NAME}/ namespace."
+    )
+
+
+def _validate_live_artifact_bundle(
+    request: ProjectExportRequest,
+) -> _ValidatedSDLCArtifactBundle:
+    bundle = request.artifact_bundle
+    if bundle.run_id != request.run_id:
+        raise _ProjectExportFailure(
+            ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+            "Live SDLC evidence belongs to a different governed run.",
+        )
+    try:
+        canonical = LiveRunArtifactBundle.under_repository(
+            bundle.repository_root,
+            bundle.run_id,
+        )
+    except (OSError, ValueError) as exc:
+        raise _ProjectExportFailure(
+            ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+            f"Live SDLC evidence ownership is invalid: {exc}.",
+        ) from exc
+    if bundle != canonical:
+        raise _ProjectExportFailure(
+            ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+            "Live SDLC evidence paths are not canonical for the governed run.",
+        )
+    with _open_live_artifact_bundle(bundle) as capability:
+        validated = _validate_artifact_bundle_descriptor(capability, request)
+    if not _path_directory_identity_matches(
+        bundle.artifact_dir,
+        validated.directory_identity,
+    ):
+        raise _ProjectExportFailure(
+            ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+            "Live SDLC evidence path identity changed during validation.",
+        )
+    return validated
+
+
+def _validate_artifact_bundle_descriptor(
+    capability: _DirectoryCapability,
+    request: ProjectExportRequest,
+    *,
+    expected: _ValidatedSDLCArtifactBundle | None = None,
+    issue_code: ProjectExportIssueCode = ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+) -> _ValidatedSDLCArtifactBundle:
+    try:
+        names = tuple(sorted(os.listdir(capability.descriptor)))
+    except OSError as exc:
+        raise _ProjectExportFailure(
+            issue_code,
+            f"SDLC evidence directory could not be listed: {exc}.",
+        ) from exc
+    if SDLC_ARTIFACT_MANIFEST_FILENAME not in names:
+        raise _ProjectExportFailure(
+            issue_code,
+            "Live SDLC evidence is missing manifest.json.",
+        )
+
+    contents_by_name: dict[str, bytes] = {}
+    for name in names:
+        _validate_child_name(name, issue_code=issue_code)
+        try:
+            entry_stat = os.stat(
+                name,
+                dir_fd=capability.descriptor,
+                follow_symlinks=False,
+            )
+        except OSError as exc:
+            raise _ProjectExportFailure(
+                issue_code,
+                f"SDLC evidence entry could not be inspected: {name}: {exc}.",
+            ) from exc
+        if stat.S_ISLNK(entry_stat.st_mode) or not stat.S_ISREG(entry_stat.st_mode):
+            raise _ProjectExportFailure(
+                issue_code,
+                f"SDLC evidence entry is not a regular file: {name}.",
+            )
+        contents_by_name[name] = _read_regular_file_at(
+            capability.descriptor,
+            name,
+            issue_code=issue_code,
+            expected_identity=(entry_stat.st_dev, entry_stat.st_ino),
+        )
+
+    try:
+        manifest = SDLCArtifactManifest.model_validate_json(
+            contents_by_name[SDLC_ARTIFACT_MANIFEST_FILENAME]
+        )
+    except ValidationError as exc:
+        raise _ProjectExportFailure(
+            issue_code,
+            f"Live SDLC evidence manifest is malformed: {exc.errors()[0]['msg']}.",
+        ) from exc
+    if manifest.run_id != request.run_id:
+        raise _ProjectExportFailure(
+            issue_code,
+            "Live SDLC evidence manifest belongs to a different governed run.",
+        )
+    if manifest.workflow_status != "success" or manifest.exit_gate_passed is not True:
+        raise _ProjectExportFailure(
+            issue_code,
+            "Only successful exit-gated SDLC evidence may be published.",
+        )
+    expected_project_name = (request.workflow_project_name or "").strip() or None
+    if manifest.project_name != expected_project_name:
+        raise _ProjectExportFailure(
+            issue_code,
+            "Live SDLC evidence project identity differs from the terminal workflow.",
+        )
+    if manifest.project_delivery_policy != request.project_delivery_policy:
+        raise _ProjectExportFailure(
+            issue_code,
+            "Live SDLC evidence delivery policy differs from the terminal workflow.",
+        )
+
+    manifested_names = tuple(record.path for record in manifest.files)
+    expected_names = tuple(
+        sorted((*manifested_names, SDLC_ARTIFACT_MANIFEST_FILENAME))
+    )
+    if names != expected_names:
+        raise _ProjectExportFailure(
+            issue_code,
+            "SDLC evidence files do not exactly match manifest.json.",
+        )
+    for record in manifest.files:
+        contents = contents_by_name[record.path]
+        if (
+            len(contents) != record.size_bytes
+            or hashlib.sha256(contents).hexdigest() != record.sha256
+        ):
+            raise _ProjectExportFailure(
+                issue_code,
+                f"SDLC evidence content differs from manifest.json: {record.path}.",
+            )
+
+    _validate_workspace_lineage(
+        contents_by_name.get("workspace_execution.json"),
+        request,
+        issue_code=issue_code,
+    )
+    manifest_contents = contents_by_name[SDLC_ARTIFACT_MANIFEST_FILENAME]
+    manifest_record = SDLCArtifactFileRecord(
+        path=SDLC_ARTIFACT_MANIFEST_FILENAME,
+        sha256=hashlib.sha256(manifest_contents).hexdigest(),
+        size_bytes=len(manifest_contents),
+    )
+    files = tuple(sorted((*manifest.files, manifest_record), key=lambda item: item.path))
+    validated = _ValidatedSDLCArtifactBundle(
+        directory_identity=capability.identity,
+        manifest=manifest,
+        files=files,
+    )
+    if expected is not None and (
+        validated.manifest != expected.manifest or validated.files != expected.files
+    ):
+        raise _ProjectExportFailure(
+            issue_code,
+            "SDLC evidence changed after its publication validation.",
+        )
+    return validated
+
+
+def _validate_workspace_lineage(
+    contents: bytes | None,
+    request: ProjectExportRequest,
+    *,
+    issue_code: ProjectExportIssueCode,
+) -> None:
+    if contents is None:
+        raise _ProjectExportFailure(
+            issue_code,
+            "Successful SDLC evidence must include workspace_execution.json.",
+        )
+    try:
+        value = json.loads(contents.decode("utf-8"))
+        if not isinstance(value, dict):
+            raise TypeError("workspace evidence must be a JSON object")
+        session = GovernedWorkspaceSession.model_validate_json(
+            json.dumps(value["session"])
+        )
+        snapshots = tuple(
+            WorkspaceSnapshot.model_validate_json(json.dumps(item))
+            for item in value["snapshots"]
+        )
+    except (
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValidationError,
+    ) as exc:
+        raise _ProjectExportFailure(
+            issue_code,
+            f"SDLC workspace lineage is invalid: {exc}.",
+        ) from exc
+    authoritative = tuple(
+        snapshot
+        for snapshot in snapshots
+        if snapshot.snapshot_id == session.authoritative_snapshot_id
+    )
+    if (
+        session != request.session
+        or len(authoritative) != 1
+        or authoritative[0] != request.authoritative_snapshot
+    ):
+        raise _ProjectExportFailure(
+            issue_code,
+            "SDLC evidence is not bound to the supplied authoritative workspace.",
+        )
 
 
 def _select_project_name(request: ProjectExportRequest) -> tuple[str, bool]:
@@ -735,6 +1126,259 @@ def _copy_authoritative_files(
             _write_new_file_at(parent_descriptor, components[-1], contents)
 
 
+def _copy_sdlc_artifact_files(
+    source: _DirectoryCapability,
+    staging: _DirectoryCapability,
+    validated: _ValidatedSDLCArtifactBundle,
+) -> None:
+    with _open_export_parent(
+        staging.descriptor,
+        (SDLC_ARTIFACT_DIRECTORY_NAME,),
+    ) as artifact_destination_descriptor:
+        for record in validated.files:
+            contents = _read_regular_file_at(
+                source.descriptor,
+                record.path,
+                issue_code=ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+            )
+            if (
+                len(contents) != record.size_bytes
+                or hashlib.sha256(contents).hexdigest() != record.sha256
+            ):
+                raise _ProjectExportFailure(
+                    ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+                    f"SDLC evidence drifted while being copied: {record.path}.",
+                )
+            _write_new_file_at(
+                artifact_destination_descriptor,
+                record.path,
+                contents,
+            )
+
+
+def _validate_composite_package(
+    root_path: Path,
+    root: _DirectoryCapability,
+    request: ProjectExportRequest,
+    expected_artifacts: _ValidatedSDLCArtifactBundle,
+    *,
+    issue_code: ProjectExportIssueCode,
+) -> tuple[WorkspaceSnapshot, _ValidatedSDLCArtifactBundle]:
+    full_snapshot = snapshot_directory_tree(
+        root_path,
+        workspace_id=request.session.workspace_id,
+    )
+    descriptor_file_states, actual_directories = _directory_tree_state(
+        root,
+        issue_code=issue_code,
+    )
+    descriptor_snapshot = build_workspace_snapshot(
+        request.session.workspace_id,
+        tuple(descriptor_file_states.values()),
+    )
+    if descriptor_snapshot != full_snapshot:
+        raise _ProjectExportFailure(
+            issue_code,
+            "Composite package changed between pathname and capability "
+            "verification.",
+        )
+    prefix = f"{SDLC_ARTIFACT_DIRECTORY_NAME}/"
+    project_files = tuple(
+        file_state
+        for file_state in descriptor_snapshot.files
+        if not file_state.path.startswith(prefix)
+        and file_state.path != SDLC_ARTIFACT_DIRECTORY_NAME
+    )
+    project_snapshot = build_workspace_snapshot(
+        request.session.workspace_id,
+        project_files,
+    )
+    if project_snapshot != request.authoritative_snapshot:
+        raise _ProjectExportFailure(
+            issue_code,
+            "Composite project-content projection differs from the "
+            "authoritative workspace.",
+        )
+
+    expected_evidence_states = tuple(
+        WorkspaceFileState(
+            path=f"{prefix}{record.path}",
+            content_hash=record.sha256,
+        )
+        for record in expected_artifacts.files
+    )
+    observed_evidence_states = tuple(
+        file_state
+        for file_state in descriptor_snapshot.files
+        if file_state.path.startswith(prefix)
+    )
+    if observed_evidence_states != expected_evidence_states:
+        raise _ProjectExportFailure(
+            issue_code,
+            "Composite SDLC-evidence projection differs from the validated "
+            "live bundle.",
+        )
+
+    evidence_identity = _directory_entry_identity(
+        root.descriptor,
+        SDLC_ARTIFACT_DIRECTORY_NAME,
+        issue_code=issue_code,
+    )
+    with _open_directory_at(
+        root.descriptor,
+        SDLC_ARTIFACT_DIRECTORY_NAME,
+        expected_identity=evidence_identity,
+        issue_code=issue_code,
+    ) as evidence:
+        validated_evidence = _validate_artifact_bundle_descriptor(
+            evidence,
+            request,
+            expected=expected_artifacts,
+            issue_code=issue_code,
+        )
+
+    expected_files = {
+        *(file_state.path for file_state in request.authoritative_snapshot.files),
+        *(f"{prefix}{record.path}" for record in expected_artifacts.files),
+    }
+    expected_directories = _expected_directory_paths(expected_files)
+    if (
+        set(descriptor_file_states) != expected_files
+        or actual_directories != expected_directories
+    ):
+        raise _ProjectExportFailure(
+            issue_code,
+            "Composite package contains an unexplained file or directory path.",
+        )
+    return project_snapshot, validated_evidence
+
+
+def _expected_directory_paths(file_paths: set[str]) -> set[str]:
+    directories: set[str] = set()
+    for path in file_paths:
+        components = path.split("/")
+        directories.update(
+            "/".join(components[:index])
+            for index in range(1, len(components))
+        )
+    return directories
+
+
+def _directory_tree_state(
+    root: _DirectoryCapability,
+    *,
+    issue_code: ProjectExportIssueCode,
+) -> tuple[dict[str, WorkspaceFileState], set[str]]:
+    files: dict[str, WorkspaceFileState] = {}
+    directories: set[str] = set()
+
+    def visit(descriptor: int, parent: str) -> None:
+        try:
+            names = tuple(sorted(os.listdir(descriptor)))
+        except OSError as exc:
+            raise _ProjectExportFailure(
+                issue_code,
+                f"Composite package directory could not be listed: {exc}.",
+            ) from exc
+        for name in names:
+            _validate_child_name(name, issue_code=issue_code)
+            relative = f"{parent}/{name}" if parent else name
+            try:
+                entry_stat = os.stat(
+                    name,
+                    dir_fd=descriptor,
+                    follow_symlinks=False,
+                )
+            except OSError as exc:
+                raise _ProjectExportFailure(
+                    issue_code,
+                    f"Composite package entry became unavailable: {relative}: "
+                    f"{exc}.",
+                ) from exc
+            if stat.S_ISLNK(entry_stat.st_mode):
+                raise _ProjectExportFailure(
+                    issue_code,
+                    f"Composite package contains a symlink: {relative}.",
+                )
+            if stat.S_ISREG(entry_stat.st_mode):
+                contents = _read_regular_file_at(
+                    descriptor,
+                    name,
+                    issue_code=issue_code,
+                    expected_identity=(entry_stat.st_dev, entry_stat.st_ino),
+                )
+                files[relative] = WorkspaceFileState(
+                    path=relative,
+                    content_hash=hashlib.sha256(contents).hexdigest(),
+                )
+                continue
+            if not stat.S_ISDIR(entry_stat.st_mode):
+                raise _ProjectExportFailure(
+                    issue_code,
+                    f"Composite package contains a special entry: {relative}.",
+                )
+            directories.add(relative)
+            identity = entry_stat.st_dev, entry_stat.st_ino
+            with _open_directory_at(
+                descriptor,
+                name,
+                expected_identity=identity,
+                issue_code=issue_code,
+            ) as child:
+                visit(child.descriptor, relative)
+
+    visit(root.descriptor, "")
+    return files, directories
+
+
+def _read_regular_file_at(
+    parent_descriptor: int,
+    name: str,
+    *,
+    issue_code: ProjectExportIssueCode,
+    expected_identity: tuple[int, int] | None = None,
+) -> bytes:
+    _validate_child_name(name, issue_code=issue_code)
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    try:
+        descriptor = os.open(name, flags, dir_fd=parent_descriptor)
+    except OSError as exc:
+        raise _ProjectExportFailure(
+            issue_code,
+            f"Regular evidence file could not be opened safely: {name}: {exc}.",
+        ) from exc
+    try:
+        opened_stat = os.fstat(descriptor)
+        identity = opened_stat.st_dev, opened_stat.st_ino
+        if not stat.S_ISREG(opened_stat.st_mode) or (
+            expected_identity is not None and identity != expected_identity
+        ):
+            raise _ProjectExportFailure(
+                issue_code,
+                f"Opened evidence entry is not the validated regular file: {name}.",
+            )
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        final_stat = os.fstat(descriptor)
+        if (
+            (final_stat.st_dev, final_stat.st_ino) != identity
+            or not stat.S_ISREG(final_stat.st_mode)
+        ):
+            raise _ProjectExportFailure(
+                issue_code,
+                f"Evidence file changed identity while being read: {name}.",
+            )
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
 def _write_new_file_at(
     parent_descriptor: int,
     name: str,
@@ -822,6 +1466,94 @@ def _promote_staged_entries(
             src_dir_fd=staging.descriptor,
             dst_dir_fd=destination.descriptor,
         )
+
+
+@contextmanager
+def _open_live_artifact_bundle(
+    bundle: LiveRunArtifactBundle,
+    *,
+    expected_identity: tuple[int, int] | None = None,
+) -> Iterator[_DirectoryCapability]:
+    repository_identity = _real_directory_identity(
+        bundle.repository_root,
+        issue_code=ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+        label="Live-run repository root",
+    )
+    with _open_directory_path(
+        bundle.repository_root,
+        expected_identity=repository_identity,
+        issue_code=ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+    ) as repository:
+        with _open_existing_directory_chain(
+            repository.descriptor,
+            (
+                RUNS_DIRECTORY_NAME,
+                bundle.run_id,
+                SDLC_ARTIFACT_DIRECTORY_NAME,
+            ),
+            expected_identity=expected_identity,
+            issue_code=ProjectExportIssueCode.EVIDENCE_INTEGRITY,
+        ) as evidence:
+            yield evidence
+
+
+@contextmanager
+def _open_existing_directory_chain(
+    root_descriptor: int,
+    components: tuple[str, ...],
+    *,
+    expected_identity: tuple[int, int] | None,
+    issue_code: ProjectExportIssueCode,
+) -> Iterator[_DirectoryCapability]:
+    current = os.dup(root_descriptor)
+    current_capability: _DirectoryCapability | None = None
+    try:
+        for index, component in enumerate(components):
+            child = _open_directory_descriptor_at(
+                current,
+                component,
+                expected_identity=(
+                    expected_identity if index == len(components) - 1 else None
+                ),
+                issue_code=issue_code,
+            )
+            os.close(current)
+            current = child.descriptor
+            current_capability = child
+        if current_capability is None:
+            raise _ProjectExportFailure(
+                issue_code,
+                "Trusted directory chain has no components.",
+            )
+        yield current_capability
+    finally:
+        os.close(current)
+
+
+def _real_directory_identity(
+    path: Path,
+    *,
+    issue_code: ProjectExportIssueCode,
+    label: str,
+) -> tuple[int, int]:
+    try:
+        path_stat = path.lstat()
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise _ProjectExportFailure(
+            issue_code,
+            f"{label} is unavailable: {exc}.",
+        ) from exc
+    if (
+        resolved != path
+        or stat.S_ISLNK(path_stat.st_mode)
+        or not stat.S_ISDIR(path_stat.st_mode)
+    ):
+        raise _ProjectExportFailure(
+            issue_code,
+            f"{label} must be one canonical real directory.",
+        )
+    return path_stat.st_dev, path_stat.st_ino
 
 
 @contextmanager
@@ -962,8 +1694,10 @@ def _open_export_parent(
 def _directory_entry_identity(
     parent_descriptor: int,
     name: str,
+    *,
+    issue_code: ProjectExportIssueCode = ProjectExportIssueCode.COPY_FAILED,
 ) -> tuple[int, int]:
-    _validate_child_name(name)
+    _validate_child_name(name, issue_code=issue_code)
     try:
         entry_stat = os.stat(
             name,
@@ -972,12 +1706,12 @@ def _directory_entry_identity(
         )
     except OSError as exc:
         raise _ProjectExportFailure(
-            ProjectExportIssueCode.COPY_FAILED,
+            issue_code,
             f"Created export directory identity is unavailable: {exc}.",
         ) from exc
     if stat.S_ISLNK(entry_stat.st_mode) or not stat.S_ISDIR(entry_stat.st_mode):
         raise _ProjectExportFailure(
-            ProjectExportIssueCode.COPY_FAILED,
+            issue_code,
             "Created export entry is not a real directory.",
         )
     return entry_stat.st_dev, entry_stat.st_ino
@@ -1102,10 +1836,14 @@ def _validated_export_path_components(path: str) -> tuple[str, ...]:
     return components
 
 
-def _validate_child_name(name: str) -> None:
+def _validate_child_name(
+    name: str,
+    *,
+    issue_code: ProjectExportIssueCode = ProjectExportIssueCode.COPY_FAILED,
+) -> None:
     if not name or name in {".", ".."} or "/" in name or "\\" in name:
         raise _ProjectExportFailure(
-            ProjectExportIssueCode.COPY_FAILED,
+            issue_code,
             "Export path contains an unsafe child component.",
         )
 
@@ -1127,6 +1865,7 @@ def _failure_result(
         export_root=Path(export_root or request.export_root),
         destination_directory=destination,
         exported_file_count=0,
+        packaged_artifact_file_count=0,
         validation=validation,
         issue_code=issue_code,
         failure_reason=failure_reason,
