@@ -670,6 +670,12 @@ set +a
 .venv/bin/python -m agentic_sdlc demo
 ```
 
+An optional project name selects the durable destination folder:
+
+```bash
+.venv/bin/python -m agentic_sdlc demo --project-name my-url-shortener
+```
+
 The CLI presents the full requirement analysis first. After requirement approval,
 it displays the canonical specification namespaces, TaskGraph tasks and links,
 derived execution layers, parallelism, joins, and ENTRY/EXIT semantics. It then
@@ -678,6 +684,17 @@ may span multiple lines and ends with a blank line.
 
 Missing credentials never trigger a fake fallback. A missing task-executor key is
 classified non-retryable, records a clear failure, and safely stops.
+
+After the workflow passes its exit gate with `VERIFIED` workspace integrity, the
+CLI promotes the authoritative regular-file snapshot into
+`projects/<project-name>/`. The isolated temporary workspace remains the sole task
+execution environment. The exporter revalidates that live capability before
+copying, rejects symlinks and special files through the existing snapshot policy,
+and uses descriptor-relative, no-follow POSIX operations for staging writes and
+promotion. It fails closed when those primitives are unavailable, verifies both
+the staged and durable copies, and never overwrites an explicit destination.
+Failed, rejected, or safe-stopped runs do not create a durable project;
+automatically selected name collisions receive a deterministic run-derived suffix.
 
 Successful artifacts are written under `artifacts/demo-run/`:
 
@@ -728,6 +745,11 @@ workspace integrity, deterministic demo tooling copies the final regular-file se
 to `generated-project/` for reviewer inspection. This export is not promotion into
 an authoritative repository and grants the scheduler no additional filesystem
 authority.
+
+The live CLI uses the same governed promotion boundary to create a separate
+durable project under `projects/`. That directory is an output, never the agent
+workspace, and the export grants no Git, shell, package-installation, test-execution,
+deployment, or overwrite authority.
 
 The orchestrator never executes the materialized source or tests. Reviewers and
 development tooling may validate the exported copy manually, outside workflow

@@ -43,7 +43,7 @@ The greenfield and brownfield bundles are retained V0.5 snapshots. Their histori
 | Dependency-aware execution with a parallelism cap of two | Demonstrate real concurrency while bounding resource use and synchronization complexity. | Independent tasks may overlap; dependency joins and evidence settlement remain deterministic. |
 | Isolated, transactional workspace mutation | Model-produced content should not translate directly into unrestricted filesystem writes. | The application derives and validates `CREATE`, `MODIFY`, or `NO_CHANGE`, applies eligible changes serially, and verifies resulting state. `DELETE` is not supported. |
 | Deterministic evidence and reliability projection | Reliability claims should follow retained facts rather than inferred telemetry. | Metrics are recomputed read-only from execution and workspace evidence and do not influence the run. |
-| Git, CI/CD, and deployment outside autonomous authority | Filesystem mutation and promotion are materially different trust decisions. | Autonomous effects end in the isolated workspace; branch, commit, push, merge, release, and deployment remain external activities. |
+| Governed project export; Git, CI/CD, and deployment outside autonomous authority | Workspace mutation and durable promotion are separate trust decisions. | Agent-controlled effects end in the isolated workspace; the application exports only an exit-verified snapshot into a new project directory, while branch, commit, push, merge, release, and deployment remain external activities. |
 
 Together, these decisions favor bounded blast radius, reproducibility, and reviewable authority over unconstrained exploration or self-modifying execution.
 
@@ -51,7 +51,7 @@ Together, these decisions favor bounded blast radius, reproducibility, and revie
 
 Validation is intentionally split between the orchestrator and the products it creates or enhances.
 
-The final orchestrator checkpoint completed with **397 tests passed**. The suite uses scripted model adapters and deterministic executors, so control behavior can be exercised without API credentials or network variability. It covers structured-output parsing, deterministic readiness, both human approval loops, canonical identities, specification and TaskGraph lineage, DAG coverage and cycle rejection, sequential and fan-out/fan-in scheduling, true bounded overlap, retry exhaustion, stale-source rejection, artifact filtering, conflict reconciliation, isolated workspace containment, preimage and postimage checks, rollback, rollback failure, hard safe stops, exit-gate completeness, and reliability derivation. Fault injection verifies failure paths rather than inferring them from positive demonstrations.
+The final orchestrator checkpoint completed with **439 tests passed**. The suite uses scripted model adapters and deterministic executors, so control behavior can be exercised without API credentials or network variability. It covers structured-output parsing, deterministic readiness, both human approval loops, canonical identities, specification and TaskGraph lineage, DAG coverage and cycle rejection, sequential and fan-out/fan-in scheduling, true bounded overlap, retry exhaustion, stale-source rejection, artifact filtering, conflict reconciliation, isolated workspace containment, preimage and postimage checks, rollback, rollback failure, hard safe stops, exit-gate completeness, verified non-overwriting project export, and reliability derivation. Fault injection verifies failure paths rather than inferring them from positive demonstrations.
 
 Generated-product validation is a separate layer. The exported greenfield, brownfield, and expiration products are dependency-free, independently runnable URL-shortener projects whose suites completed with 11, 18, and 20 passing tests respectively. These checks validate the behavior of the delivered product snapshots; they are not silently performed by the orchestrator and do not confer Git, CI/CD, release, or deployment authority.
 
@@ -67,7 +67,7 @@ For eligible mutation failures, the runtime restores owned targets in reverse or
 
 ## 7. Security and Change-Control Guardrails
 
-The change-control path narrows authority at each boundary: bounded repository context → isolated workspace → restricted mutation vocabulary → deterministic validation → targeted preimage checks → serialized application → postimage verification → verified rollback or hard safe stop → external human-controlled promotion.
+The change-control path narrows authority at each boundary: bounded repository context → isolated workspace → restricted mutation vocabulary → deterministic validation → targeted preimage checks → serialized application → postimage verification → verified rollback or hard safe stop → exit-verified durable project export → external Git and release control.
 
 Executors receive explicit UTF-8 file content, hashes, and nonexistence facts for authorized paths rather than a repository root handle or autonomous discovery capability. Mutations reject absolute paths, traversal, protected `.git` and environment targets, symlinks, special files, and duplicate targets. `CREATE` requires nonexistence; `MODIFY` requires the expected preimage; `NO_CHANGE` verifies the desired state without writing. An authoritative workspace snapshot advances only after a verified `APPLIED` result.
 
@@ -123,6 +123,6 @@ The most efficient review path is each bundle's `summary.md`, followed by its re
 
 ## 12. Final Readiness
 
-The repository demonstrates a controlled-autonomy lifecycle from deterministic intake and governed requirement authority through validated planning, bounded dependency-aware execution, transactional isolated-workspace mutation, exit evaluation, and retained evidence. The final checkpoints are 397 passing orchestrator tests and independently runnable reviewer products with 11, 18, and 20 passing tests.
+The repository demonstrates a controlled-autonomy lifecycle from deterministic intake and governed requirement authority through validated planning, bounded dependency-aware execution, transactional isolated-workspace mutation, exit evaluation, verified durable project export, and retained evidence. The final checkpoints are 439 passing orchestrator tests and independently runnable generated products with 11, 18, and 20 passing tests.
 
-This is readiness for technical evaluation of the implemented prototype, not a claim of autonomous promotion or production deployment. Its authority boundaries, failure behavior, trade-offs, and unmeasured reliability dimensions are explicit, and the checked-in evidence provides concrete paths for a reviewer to verify the claims.
+This describes the implemented prototype, not autonomous Git, release, or production deployment. Its authority boundaries, failure behavior, trade-offs, and unmeasured reliability dimensions are explicit, and the checked-in evidence provides concrete paths for independent verification.

@@ -152,11 +152,11 @@ This scenario demonstrates the governed replanning boundary, but Revision 1 prod
 
 These controls do not perform live TaskGraph topology mutation, active dependency surgery, running-task migration, cancellation, or active-DAG rewriting.
 
-## 9. Exit Gate and Release Readiness
+## 9. Exit Gate and Durable Project Promotion
 
 Task success alone is insufficient. The workflow exit gate checks processed input, approved validated analysis, an approved specification, validated and approved TaskGraph evidence, `SUCCEEDED` runtime state, exact final-attempt request/result/artifact/validation chains, verified workspace integrity, and complete final materialization/mutation/exit-decision evidence. A `REQUIRED` materialization task must have passed materialization evidence and an `APPLIED` transaction; non-materializing permitted tasks still require a successful governed exit decision.
 
-This is an evidence-completeness and workspace-integrity boundary, not deployment authority. The orchestrator does not run the generated products or their tests, promote isolated-workspace contents into an authoritative repository, deploy, or invoke CI/CD. The checked-in product tests are executed separately by deterministic reviewer/development tooling after governed success.
+This is an evidence-completeness and workspace-integrity boundary, not deployment authority. After it passes, the live CLI resolves the exact retained workspace capability for the run and invokes a separate project exporter. The exporter compares the current source to the authoritative snapshot, copies only canonical regular-file entries using descriptor-relative no-follow POSIX operations, verifies the staged snapshot, reserves a new non-overwriting directory under `projects/`, promotes relative to retained staging/destination descriptors, and verifies the durable result against the same snapshot. Export fails closed where those filesystem primitives are unavailable. The durable directory is not an agent workspace. The orchestrator does not run the generated product or its tests, initialize Git, deploy, or invoke CI/CD.
 
 ## 10. Traceability and Reliability Evidence
 
@@ -169,7 +169,7 @@ End-to-end latency and MTTR are explicitly `NOT_MEASURED`: the evidence model re
 ## 11. Architectural Decisions and Deliberate Limitations
 
 - **No live TaskGraph mutation.** Static control topology plus governed plan regeneration favors reproducibility over runtime graph surgery.
-- **No autonomous Git promotion.** Filesystem authority ends at the isolated workspace, keeping branch, commit, push, review, merge, and release decisions outside the autonomous loop.
+- **No autonomous Git promotion.** Agent mutation authority ends at the isolated workspace. The application may promote an exit-verified snapshot into a new durable project directory, while branch, commit, push, review, merge, and release decisions remain outside the autonomous loop.
 - **Restricted mutation vocabulary.** Complete-file `CREATE`, `MODIFY`, and `NO_CHANGE` make preimages, postimages, conflicts, and rollback defensible; arbitrary filesystem operations and `DELETE` are excluded.
 - **Bounded repository reasoning.** Explicit path projections reduce context and prevent autonomous discovery, at the cost of requiring application-owned context selection.
 - **Serialized mutation after parallel reasoning.** This preserves deterministic evidence and transaction ordering while still demonstrating real concurrent executor calls.

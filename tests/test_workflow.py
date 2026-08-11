@@ -1117,16 +1117,25 @@ def test_cli_preserves_multiline_requirement_feedback_and_reaches_graph_review(
     expected_feedback = "\n".join(feedback_lines)
     responses = iter(["c", *feedback_lines, "", "a", "a"])
 
-    def write_stub_diagram(output_path: Path) -> None:
+    def write_stub_diagram(
+        output_path: Path,
+        *,
+        workflow: Any | None = None,
+    ) -> None:
+        assert workflow is not None
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
 
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        cli,
-        "WORKFLOW",
-        build_workflow(analyst, planner, RecordingTaskExecutor()),
-    )
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(cli, "write_workflow_diagram", write_stub_diagram)
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
 
@@ -1137,6 +1146,8 @@ def test_cli_preserves_multiline_requirement_feedback_and_reaches_graph_review(
     assert "Layer 1 — parallel" in output
     assert analyst.calls[1]["human_feedback"] == expected_feedback
     assert "[task_graph_review] approve" in output
+    assert "Project: url-shortener" in output
+    assert (tmp_path / "projects" / "url-shortener" / "README.md").exists()
     with raises(StopIteration):
         next(responses)
 
@@ -1165,19 +1176,27 @@ def test_diagram_failure_does_not_fail_demo(
     monkeypatch: MonkeyPatch,
     capsys: CaptureFixture[str],
 ) -> None:
-    def fail_to_render(_output_path: Path) -> None:
+    analyst = FakeRequirementAnalysisClient([_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def fail_to_render(
+        _output_path: Path,
+        *,
+        workflow: Any | None = None,
+    ) -> None:
+        assert workflow is not None
         raise RuntimeError("renderer unavailable")
 
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        cli,
-        "WORKFLOW",
-        build_workflow(
-            FakeRequirementAnalysisClient([_analysis()]),
-            FakeTaskPlanningClient([_proposal()]),
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
             RecordingTaskExecutor(),
-        ),
-    )
+            workspace_runtime=workspace_runtime,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(cli, "write_workflow_diagram", fail_to_render)
     responses = iter(["a", "a"])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
@@ -1187,3 +1206,189 @@ def test_diagram_failure_does_not_fail_demo(
     assert "Warning: workflow diagram was not generated" in output.err
     assert "[task_graph_review] approve" in output.out
     assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+    assert (tmp_path / "projects" / "url-shortener" / "README.md").exists()
+
+
+def test_cli_explicit_project_name_uses_the_injected_live_runtime(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    from agentic_sdlc.workspace_integration import GovernedWorkspaceRuntime
+
+    workspace_parent = tmp_path / "isolated"
+    workspace_parent.mkdir()
+
+    class RecordingWorkspaceRuntime(GovernedWorkspaceRuntime):
+        def __init__(self) -> None:
+            super().__init__(parent_directory=workspace_parent)
+            self.resolved_workspaces: list[Any] = []
+
+        def workspace_for_run(self, run_id: str) -> Any:
+            workspace = super().workspace_for_run(run_id)
+            self.resolved_workspaces.append(workspace)
+            return workspace
+
+    runtime = RecordingWorkspaceRuntime()
+    analyst = FakeRequirementAnalysisClient([_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        assert workspace_runtime is runtime
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
+    def skip_diagram(
+        _output_path: Path,
+        *,
+        workflow: Any | None = None,
+    ) -> None:
+        assert workflow is not None
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "GovernedWorkspaceRuntime", lambda: runtime)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(cli, "write_workflow_diagram", skip_diagram)
+    responses = iter(["a", "a"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
+
+    assert cli.main(["demo", "--project-name", "My Durable App"]) == 0
+
+    destination = tmp_path / "projects" / "my-durable-app"
+    output = capsys.readouterr()
+    assert "Workspace integrity: VERIFIED" in output.out
+    assert "Project exported successfully." in output.out
+    assert f"  {destination}" in output.out
+    assert (destination / "README.md").exists()
+    assert runtime.resolved_workspaces
+    assert runtime.resolved_workspaces[-1].root.parent == workspace_parent.resolve()
+    assert runtime.resolved_workspaces[-1].root != destination
+
+
+def test_cli_rejected_run_does_not_create_a_durable_project(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    analyst = FakeRequirementAnalysisClient([_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(
+        cli,
+        "write_workflow_diagram",
+        lambda _path, *, workflow=None: None,
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "r")
+
+    assert cli.main(["demo"]) == 1
+
+    output = capsys.readouterr().out
+    assert "Workflow stopped safely" in output
+    assert not (tmp_path / "projects").exists()
+    assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+
+
+def test_cli_failed_analysis_safe_stop_does_not_create_a_durable_project(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    analyst = FakeRequirementAnalysisClient(
+        [
+            {"normalized_problem_statement": "Incomplete"}
+            for _ in range(MAX_REQUIREMENT_ANALYSIS_ATTEMPTS)
+        ]
+    )
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(
+        cli,
+        "write_workflow_diagram",
+        lambda _path, *, workflow=None: None,
+    )
+
+    assert cli.main(["demo"]) == 1
+
+    output = capsys.readouterr().out
+    assert "Workflow stopped safely" in output
+    assert "failed after 3 attempts" in output
+    assert not (tmp_path / "projects").exists()
+    assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+
+
+def test_cli_explicit_destination_collision_fails_without_overwrite(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    analyst = FakeRequirementAnalysisClient([_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
+    destination = tmp_path / "projects" / "existing-project"
+    destination.mkdir(parents=True)
+    marker = destination / "keep.txt"
+    marker.write_text("preserve\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(
+        cli,
+        "write_workflow_diagram",
+        lambda _path, *, workflow=None: None,
+    )
+    responses = iter(["a", "a"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
+
+    assert cli.main(["demo", "--project-name", "Existing Project"]) == 1
+
+    output = capsys.readouterr()
+    assert "Workflow completed successfully." in output.out
+    assert "Project export failed" in output.err
+    assert marker.read_text(encoding="utf-8") == "preserve\n"
+    assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+
+
+def test_cli_rejects_unsafe_project_name_before_running_workflow(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.main(["demo", "--project-name", "../escape"]) == 2
+
+    output = capsys.readouterr()
+    assert "Invalid project name" in output.err
+    assert not (tmp_path / "artifacts").exists()
+    assert not (tmp_path / "projects").exists()

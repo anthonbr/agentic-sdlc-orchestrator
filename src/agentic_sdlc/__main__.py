@@ -7,14 +7,37 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from langgraph.graph.state import CompiledStateGraph
+
+from agentic_sdlc.project_export import (
+    ProjectExportContractError,
+    ProjectExporter,
+    ProjectNameError,
+    normalize_project_name,
+    project_export_request_from_state,
+)
 from agentic_sdlc.state import ApprovalResponse, WorkflowState, demo_input
-from agentic_sdlc.workflow import WORKFLOW, resume_workflow, run_workflow
+from agentic_sdlc.workflow import (
+    WORKFLOW,
+    build_workflow,
+    resume_workflow,
+    run_workflow,
+)
+from agentic_sdlc.workspace_integration import (
+    GovernedWorkspaceRuntime,
+    WorkspaceIntegrationError,
+)
 
 
-def write_workflow_diagram(output_path: Path) -> None:
+def write_workflow_diagram(
+    output_path: Path,
+    *,
+    workflow: CompiledStateGraph | None = None,
+) -> None:
     """Render the actual compiled workflow graph to a PNG file."""
 
-    png_bytes = WORKFLOW.get_graph().draw_mermaid_png()
+    active_workflow = workflow or WORKFLOW
+    png_bytes = active_workflow.get_graph().draw_mermaid_png()
     if not png_bytes:
         raise ValueError("The workflow diagram renderer returned no PNG data.")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -25,14 +48,27 @@ def main(arguments: list[str] | None = None) -> int:
     """Run the governed demonstration without introducing a CLI dependency."""
 
     args = list(sys.argv[1:] if arguments is None else arguments)
-    if args != ["demo"]:
-        print("Usage: python -m agentic_sdlc demo", file=sys.stderr)
+    try:
+        requested_project_name = _parse_project_name_argument(args)
+        if requested_project_name is not None:
+            normalize_project_name(requested_project_name)
+    except ProjectNameError as error:
+        print(f"Invalid project name: {error}", file=sys.stderr)
+        return 2
+    except ValueError:
+        print(
+            "Usage: python -m agentic_sdlc demo "
+            "[--project-name PROJECT_NAME]",
+            file=sys.stderr,
+        )
         return 2
 
+    workspace_runtime = GovernedWorkspaceRuntime()
+    workflow = build_workflow(workspace_runtime=workspace_runtime)
     artifacts_dir = Path.cwd() / "artifacts"
     diagram_path = artifacts_dir / "workflow_diagram.png"
     try:
-        write_workflow_diagram(diagram_path)
+        write_workflow_diagram(diagram_path, workflow=workflow)
     except Exception as error:
         detail = str(error).splitlines()[0] or type(error).__name__
         print(
@@ -48,7 +84,7 @@ def main(arguments: list[str] | None = None) -> int:
         demo_input(),
         thread_id=thread_id,
         artifact_dir=artifact_dir,
-        workflow=WORKFLOW,
+        workflow=workflow,
     )
     while state.get("__interrupt__"):
         payload = _interrupt_payload(state)
@@ -62,7 +98,7 @@ def main(arguments: list[str] | None = None) -> int:
             thread_id,
             response,
             artifact_dir=artifact_dir,
-            workflow=WORKFLOW,
+            workflow=workflow,
         )
 
     for event in state.get("trace", []):
@@ -70,6 +106,32 @@ def main(arguments: list[str] | None = None) -> int:
 
     if state.get("workflow_status") == "success":
         print("Workflow completed successfully.")
+        session = state["governed_workspace_session"]
+        print(f"Workspace integrity: {session.integrity_status.value}")
+        try:
+            workspace = workspace_runtime.workspace_for_run(thread_id)
+            request = project_export_request_from_state(
+                state,
+                workspace=workspace,
+                export_root=Path.cwd() / "projects",
+                requested_project_name=requested_project_name,
+            )
+        except (ProjectExportContractError, WorkspaceIntegrationError) as error:
+            print(f"Project export failed: {error}", file=sys.stderr)
+            print(f"Artifacts written to: {artifact_dir}")
+            return 1
+        export_result = ProjectExporter().export(request)
+        if not export_result.succeeded:
+            print(
+                f"Project export failed: {export_result.failure_reason}",
+                file=sys.stderr,
+            )
+            print(f"Artifacts written to: {artifact_dir}")
+            return 1
+        print("Project exported successfully.")
+        print(f"Project: {export_result.project_name}")
+        print("Project directory:")
+        print(f"  {export_result.destination_directory}")
         print(f"Artifacts written to: {artifact_dir}")
         return 0
 
@@ -82,6 +144,18 @@ def main(arguments: list[str] | None = None) -> int:
     for error in state.get("errors", []):
         print(f"- {error}")
     return 1
+
+
+def _parse_project_name_argument(args: list[str]) -> str | None:
+    if args == ["demo"]:
+        return None
+    if len(args) == 3 and args[:2] == ["demo", "--project-name"]:
+        return args[2]
+    if len(args) == 2 and args[0] == "demo" and args[1].startswith(
+        "--project-name="
+    ):
+        return args[1].split("=", 1)[1]
+    raise ValueError("unsupported command-line arguments")
 
 
 def _interrupt_payload(state: WorkflowState) -> dict[str, Any]:
