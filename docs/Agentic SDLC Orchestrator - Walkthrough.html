@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic SDLC Orchestrator — Reviewer Walkthrough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#11151c;
+    --bg-panel:#171d26;
+    --bg-panel-2:#1d2530;
+    --bg-panel-3:#232c39;
+    --border:rgba(255,255,255,0.09);
+    --border-soft:rgba(255,255,255,0.055);
+    --text:#eaeef4;
+    --text-dim:#9aa5b8;
+    --text-faint:#6b7688;
+    --accent:#57b8dd;
+    --accent-dim:#3d8aa8;
+    --accent-soft:rgba(87,184,221,0.11);
+    --gate:#e3ab55;
+    --gate-soft:rgba(227,171,85,0.12);
+    --good:#66ba92;
+    --good-soft:rgba(102,186,146,0.12);
+    --stop:#d3746e;
+    --stop-soft:rgba(211,116,110,0.12);
+    --radius:10px;
+    --maxw:1180px;
+    --prose:700px;
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto;}
+    *{animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important;}
+  }
+
+  body{
+    margin:0;
+    background:
+      radial-gradient(1100px 620px at 12% -8%, rgba(87,184,221,0.08), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(227,171,85,0.05), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size:18px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  h1,h2,h3,h4{
+    font-family:'Space Grotesk', 'IBM Plex Sans', sans-serif;
+    font-weight:600;
+    line-height:1.18;
+    margin:0;
+    letter-spacing:-0.01em;
+  }
+
+  a{color:var(--accent);}
+  a:focus-visible, button:focus-visible, summary:focus-visible{
+    outline:2px solid var(--accent);
+    outline-offset:3px;
+    border-radius:4px;
+  }
+
+  code, .mono{
+    font-family:'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  .wrap{
+    max-width:var(--maxw);
+    margin:0 auto;
+    padding:0 32px;
+  }
+
+  /* ---------- top nav ---------- */
+  header.topbar{
+    position:sticky;
+    top:0;
+    z-index:50;
+    background:rgba(17,21,28,0.86);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--border-soft);
+  }
+  .topbar-inner{
+    max-width:var(--maxw);
+    margin:0 auto;
+    padding:0 32px;
+    display:flex;
+    align-items:center;
+    gap:28px;
+    height:64px;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:600;
+    font-size:15px;
+    color:var(--text);
+    white-space:nowrap;
+    text-decoration:none;
+    flex-shrink:0;
+  }
+  .brand-dot{
+    width:9px;height:9px;border-radius:50%;
+    background:var(--good);
+    box-shadow:0 0 0 3px var(--good-soft);
+  }
+  nav.pipeline-nav{
+    display:flex;
+    gap:2px;
+    overflow-x:auto;
+    scrollbar-width:none;
+    flex:1;
+  }
+  nav.pipeline-nav::-webkit-scrollbar{display:none;}
+  nav.pipeline-nav a{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    letter-spacing:0.03em;
+    text-transform:uppercase;
+    color:var(--text-faint);
+    text-decoration:none;
+    white-space:nowrap;
+    padding:9px 12px;
+    border-radius:6px;
+    transition:color .15s ease, background .15s ease;
+    position:relative;
+  }
+  nav.pipeline-nav a:hover{color:var(--text);}
+  nav.pipeline-nav a.active{
+    color:var(--accent);
+    background:var(--accent-soft);
+  }
+
+  /* ---------- hero ---------- */
+  .hero{
+    padding:88px 0 64px;
+    border-bottom:1px solid var(--border-soft);
+  }
+  .eyebrow{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--gate);
+    background:var(--gate-soft);
+    border:1px solid rgba(227,171,85,0.28);
+    padding:6px 12px;
+    border-radius:100px;
+    margin-bottom:26px;
+  }
+  .hero h1{
+    font-size:clamp(34px, 5vw, 54px);
+    max-width:16ch;
+    margin-bottom:22px;
+  }
+  .hero .lede{
+    font-size:19px;
+    color:var(--text-dim);
+    max-width:640px;
+    margin-bottom:36px;
+  }
+  .hero .lede strong{color:var(--text); font-weight:600;}
+
+  .cta-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+    margin-bottom:64px;
+  }
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:12px 20px;
+    border-radius:8px;
+    text-decoration:none;
+    font-size:14.5px;
+    font-weight:500;
+    font-family:'IBM Plex Sans', sans-serif;
+    border:1px solid var(--border);
+    transition:border-color .15s ease, background .15s ease, transform .15s ease;
+  }
+  .btn-primary{
+    background:var(--accent);
+    color:#0d1319;
+    border-color:var(--accent);
+  }
+  .btn-primary:hover{background:#6ec3e4; transform:translateY(-1px);}
+  .btn-ghost{color:var(--text-dim); background:var(--bg-panel);}
+  .btn-ghost:hover{color:var(--text); border-color:rgba(255,255,255,0.22);}
+
+  /* ---------- pipeline rail (signature element) ---------- */
+  .rail-scroll{
+    overflow-x:auto;
+    scrollbar-width:thin;
+    padding-bottom:6px;
+    margin:0 -4px;
+  }
+  .rail{
+    display:flex;
+    align-items:stretch;
+    gap:0;
+    min-width:920px;
+  }
+  .rail-node{
+    flex:1;
+    min-width:104px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    padding:0 6px;
+    position:relative;
+  }
+  .rail-node .rail-line{
+    width:100%;
+    height:2px;
+    background:linear-gradient(90deg, var(--border) 0%, var(--border) 100%);
+    position:relative;
+    margin-bottom:14px;
+  }
+  .rail-node:first-child .rail-line{background:linear-gradient(90deg, transparent 0%, var(--border) 50%, var(--border) 100%);}
+  .rail-node:last-child .rail-line{background:linear-gradient(90deg, var(--border) 0%, var(--border) 50%, transparent 100%);}
+  .rail-marker{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    width:15px;height:15px;
+    border-radius:50%;
+    background:var(--bg-panel-2);
+    border:2px solid var(--accent-dim);
+  }
+  .rail-node[data-type="human"] .rail-marker{
+    border-radius:3px;
+    transform:translate(-50%,-50%) rotate(45deg);
+    border-color:var(--gate);
+    background:var(--gate-soft);
+  }
+  .rail-node[data-type="auto"] .rail-marker{
+    border-color:var(--good);
+    background:var(--good-soft);
+  }
+  .rail-node[data-type="llm"] .rail-marker{
+    border-color:var(--accent);
+    background:var(--accent-soft);
+  }
+  .rail-tag{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    color:var(--text-faint);
+    margin-bottom:4px;
+  }
+  .rail-node[data-type="human"] .rail-tag{color:var(--gate);}
+  .rail-node[data-type="llm"] .rail-tag{color:var(--accent);}
+  .rail-node[data-type="auto"] .rail-tag{color:var(--good);}
+  .rail-label{
+    font-size:13.5px;
+    color:var(--text-dim);
+    line-height:1.3;
+    max-width:120px;
+  }
+  .rail-legend{
+    display:flex;
+    gap:22px;
+    flex-wrap:wrap;
+    margin-top:22px;
+    font-size:13px;
+    color:var(--text-faint);
+  }
+  .rail-legend span{display:inline-flex; align-items:center; gap:7px;}
+  .legend-dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+
+  /* ---------- reviewer shortcut ---------- */
+  .quick-review{
+    margin-top:38px;
+    padding:26px 28px;
+    display:grid;
+    grid-template-columns:210px minmax(0,1fr);
+    gap:30px;
+    background:linear-gradient(135deg, var(--accent-soft), transparent 48%), var(--bg-panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+  }
+  .quick-review .kicker{margin-bottom:8px;}
+  .quick-review h2{font-size:21px; margin-bottom:8px;}
+  .quick-review-intro p{margin:0; color:var(--text-dim); font-size:14px;}
+  .quick-review ol{list-style:none; margin:0; padding:0; display:grid; gap:12px;}
+  .quick-review li{
+    display:grid;
+    grid-template-columns:28px minmax(0,1fr);
+    gap:12px;
+    color:var(--text-dim);
+    font-size:14px;
+    line-height:1.5;
+  }
+  .quick-review li + li{border-top:1px solid var(--border-soft); padding-top:12px;}
+  .quick-review-num{
+    width:26px;height:26px;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:6px;
+    color:var(--accent);
+    background:var(--accent-soft);
+    border:1px solid rgba(87,184,221,0.25);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+  }
+  .quick-review strong{display:block; color:var(--text); margin-bottom:2px;}
+  .quick-review a{text-underline-offset:3px;}
+  .quick-review .mono{
+    display:block;
+    margin-top:5px;
+    color:var(--text);
+    font-size:12px;
+    line-height:1.45;
+    overflow-wrap:anywhere;
+  }
+
+  /* ---------- section scaffolding ---------- */
+  section{
+    padding:96px 0;
+    border-bottom:1px solid var(--border-soft);
+    scroll-margin-top:80px;
+  }
+  section:last-of-type{border-bottom:none;}
+  .section-head{
+    max-width:var(--prose);
+    margin-bottom:52px;
+  }
+  .kicker{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12.5px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--accent);
+    margin-bottom:14px;
+    display:block;
+  }
+  .section-head h2{
+    font-size:clamp(26px, 3.4vw, 36px);
+    margin-bottom:18px;
+  }
+  .section-head p{
+    color:var(--text-dim);
+    font-size:17.5px;
+  }
+  .prose{max-width:var(--prose);}
+  .prose p{color:var(--text-dim); margin:0 0 18px;}
+  .prose p:last-child{margin-bottom:0;}
+  .prose strong{color:var(--text); font-weight:600;}
+  .prose a{text-underline-offset:3px;}
+
+  .reveal{
+    opacity:0;
+    transform:translateY(14px);
+    transition:opacity .6s ease, transform .6s ease;
+  }
+  .reveal.in{opacity:1; transform:translateY(0);}
+
+  /* badges */
+  .badge{
+    display:inline-flex;
+    align-items:center;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px;
+    letter-spacing:0.04em;
+    padding:3px 8px;
+    border-radius:5px;
+    border:1px solid transparent;
+    white-space:nowrap;
+  }
+  .badge-accent{color:var(--accent); background:var(--accent-soft); border-color:rgba(87,184,221,0.25);}
+  .badge-gate{color:var(--gate); background:var(--gate-soft); border-color:rgba(227,171,85,0.25);}
+  .badge-good{color:var(--good); background:var(--good-soft); border-color:rgba(102,186,146,0.25);}
+  .badge-stop{color:var(--stop); background:var(--stop-soft); border-color:rgba(211,116,110,0.25);}
+  .badge-dim{color:var(--text-dim); background:var(--bg-panel-3); border-color:var(--border);}
+
+  /* requirement cards */
+  .req-card{
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:30px 30px 32px;
+    position:relative;
+  }
+  .req-card-wide{grid-column:1 / -1;}
+  .req-num{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:13px;
+    font-weight:600;
+    color:var(--accent);
+    background:var(--accent-soft);
+    width:28px;height:28px;
+    border-radius:7px;
+    display:flex;align-items:center;justify-content:center;
+    margin-bottom:18px;
+  }
+  .req-card h3{font-size:19px; margin-bottom:12px; display:flex; align-items:center; flex-wrap:wrap; row-gap:6px;}
+  .req-ask{
+    font-size:14.5px;
+    color:var(--text-faint);
+    font-style:italic;
+    border-left:2px solid var(--border);
+    padding-left:12px;
+    margin:0 0 16px;
+  }
+  .req-how{color:var(--text-dim); font-size:15.5px; margin:0;}
+  .req-how .mono{color:var(--text);}
+  .req-list{margin:14px 0 0; padding-left:20px; color:var(--text-dim); font-size:15.5px;}
+  .req-list li{margin-bottom:10px;}
+  .req-list li:last-child{margin-bottom:0;}
+  .req-list strong{color:var(--text);}
+
+  /* scenario cards */
+  .scen-card{
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:28px 26px 26px;
+    display:flex;
+    flex-direction:column;
+  }
+  .scen-card h3{font-size:19px; margin:14px 0 12px;}
+  .scen-card p{color:var(--text-dim); font-size:15px; margin:0; flex:1;}
+  .scen-meta{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-top:20px;
+    padding-top:16px;
+    border-top:1px solid var(--border-soft);
+    font-size:13.5px;
+  }
+  .scen-meta .mono{color:var(--good);}
+  .scen-meta a{color:var(--text-dim); text-decoration:none;}
+  .scen-meta a:hover{color:var(--accent);}
+
+  /* criteria table */
+  .crit-table{
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  .crit-row{
+    display:grid;
+    grid-template-columns:300px 1fr;
+    gap:24px;
+    padding:18px 24px;
+    border-bottom:1px solid var(--border-soft);
+    font-size:15px;
+  }
+  .crit-row:last-child{border-bottom:none;}
+  .crit-row:nth-child(even):not(.crit-head){background:rgba(255,255,255,0.015);}
+  .crit-head{
+    background:var(--bg-panel-2);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--text-faint);
+    padding:14px 24px;
+  }
+  .crit-row div:first-child strong{color:var(--text);}
+  .crit-row div:last-child{color:var(--text-dim);}
+  .crit-row .mono{color:var(--good);}
+
+  /* validation chain */
+  .chain{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:10px;
+    font-size:14px;
+  }
+  .chain-step{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    color:var(--text-dim);
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    padding:9px 14px;
+    border-radius:7px;
+  }
+  .chain-step.badge-gate-bg{
+    color:var(--gate);
+    background:var(--gate-soft);
+    border-color:rgba(227,171,85,0.28);
+  }
+  .chain-arrow{color:var(--text-faint); font-size:15px;}
+
+  /* limitations */
+  .limit-item{
+    background:var(--bg-panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:22px 24px;
+    font-size:15px;
+    color:var(--text-dim);
+  }
+  .limit-item .badge{display:block; width:fit-content; margin-bottom:12px;}
+
+  /* faq */
+  .faq-list{max-width:var(--prose);}
+  .faq-item{
+    border-bottom:1px solid var(--border-soft);
+    padding:22px 0;
+  }
+  .faq-item:first-child{padding-top:0;}
+  .faq-item summary{
+    cursor:pointer;
+    font-family:'Space Grotesk', sans-serif;
+    font-size:17px;
+    font-weight:600;
+    color:var(--text);
+    list-style:none;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+  }
+  .faq-item summary::-webkit-details-marker{display:none;}
+  .faq-item summary::after{
+    content:'+';
+    font-family:'IBM Plex Mono', monospace;
+    font-size:20px;
+    font-weight:400;
+    color:var(--accent);
+    flex-shrink:0;
+    transition:transform .2s ease;
+  }
+  .faq-item[open] summary::after{content:'–';}
+  .faq-body{
+    color:var(--text-dim);
+    font-size:15.5px;
+    margin-top:14px;
+    padding-right:24px;
+  }
+  .faq-body .mono{color:var(--text);}
+
+  /* footer */
+  .site-footer{padding:56px 0 64px;}
+  .footer-inner{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:32px;
+    flex-wrap:wrap;
+  }
+  .footer-links{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    font-size:14px;
+  }
+  .footer-links a{color:var(--text-dim); text-decoration:none;}
+  .footer-links a:hover{color:var(--accent);}
+
+  @media (max-width:860px){
+    .req-grid{grid-template-columns:1fr !important;}
+    .req-card-wide{grid-column:auto;}
+    .grid-2{grid-template-columns:1fr !important;}
+    .scen-grid{grid-template-columns:1fr !important;}
+    .limit-grid{grid-template-columns:1fr !important;}
+    .crit-row{grid-template-columns:1fr; gap:8px;}
+    .quick-review{grid-template-columns:1fr; gap:18px; padding:22px 20px;}
+    .wrap{padding:0 20px;}
+    .hero{padding-top:56px;}
+    section{padding:64px 0;}
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#top"><span class="brand-dot"></span>agentic-sdlc-orchestrator</a>
+    <nav class="pipeline-nav" id="pipelineNav">
+      <a href="#overview">Overview</a>
+      <a href="#how-it-works">How it works</a>
+      <a href="#requirements">Requirements</a>
+      <a href="#scenarios">Scenarios</a>
+      <a href="#criteria">Evaluation</a>
+      <a href="#validation">Guardrails</a>
+      <a href="#limitations">Limitations</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ================= HERO ================= -->
+  <section class="hero" style="padding-top:88px; border-bottom:1px solid var(--border-soft);">
+    <div class="wrap">
+      <span class="eyebrow">Agentic Proficient Assessment · Reviewer Walkthrough</span>
+      <h1>A governed pipeline, not a chatbot with file access.</h1>
+      <p class="lede">
+        This page walks through <strong>agentic-sdlc-orchestrator</strong>, a working prototype built for the
+        URL-shortener assessment. Models propose analysis, plans, and code. They never get to decide their own
+        output is good enough &mdash; deterministic application code and human approval gates do that.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/anthonbr/agentic-sdlc-orchestrator" target="_blank" rel="noopener">View the repository →</a>
+        <a class="btn btn-ghost" href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/ENGINEERING_SUMMARY.md" target="_blank" rel="noopener">Engineering summary</a>
+        <a class="btn btn-ghost" href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture doc</a>
+      </div>
+
+      <div class="rail-scroll">
+        <div class="rail">
+          <div class="rail-node" data-type="auto">
+            <div class="rail-line"><span class="rail-marker"></span></div>
+            <span class="rail-tag">Auto</span>
+            <span class="rail-label">Requirement intake &amp; entry gate</span>
+          </div>
+          <div class="rail-node" data-type="llm">
+            <div class="rail-line"><span class="rail-marker"></span></div>
+            <span class="rail-tag">Agent</span>
+            <span class="rail-label">Requirement analysis</span>
+          </div>
+          <div class="rail-node" data-type="human">
+            <div class="rail-line"><span class="rail-marker"></span></div>
+            <span class="rail-tag">Human</span>
+            <span class="rail-label">Approve / revise / reject</span>
+          </div>
+          <div class="rail-node" data-type="llm">
+            <div class="rail-line"><span class="rail-marker"></span></div>
+            <span class="rail-tag">Agent</span>
+            <span class="rail-label">Task decomposition</span>
+          </div>
+          <div class="rail-node" data-type="human">
+            <div class="rail-line"><span class="rail-marker"></span></div>
+            <span class="rail-tag">Human</span>
+            <span class="rail-label">Approve TaskGraph</span>
+          </div>
+          <div class="rail-node" data-type="llm">
+            <div class="rail-line"><span class="rail-marker"></span></div>
+            <span class="rail-tag">Agents</span>
+            <span class="rail-label">Governed parallel execution</span>
+          </div>
+          <div class="rail-node" data-type="auto">
+            <div class="rail-line"><span class="rail-marker"></span></div>
+            <span class="rail-tag">Auto</span>
+            <span class="rail-label">Exit gate</span>
+          </div>
+          <div class="rail-node" data-type="auto">
+            <div class="rail-line"><span class="rail-marker"></span></div>
+            <span class="rail-tag">Output</span>
+            <span class="rail-label">Durable project + evidence</span>
+          </div>
+        </div>
+      </div>
+      <div class="rail-legend">
+        <span><span class="legend-dot" style="background:var(--good)"></span>deterministic application code</span>
+        <span><span class="legend-dot" style="background:var(--accent)"></span>LLM reasoning, bounded</span>
+        <span><span class="legend-dot" style="background:var(--gate); border-radius:2px; transform:rotate(45deg);"></span>human approval checkpoint</span>
+      </div>
+
+      <div class="quick-review reveal" aria-labelledby="quick-review-title">
+        <div class="quick-review-intro">
+          <span class="kicker">Reviewer shortcut</span>
+          <h2 id="quick-review-title">Have five minutes?</h2>
+          <p>Use this compact path to verify the architecture, governance, execution, and evidence claims.</p>
+        </div>
+        <ol>
+          <li>
+            <span class="quick-review-num">1</span>
+            <span><strong><a href="#how-it-works">Understand the architecture</a></strong>Read why the stable LangGraph control graph and per-run engineering TaskGraph stay separate.</span>
+          </li>
+          <li>
+            <span class="quick-review-num">2</span>
+            <span><strong><a href="#ambiguity-scenario">Inspect the ambiguity scenario</a></strong>See planning blocked until a human resolves six explicit product decisions.</span>
+          </li>
+          <li>
+            <span class="quick-review-num">3</span>
+            <span><strong><a href="#replay-faq">Replay one deterministic scenario</a></strong>From the repository root, run:<span class="mono">.venv/bin/python -m pytest -q tests/test_workflow.py::test_successful_run_writes_canonical_artifact_set</span></span>
+          </li>
+          <li>
+            <span class="quick-review-num">4</span>
+            <span><strong><a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/tree/main/artifacts/demo-run" target="_blank" rel="noopener">Inspect the evidence bundle</a></strong>Follow the greenfield requirement, approvals, TaskGraph, execution, workspace, and summary records.</span>
+          </li>
+          <li>
+            <span class="quick-review-num">5</span>
+            <span><strong><a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/ENGINEERING_SUMMARY.md" target="_blank" rel="noopener">Read the engineering summary</a></strong>Review decisions, risks, trade-offs, validation strategy, and deliberate limitations.</span>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= OVERVIEW ================= -->
+  <section id="overview">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">01 — The assignment</span>
+        <h2>What was asked, and what got built.</h2>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:48px;" class="grid-2 reveal">
+        <div class="prose">
+          <p><strong>The brief.</strong> The assessment asks for a working URL-shortener prototype built and improved with AI assistance. But the URL shortener itself is a vehicle. The document is explicit that the real subject under evaluation is the <strong>orchestration layer</strong>: an agentic system that carries a requirement through analysis, planning, implementation, testing, documentation, and release readiness with governance rather than a simple linear chain of prompts.</p>
+          <p>Eight capabilities are named directly: requirement understanding, task decomposition, codebase reasoning over an existing brownfield system, workflow orchestration, engineering output generation, validation and risk control, controlled autonomy, and a final engineering summary. Three demonstrated scenarios are required &mdash; greenfield, brownfield, and an ambiguous requirement &mdash; each showing decomposition, orchestration, and validation.</p>
+        </div>
+        <div class="prose">
+          <p><strong>The build.</strong> <span class="badge badge-accent">agentic-sdlc-orchestrator</span> is a Python/LangGraph application that treats a software requirement as something that has to earn its way through a governed lifecycle, not something an agent just executes. A stable control graph owns routing, retries, human interrupts, and the exit gate. A separate, per-run <span class="mono">TaskGraph</span> represents the actual engineering work &mdash; and that graph is data, not new LangGraph nodes, so the control plane stays reviewable while every requirement produces different work underneath it.</p>
+          <p>All three required scenarios exist as checked-in, reproducible evidence bundles, each pairing a governed decision record with a runnable product: <span class="badge badge-good">11 tests passing</span> (greenfield), <span class="badge badge-good">18 tests passing</span> (brownfield), <span class="badge badge-good">20 tests passing</span> (ambiguity). The orchestrator itself carries <span class="badge badge-good">565 passing tests</span> of its own.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HOW IT WORKS ================= -->
+  <section id="how-it-works">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">02 — How it works</span>
+        <h2>Two graphs, kept deliberately separate.</h2>
+        <p>The single design choice that shapes everything else: useful, nondeterministic reasoning is kept apart from authoritative decisions. An LLM can propose an analysis or a plan. It can never decide that its own output is ready.</p>
+      </div>
+
+      <div class="reveal grid-2" style="display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:56px;">
+        <div style="background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius); padding:28px 30px;">
+          <span class="badge badge-good" style="margin-bottom:16px; display:inline-block;">Control graph</span>
+          <h3 style="font-size:19px; margin-bottom:12px;">The stable LangGraph pipeline</h3>
+          <p style="color:var(--text-dim); font-size:15.5px; margin:0;">
+            Implemented once in LangGraph: routing, bounded planning retries and revisions, human interrupts, safe-stop behavior, checkpointed state, execution-loop iteration, and the exit gate. It doesn't change shape per requirement, and the LLM never creates or rewires its nodes or edges.
+          </p>
+        </div>
+        <div style="background:var(--bg-panel); border:1px solid var(--border); border-radius:var(--radius); padding:28px 30px;">
+          <span class="badge badge-accent" style="margin-bottom:16px; display:inline-block;">Engineering graph</span>
+          <h3 style="font-size:19px; margin-bottom:12px;">The per-run TaskGraph</h3>
+          <p style="color:var(--text-dim); font-size:15.5px; margin:0;">
+            A dynamic domain artifact. The model proposes tasks, types, dependencies, and traceability using temporary keys; application code assigns real <span class="mono">TASK-001</span> identity, validates the DAG, derives layers and parallelism, and a human approves the result before anything runs.
+          </p>
+        </div>
+      </div>
+
+      <div class="prose reveal" style="margin-bottom:56px;">
+        <p><strong>The execution loop is bounded and serialized on purpose.</strong> At each step, the scheduler selects every task whose dependencies have already succeeded, starts that whole wave at once (capped at two tasks running concurrently), and invokes independent Task Agents in parallel threads. It then joins the wave, canonicalizes every result in deterministic graph order regardless of which one physically finished first, reconciles any same-wave file conflicts, and applies changes to the workspace one at a time. Physical completion timing never gets to change audit order or mutation order &mdash; that's decided entirely by the graph, not the race.</p>
+        <p><strong>Every file change is a transaction, not a write.</strong> A Task Agent never touches a filesystem. It returns a proposed output; application code derives whether that output means <span class="mono">CREATE</span>, <span class="mono">MODIFY</span>, or <span class="mono">NO_CHANGE</span> by comparing content hashes against the current workspace snapshot, checks the target path against a policy that blocks <span class="mono">.git</span>, <span class="mono">.env</span>, traversal, and symlinks, and only then applies it &mdash; atomically, with the previous state captured for rollback. If a postimage doesn't verify, the runtime restores the prior file from the captured bytes and mode, or fails closed into <span class="mono">ROLLBACK_FAILED</span> rather than pretending the workspace is trustworthy.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= REQUIREMENTS ================= -->
+  <section id="requirements">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">03 — Requirements coverage</span>
+        <h2>The eight core requirements, one at a time.</h2>
+        <p>Each card pairs the assignment's own language with the specific mechanism that satisfies it, and where to look for evidence.</p>
+      </div>
+
+      <div class="req-grid reveal" style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+
+        <div class="req-card">
+          <div class="req-num">1</div>
+          <h3>Requirement Understanding</h3>
+          <p class="req-ask">Interpret intent, identify ambiguity, normalize into a clear engineering problem.</p>
+          <p class="req-how">The Requirement Analysis Agent produces a structured breakdown into <span class="mono">FR</span>, <span class="mono">NFR</span>, <span class="mono">CON</span>, <span class="mono">AC</span>, <span class="mono">RISK</span>, and <span class="mono">AMB</span> items. Deterministic policy &mdash; not the model &mdash; decides <span class="badge badge-good">READY</span> or <span class="badge badge-gate">BLOCKED</span>: any nonblank ambiguity forces <span class="mono">BLOCKED</span> with reason code <span class="mono">UNRESOLVED_REQUIREMENT_AMBIGUITY</span>, and a blocked analysis can only be sent back for changes or rejected &mdash; approval is refused by code, not by convention.</p>
+        </div>
+
+        <div class="req-card">
+          <div class="req-num">2</div>
+          <h3>Task Decomposition</h3>
+          <p class="req-ask">Convert high-level requirements into actionable tasks with dependencies and sequencing.</p>
+          <p class="req-how">The Task Planning Agent proposes titles, types, temporary dependency keys, and a materialization policy from the approved specification alone. Application code assigns canonical <span class="mono">TASK-001</span> IDs, remaps dependencies, rejects cycles and missing references, and derives topological layers and parallelism. Coverage is bidirectional and enforced: every approved FR/NFR/CON/AC item must be traced to at least one task, or the graph fails validation before a human ever reviews it.</p>
+        </div>
+
+        <div class="req-card">
+          <div class="req-num">3</div>
+          <h3>Codebase Reasoning <span class="badge badge-dim" style="margin-left:6px;">Brownfield</span></h3>
+          <p class="req-ask">Identify impacted modules/services/APIs/data flows; demonstrate architectural understanding.</p>
+          <p class="req-how">The brownfield scenario runs a <span class="mono">FORBIDDEN</span>-materialization impact-analysis task against five explicit repository files before any implementation task starts. Task Agents never browse a repository &mdash; they receive a bounded <span class="mono">RepositoryContext</span> of only the files their task and its dependencies are scoped to, with exact content, hashes, or explicit nonexistence.</p>
+        </div>
+
+        <div class="req-card req-card-wide">
+          <div class="req-num">4</div>
+          <h3>Workflow Orchestration <span class="badge badge-accent" style="margin-left:6px;">Critical differentiator</span></h3>
+          <p class="req-ask">An explicit dependency graph with entry/exit gates, sequential and parallel paths with synchronization, cross-stage lineage, human approval checkpoints, bounded retries/fallback/rollback/safe-stop, policy guardrails, audit-grade observability, reliability metrics, and dynamic re-planning &mdash; all under controlled autonomy.</p>
+          <p class="req-how">This is where the two-graph design (Section 02) does its work, item by item:</p>
+          <ul class="req-list">
+            <li><strong>Entry/exit gates</strong> &mdash; a deterministic entry gate before analysis, and a deterministic exit gate before publication that, for runnable-project runs, additionally verifies a launch surface, tests, and root run instructions exist in the final snapshot.</li>
+            <li><strong>Parallel paths with synchronization</strong> &mdash; up to two tasks run concurrently per wave; the scheduler joins the full wave before making its next dispatch decision.</li>
+            <li><strong>Cross-stage lineage</strong> &mdash; every spec and graph carries a version, content hash, and optional predecessor ID; every FR/NFR/CON/AC/RISK/AMB item gets its own deterministic lineage UUID.</li>
+            <li><strong>Human approval checkpoints</strong> &mdash; two real LangGraph <span class="mono">interrupt()</span> points (requirement review, TaskGraph review), each supporting <span class="mono">APPROVE</span> / <span class="mono">REQUEST_CHANGES</span> / <span class="mono">REJECT</span> with a bounded revision budget.</li>
+            <li><strong>Bounded retries, rollback, safe-stop</strong> &mdash; up to three attempts per task; failed mutations roll back from captured preimages or fail closed into <span class="mono">ROLLBACK_FAILED</span>; unrecoverable state routes to a hard <span class="mono">safe_stop</span> node.</li>
+            <li><strong>Governed fallback / escalation</strong> &mdash; retry classification and budgets are deterministic, and same-wave write conflicts have one explicit execution fallback: affected tasks consume retry budget and rerun as canonical singleton waves against the latest snapshot. The system never silently switches models or providers. Exhausted or non-retryable recovery safe-stops; that run does not auto-resume, so any later correction must begin another explicitly governed progression and pass the applicable revision, planning, and approval gates.</li>
+            <li><strong>Policy guardrails</strong> &mdash; each task carries a human-approved <span class="mono">FORBIDDEN</span> / <span class="mono">ALLOWED</span> / <span class="mono">REQUIRED</span> materialization policy; a path policy independently blocks <span class="mono">.git</span>, <span class="mono">.env</span>, traversal, and symlinks.</li>
+            <li><strong>Audit-grade observability</strong> &mdash; every run writes a manifest, requirement analysis, approved spec, task graph (JSON + human-readable Markdown), execution trace, workspace-mutation record, and summary to an isolated <span class="mono">runs/&lt;run-id&gt;/</span> bundle.</li>
+            <li><strong>Reliability metrics</strong> &mdash; a read-only projection over retained evidence reports success rate, retry/rollback frequency, and outcome counts per scenario; MTTR and end-to-end latency are explicitly reported as <span class="mono">NOT_MEASURED</span> rather than estimated.</li>
+            <li><strong>Governed re-planning on upstream change</strong> &mdash; every TaskGraph is bound to the exact requirement-spec identity and version it was planned from. That authority is checked before workspace initialization and before every execution-loop advance. If it changes, <span class="mono">STALE_TASK_GRAPH</span> blocks the obsolete graph before request dispatch or mutation. The implementation does not synthesize or patch a replacement automatically: a new graph must be regenerated, deterministically validated, and human-approved. Dynamic engineering plans are therefore supported through governed replacement while the control topology remains stable and reviewable.</li>
+          </ul>
+        </div>
+
+        <div class="req-card">
+          <div class="req-num">5</div>
+          <h3>Engineering Output Generation</h3>
+          <p class="req-ask">Production-quality code, API/schema definitions, tests, and documentation with clean design.</p>
+          <p class="req-how">Structured deliverable roles &mdash; <span class="mono">RUNNABLE_ENTRYPOINT</span>, <span class="mono">AUTOMATED_TESTS</span>, <span class="mono">RUN_INSTRUCTIONS</span> &mdash; participate in TaskGraph review, execution validation, and the exit gate itself. The three generated products are dependency-free, standard-library Python projects with their own passing <span class="mono">unittest</span> suites and a root README covering setup, run, test, and usage.</p>
+        </div>
+
+        <div class="req-card">
+          <div class="req-num">6</div>
+          <h3>Validation and Risk Control</h3>
+          <p class="req-ask">Identify risks, trade-offs, and failure scenarios; define validation and safety guardrails.</p>
+          <p class="req-how"><span class="mono">RISK-###</span> items are first-class, approved engineering considerations passed into task context. Every stage of the pipeline has its own deterministic validator &mdash; requirement analysis, TaskGraph DAG and coverage, task execution results, materialization intents, and workspace change sets &mdash; each producing a separate, inspectable judgment rather than one opaque pass/fail.</p>
+        </div>
+
+        <div class="req-card">
+          <div class="req-num">7</div>
+          <h3>Controlled Autonomy</h3>
+          <p class="req-ask">Agents execute multi-step work; humans provide oversight, approvals, and final quality control.</p>
+          <p class="req-how">A Task Agent's return value is a non-authoritative proposal: it cannot declare success, assign an artifact ID, claim a filesystem effect, or pick <span class="mono">CREATE</span>/<span class="mono">MODIFY</span>/<span class="mono">NO_CHANGE</span>. Every one of those decisions is made by application code, after the fact, against evidence. Autonomy is bounded to reasoning inside a disposable, isolated workspace &mdash; never to Git, shell, deployment, or CI/CD, which stay outside the agent's authority entirely.</p>
+        </div>
+
+        <div class="req-card">
+          <div class="req-num">8</div>
+          <h3>Final Engineering Summary</h3>
+          <p class="req-ask">Plan/rationale, artifacts, risks/trade-offs/validation, assumptions, and limitations.</p>
+          <p class="req-how">Delivered as <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/ENGINEERING_SUMMARY.md" target="_blank" rel="noopener">ENGINEERING_SUMMARY.md</a>: objective and rationale, a decisions table with consequences, a validation strategy, reliability and failure handling, security guardrails, explicit assumptions, a risks/trade-offs section, and a deliberately-deferred scope list. See <a href="#limitations">Limitations</a> below for the honest version of that list.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SCENARIOS ================= -->
+  <section id="scenarios">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">04 — Reviewer scenarios</span>
+        <h2>Three scenarios, each checked in and reproducible.</h2>
+        <p>Every scenario is network-free to regenerate and inspect &mdash; no API key required to verify the governed evidence or run the resulting product's tests.</p>
+      </div>
+
+      <div class="scen-grid reveal" style="display:grid; grid-template-columns:repeat(3,1fr); gap:20px;">
+
+        <div class="scen-card">
+          <span class="badge badge-good">Greenfield</span>
+          <h3>Build from nothing</h3>
+          <p>The built-in URL-shortener requirement runs through the full governed lifecycle from a blank, factory-created workspace: analysis, human approval, planning, a second human approval, then a bounded parallel execution wave &mdash; including one deliberately injected retryable failure that recovers on its next attempt &mdash; that transactionally creates a six-file Python project.</p>
+          <div class="scen-meta">
+            <span class="mono">11 tests passed</span>
+            <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/artifacts/demo-run" target="_blank" rel="noopener">artifacts/demo-run →</a>
+          </div>
+        </div>
+
+        <div class="scen-card">
+          <span class="badge badge-accent">Brownfield</span>
+          <h3>Reason about existing code</h3>
+          <p>The greenfield output becomes the starting repository. A <span class="mono">FORBIDDEN</span>-materialization task performs impact analysis against five named files first; parallel <span class="mono">REQUIRED</span> tasks then modify the service and HTTP adapter to add analytics, followed by a wave that updates tests and docs against the real resulting code &mdash; four validated <span class="mono">MODIFY</span> transactions, zero accidental creates or deletes.</p>
+          <div class="scen-meta">
+            <span class="mono">18 tests passed</span>
+            <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/artifacts/brownfield-demo-run" target="_blank" rel="noopener">artifacts/brownfield-demo-run →</a>
+          </div>
+        </div>
+
+        <div class="scen-card" id="ambiguity-scenario">
+          <span class="badge badge-gate">Ambiguous</span>
+          <h3>Block until clarified</h3>
+          <p>The requirement "expire shortened URLs after a period of time" leaves six real product decisions unresolved. The analysis correctly comes back <span class="mono">BLOCKED</span> &mdash; the planner receives zero calls and no TaskGraph exists yet. A human supplies a fixed 24-hour, creation-based policy; only <em>that</em> revision reaches planning and governed execution.</p>
+          <div class="scen-meta">
+            <span class="mono">20 tests passed</span>
+            <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/artifacts/ambiguity-demo-run" target="_blank" rel="noopener">artifacts/ambiguity-demo-run →</a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= EVALUATION CRITERIA ================= -->
+  <section id="criteria">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">05 — Evaluation criteria</span>
+        <h2>Mapped directly to the assignment's own rubric.</h2>
+      </div>
+
+      <div class="crit-table reveal">
+        <div class="crit-row crit-head">
+          <div>Evaluation criterion</div>
+          <div>Where to look</div>
+        </div>
+        <div class="crit-row">
+          <div><strong>Effectiveness of agentic orchestration</strong></div>
+          <div>Two-graph model; bounded parallel waves with a concurrency cap of two, proven with barrier-synchronized tests for true overlap, not just sequential calls that look parallel.</div>
+        </div>
+        <div class="crit-row">
+          <div><strong>Architecture / system design quality</strong></div>
+          <div>Clean separation across contract layers &mdash; execution request/result, artifact canonicalization, materialization intent, change-set validation, isolated-workspace mutation &mdash; each independently testable.</div>
+        </div>
+        <div class="crit-row">
+          <div><strong>Depth of decomposition and execution quality</strong></div>
+          <div>Deterministic DAG normalization; mandatory bidirectional FR/NFR/CON/AC-to-task coverage before a graph can reach human review.</div>
+        </div>
+        <div class="crit-row">
+          <div><strong>Realism / quality of outputs</strong></div>
+          <div>Three real, dependency-free Python projects with their own passing test suites (11 / 18 / 20), not canned fixtures.</div>
+        </div>
+        <div class="crit-row">
+          <div><strong>Validation and risk-management rigor</strong></div>
+          <div>A distinct deterministic validator at every boundary &mdash; analysis, graph, execution result, materialization, change set &mdash; plus fault-injected rollback tests, not just happy-path coverage.</div>
+        </div>
+        <div class="crit-row">
+          <div><strong>Clarity and defensibility of decisions</strong></div>
+          <div>Immutable, additive revision history for both requirement analysis and TaskGraph; every decision traceable to a version, a hash, and either a human choice or a deterministic rule.</div>
+        </div>
+        <div class="crit-row">
+          <div><strong>Modular, testable, reliable, secure, scalable code</strong></div>
+          <div>565 orchestrator tests; strict path policy; transactional filesystem mutation with preimage/postimage verification and rollback.</div>
+        </div>
+        <div class="crit-row">
+          <div><strong>Engineering judgment</strong></div>
+          <div>A published, honest <a href="#limitations">limitations list</a> and metrics reported as <span class="mono">NOT_MEASURED</span> rather than fabricated &mdash; see below.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= VALIDATION / GUARDRAILS ================= -->
+  <section id="validation">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">06 — Validation &amp; guardrails</span>
+        <h2>The change-control chain, narrowing at every step.</h2>
+      </div>
+
+      <div class="chain reveal">
+        <span class="chain-step">Bounded repository context</span>
+        <span class="chain-arrow">→</span>
+        <span class="chain-step">Isolated workspace</span>
+        <span class="chain-arrow">→</span>
+        <span class="chain-step">Restricted mutation vocabulary</span>
+        <span class="chain-arrow">→</span>
+        <span class="chain-step">Deterministic validation</span>
+        <span class="chain-arrow">→</span>
+        <span class="chain-step">Preimage checks</span>
+        <span class="chain-arrow">→</span>
+        <span class="chain-step">Serialized apply</span>
+        <span class="chain-arrow">→</span>
+        <span class="chain-step">Postimage verification</span>
+        <span class="chain-arrow">→</span>
+        <span class="chain-step badge-gate-bg">Rollback or hard safe-stop</span>
+      </div>
+
+      <div class="prose reveal" style="margin-top:44px;">
+        <p>Task Agents receive explicit file content, hashes, and nonexistence facts for authorized paths &mdash; never a repository handle or a "go explore" instruction. Mutation logic rejects absolute paths, traversal, symlinks, special files, duplicate targets, and protected names (<span class="mono">.git</span>, <span class="mono">.env</span>, <span class="mono">.venv</span>). <span class="mono">CREATE</span> requires proven nonexistence; <span class="mono">MODIFY</span> requires the exact expected preimage; <span class="mono">NO_CHANGE</span> verifies without writing anything. The authoritative workspace snapshot only advances after a verified <span class="mono">APPLIED</span> result.</p>
+        <p>None of this is presented as container- or VM-grade isolation &mdash; it's a disposable directory with a strict policy layer in front of it, which is an honest, appropriately-scoped claim for a prototype rather than an overstated one.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LIMITATIONS ================= -->
+  <section id="limitations">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">07 — Deliberate limitations</span>
+        <h2>What this doesn't do, on purpose.</h2>
+        <p>A prototype that's honest about its edges is more defensible than one that quietly hopes nobody asks. This list is reproduced from the repository's own engineering summary.</p>
+      </div>
+
+      <div class="limit-grid reveal" style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+        <div class="limit-item"><span class="badge badge-stop">Out of scope</span>No autonomous Git branch, commit, push, PR, or merge capability.</div>
+        <div class="limit-item"><span class="badge badge-stop">Out of scope</span>No CI/CD promotion and no deployment authority.</div>
+        <div class="limit-item"><span class="badge badge-stop">Out of scope</span>Generated code and generated tests are never executed by the orchestrator itself &mdash; readiness is evidence-based, not runtime-proven.</div>
+        <div class="limit-item"><span class="badge badge-stop">Out of scope</span>No <span class="mono">DELETE</span> support, no unrestricted filesystem operations.</div>
+        <div class="limit-item"><span class="badge badge-stop">Out of scope</span>No distributed workers, no crash-recovery journaling, no durable tamper-evident audit store.</div>
+        <div class="limit-item"><span class="badge badge-stop">Out of scope</span>No live dependency-graph surgery or active-task migration &mdash; a stale plan is safe-stopped; any replacement must be regenerated, validated, and approved, never patched in place.</div>
+        <div class="limit-item"><span class="badge badge-gate">Unmeasured</span>MTTR and end-to-end latency are reported as <span class="mono">NOT_MEASURED</span>. The evidence model doesn't retain authoritative timing boundaries, and file timestamps aren't substituted for missing telemetry.</div>
+        <div class="limit-item"><span class="badge badge-gate">Trade-off</span>A stable LangGraph topology is reproducible and testable, but deliberately gives up self-modifying control flow.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= FAQ ================= -->
+  <section id="faq">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">08 — FAQ</span>
+        <h2>Frequently Asked Questions</h2>
+      </div>
+
+      <div class="faq-list reveal">
+
+        <details class="faq-item" open>
+          <summary>Is this actually calling an LLM, or is it three canned demos wearing a costume?</summary>
+          <div class="faq-body">Both paths exist, on purpose. The interactive CLI (<span class="mono">agentic_sdlc demo</span> / <span class="mono">agentic_sdlc run</span>) makes real, structured-output calls to OpenAI for requirement analysis, task planning, and each Task Agent's execution. The three checked-in reviewer bundles instead use scripted, deterministic clients so an evaluator can regenerate and inspect them with no API key and no network variability. Same governed workflow, same validation, same LangGraph routing either way &mdash; only the reasoning source changes.</div>
+        </details>
+
+        <details class="faq-item" id="replay-faq">
+          <summary>How do I check this myself in a few minutes?</summary>
+          <div class="faq-body">No credentials needed. From the repo root: <span class="mono">.venv/bin/python -m pytest -q tests/test_workflow.py::test_successful_run_writes_canonical_artifact_set</span> replays the greenfield path, <span class="mono">tests/test_brownfield_demo.py</span> covers brownfield, and <span class="mono">python -m tests.demo_ambiguity_scenario</span> plus <span class="mono">tests/test_ambiguity_demo.py</span> regenerate the ambiguity scenario. Each generated product also has its own <span class="mono">unittest discover</span> command in its own README.</div>
+        </details>
+
+        <details class="faq-item">
+          <summary>What actually stops an agent from doing something destructive?</summary>
+          <div class="faq-body">Several independent layers, not one. Task Agents get no filesystem, shell, or Git access at all &mdash; they return a proposal. That proposal is only realized inside a disposable, isolated workspace, after a path policy blocks dangerous targets, after a per-task human-approved materialization policy (<span class="mono">FORBIDDEN</span> / <span class="mono">ALLOWED</span> / <span class="mono">REQUIRED</span>) authorizes it, and after a preimage check confirms the file is in the state the change assumes. Any failure past that point rolls back from captured bytes, or the run fails closed.</div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Is the human approval real, or just a message that gets acknowledged automatically?</summary>
+          <div class="faq-body">It's a real blocking interrupt. Both checkpoints use LangGraph's <span class="mono">interrupt()</span> and pause the graph until a <span class="mono">Command(resume=...)</span> is supplied. A <span class="mono">BLOCKED</span> requirement analysis is only offered <span class="mono">REQUEST_CHANGES</span> or <span class="mono">REJECT</span> in the review step &mdash; an attempted <span class="mono">APPROVE</span> is rejected by the domain code, not merely discouraged by a prompt.</div>
+        </details>
+
+        <details class="faq-item">
+          <summary>What happens when a task fails?</summary>
+          <div class="faq-body">A task gets up to three attempts total. Application code &mdash; not the model &mdash; classifies each failure as retryable or not; request-build and invariant failures are always non-retryable, while a specific allowlist of transient or correctable issues may retry with feedback about what went wrong. The implemented fallback is governed execution behavior, not model substitution: same-wave write conflicts may consume retry budget and rerun as singleton waves against the latest snapshot. Exhausted or non-retryable recovery marks the graph failed and routes to safe-stop. There is no fallback model, no silent provider switch, and no automatic resume from a safe-stopped run.</div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Does it really run tasks in parallel, or is "parallel" just marketing?</summary>
+          <div class="faq-body">It's real, bounded concurrency: up to two <span class="mono">TaskExecutor.execute()</span> calls run in worker threads at once, and the test suite proves true overlap using thread barriers rather than inferring it from timing. Everything else &mdash; request building, validation, conflict reconciliation, mutation, settlement &mdash; stays single-threaded on purpose, so audit order can never depend on which thread happened to finish first.</div>
+        </details>
+
+        <details class="faq-item">
+          <summary>How does it handle a genuinely ambiguous requirement?</summary>
+          <div class="faq-body">See the <a href="#scenarios">ambiguity scenario</a> above. "Expire URLs after a period of time" doesn't specify a TTL, a clock basis, error behavior, scope, or persistence. The analysis correctly reports <span class="mono">needs_clarification=true</span>, deterministic policy marks it <span class="mono">BLOCKED</span>, and the planner is never invoked until a human supplies the missing decisions. The system is deliberately built not to guess and quietly ship a made-up 30-day rule.</div>
+        </details>
+
+        <details class="faq-item">
+          <summary>Why doesn't it just deploy the thing it builds?</summary>
+          <div class="faq-body">That's an intentional trust boundary, not a missing feature. Filesystem mutation authority is scoped to one disposable workspace; Git, CI/CD, and deployment are treated as separate, external decisions that stay with a human. Runnable-project readiness proves the required surfaces exist &mdash; it's evidence of completeness, not a claim that the orchestrator watched the tests pass.</div>
+        </details>
+
+        <details class="faq-item">
+          <summary>What's the honest weak point of this prototype?</summary>
+          <div class="faq-body">Reliability metrics are real but incomplete by design &mdash; MTTR and latency are reported as <span class="mono">NOT_MEASURED</span> rather than backfilled from file timestamps. Recovery is process-local (an <span class="mono">InMemorySaver</span> checkpoint), so an interrupted run doesn't currently survive a process restart. And the control graph's topology is static: it governs dynamic TaskGraph data well, but it doesn't perform live dependency surgery on a running plan. See the full <a href="#limitations">limitations section</a>.</div>
+        </details>
+
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <div>
+        <div class="brand" style="margin-bottom:8px;"><span class="brand-dot"></span>agentic-sdlc-orchestrator</div>
+        <p style="color:var(--text-faint); font-size:14px; margin:0; max-width:440px;">Prepared as a reviewer walkthrough for the Agentic Proficient Assessment. Every claim above traces back to the repository's own README, ARCHITECTURE.md, ENGINEERING_SUMMARY.md, and checked-in evidence.</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator" target="_blank" rel="noopener">Repository</a>
+        <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture</a>
+        <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/ENGINEERING_SUMMARY.md" target="_blank" rel="noopener">Engineering summary</a>
+        <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/artifacts/reliability_metrics.json" target="_blank" rel="noopener">Reliability metrics</a>
+      </div>
+    </div>
+  </footer>
+
+</main>
+
+<script>
+  // Scroll-spy for top nav
+  const navLinks = Array.from(document.querySelectorAll('.pipeline-nav a'));
+  const sections = navLinks.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+
+  const spy = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const id = '#' + entry.target.id;
+      const link = navLinks.find(a => a.getAttribute('href') === id);
+      if (!link) return;
+      if (entry.isIntersecting) {
+        navLinks.forEach(a => a.classList.remove('active'));
+        link.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
+
+  sections.forEach(s => spy.observe(s));
+
+  // Reveal-on-scroll
+  const revealEls = document.querySelectorAll('.reveal');
+  const revealer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('in');
+        revealer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12 });
+  revealEls.forEach(el => revealer.observe(el));
+</script>
+</body>
+</html>
