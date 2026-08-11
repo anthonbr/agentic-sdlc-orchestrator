@@ -49,6 +49,13 @@ from agentic_sdlc.state import (
 )
 from agentic_sdlc.task_execution import TaskGraphExecutionStatus
 from agentic_sdlc.task_executor import OpenAITaskExecutor, TaskExecutor
+from agentic_sdlc.task_execution_progress import (
+    DEFAULT_TASK_EXECUTION_HEARTBEAT_SECONDS,
+    ConcurrentFutureTaskExecutionWaiter,
+    NullTaskExecutionProgressReporter,
+    TaskExecutionProgressReporter,
+    TaskExecutionWaiter,
+)
 from agentic_sdlc.workspace_integration import (
     DeterministicRepositoryContextPathProvider,
     GovernedWorkspaceRuntime,
@@ -217,8 +224,16 @@ def build_workflow(
     task_executor: TaskExecutor | None = None,
     workspace_runtime: GovernedWorkspaceRuntime | None = None,
     repository_context_path_provider: RepositoryContextPathProvider | None = None,
+    task_execution_progress_reporter: TaskExecutionProgressReporter | None = None,
+    task_execution_progress_waiter: TaskExecutionWaiter | None = None,
+    task_execution_heartbeat_interval_seconds: float = (
+        DEFAULT_TASK_EXECUTION_HEARTBEAT_SECONDS
+    ),
 ) -> CompiledStateGraph:
     """Build the explicit static control graph; engineering tasks stay data."""
+
+    if task_execution_heartbeat_interval_seconds <= 0:
+        raise ValueError("Task execution heartbeat interval must be positive.")
 
     analyst = requirement_analyst or OpenAIRequirementAnalysisClient()
     planner = task_planner or OpenAITaskPlanningClient()
@@ -227,6 +242,14 @@ def build_workflow(
     path_provider = (
         repository_context_path_provider
         or DeterministicRepositoryContextPathProvider()
+    )
+    progress_reporter = (
+        task_execution_progress_reporter
+        or NullTaskExecutionProgressReporter()
+    )
+    progress_waiter = (
+        task_execution_progress_waiter
+        or ConcurrentFutureTaskExecutionWaiter()
     )
     builder = StateGraph(WorkflowState)
 
@@ -257,7 +280,10 @@ def build_workflow(
     builder.add_node("prepare_task_planning_retry", prepare_task_planning_retry)
     builder.add_node("task_graph_review", task_graph_review)
     builder.add_node("prepare_task_graph_revision", prepare_task_graph_revision)
-    builder.add_node("approve_task_graph", approve_task_graph)
+    builder.add_node(
+        "approve_task_graph",
+        partial(approve_task_graph, progress_reporter=progress_reporter),
+    )
     builder.add_node(
         "initialize_task_graph_execution",
         partial(
@@ -272,6 +298,11 @@ def build_workflow(
             executor=executor,
             workspace_runtime=active_workspace_runtime,
             repository_context_path_provider=path_provider,
+            progress_reporter=progress_reporter,
+            progress_waiter=progress_waiter,
+            heartbeat_interval_seconds=(
+                task_execution_heartbeat_interval_seconds
+            ),
         ),
     )
     builder.add_node("safe_stop", safe_stop)

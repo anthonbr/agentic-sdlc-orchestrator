@@ -24,7 +24,10 @@ live CLI runs do not rewrite it: per-run SDLC evidence is generated under the
 ignored `runs/` tree, while successful durable delivery packages remain under the
 separate ignored `projects/` tree. Each successful package contains an
 application-controlled, verified `sdlc-artifacts/` copy of its retained run
-evidence.
+evidence. In Git ownership terms, `artifacts/` is tracked curated evidence,
+`projects/` is ignored durable generated output, and `runs/` is ignored live-run
+output. `.gitignore` prevents new untracked files from being added implicitly; it
+does not retroactively untrack files that are already committed.
 
 The orchestrator materializes runnable application code and tests in an isolated
 workspace, but deliberately does not execute generated code as part of its exit
@@ -67,6 +70,9 @@ assessment implementation; they are distinct from the Python package version in
   per-run evidence under `runs/<run-id>/sdlc-artifacts/`, a deterministic
   manifest, a reserved application-owned project namespace, and projection-based
   publication of verified project content plus verified SDLC evidence.
+- **V0.10 — live Task Agent execution progress:** application-owned wave,
+  attempt, heartbeat, executor-completion, and settled-outcome output during the
+  blocking post-approval execution interval, without changing workflow evidence.
 
 The V0.5 execution slices execute approved engineering tasks as bounded semantic
 LLM calls and may transactionally materialize validated executable URL-shortener
@@ -151,6 +157,15 @@ approved TaskGraph
     -> TaskGraphExecutionState
     -> deterministic readiness and synchronization transitions
 ```
+
+After final TaskGraph approval, the live CLI immediately states that governed Task
+Agent execution has begun; no additional Return or blank-line input is required
+unless a later explicit governance interrupt is displayed. It reports canonical
+wave membership, executor completion, and settled outcomes, with a bounded
+heartbeat while executor futures remain incomplete. Heartbeats are ephemeral
+runtime observability, not percentage-complete claims: they are not added to
+`WorkflowState.trace`, checkpoints, run artifacts, manifests, or reliability
+metrics. The existing deterministic trace remains the canonical workflow summary.
 
 Tasks without dependencies initialize as `READY`; dependent tasks initialize as
 `BLOCKED`. Starting a ready task moves it to `RUNNING` and increments its attempt

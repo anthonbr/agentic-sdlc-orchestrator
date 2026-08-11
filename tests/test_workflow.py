@@ -61,6 +61,11 @@ from agentic_sdlc.state import (
 )
 from agentic_sdlc.task_execution import TaskGraphExecutionStatus
 from agentic_sdlc.task_execution_contracts import TaskExecutionResult
+from agentic_sdlc.task_execution_progress import (
+    ConsoleTaskExecutionProgressReporter,
+    GovernedTaskExecutionStarted,
+    TaskExecutionProgressEvent,
+)
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
@@ -1379,12 +1384,15 @@ def test_cli_preserves_multiline_requirement_feedback_and_reaches_graph_review(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
 
-    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+    def build_cli_workflow(
+        *, workspace_runtime: Any, task_execution_progress_reporter: Any
+    ) -> Any:
         return build_workflow(
             analyst,
             planner,
             RecordingTaskExecutor(),
             workspace_runtime=workspace_runtime,
+            task_execution_progress_reporter=task_execution_progress_reporter,
         )
 
     monkeypatch.chdir(tmp_path)
@@ -1435,15 +1443,29 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
     planner = FakeTaskPlanningClient([_proposal()])
     artifact_dir = _fixed_cli_artifact_dir(tmp_path, monkeypatch, "fixed-owner")
     observed_calls: list[tuple[str, str, Path | None]] = []
+    resume_state = {"count": 0, "task_graph_active": False, "returned": False}
+    execution_started_before_resume_return: list[bool] = []
     original_run_workflow = cli.run_workflow
     original_resume_workflow = cli.resume_workflow
 
-    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+    class TimingConsoleReporter(ConsoleTaskExecutionProgressReporter):
+        def report(self, event: TaskExecutionProgressEvent) -> None:
+            if isinstance(event, GovernedTaskExecutionStarted):
+                execution_started_before_resume_return.append(
+                    resume_state["task_graph_active"]
+                    and not resume_state["returned"]
+                )
+            super().report(event)
+
+    def build_cli_workflow(
+        *, workspace_runtime: Any, task_execution_progress_reporter: Any
+    ) -> Any:
         return build_workflow(
             analyst,
             planner,
             RecordingTaskExecutor(),
             workspace_runtime=workspace_runtime,
+            task_execution_progress_reporter=task_execution_progress_reporter,
         )
 
     def write_stub_diagram(
@@ -1478,19 +1500,38 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
         workflow: Any | None = None,
     ) -> WorkflowState:
         observed_calls.append(("resume", thread_id, artifact_dir))
-        return original_resume_workflow(
+        resume_state["count"] += 1
+        if resume_state["count"] == 2:
+            resume_state["task_graph_active"] = True
+        result = original_resume_workflow(
             thread_id,
             decision,
             artifact_dir=artifact_dir,
             workflow=workflow,
         )
+        if resume_state["count"] == 2:
+            resume_state["returned"] = True
+            resume_state["task_graph_active"] = False
+        return result
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(cli, "write_workflow_diagram", write_stub_diagram)
     monkeypatch.setattr(cli, "run_workflow", recording_run_workflow)
     monkeypatch.setattr(cli, "resume_workflow", recording_resume_workflow)
-    monkeypatch.setattr("builtins.input", lambda _prompt="": "a")
+    monkeypatch.setattr(
+        cli,
+        "ConsoleTaskExecutionProgressReporter",
+        TimingConsoleReporter,
+    )
+    responses = iter(["a", "a"])
+    input_calls: list[str] = []
+
+    def approve_without_extra_input(prompt: str = "") -> str:
+        input_calls.append(prompt)
+        return next(responses)
+
+    monkeypatch.setattr("builtins.input", approve_without_extra_input)
 
     assert cli.main(["demo"]) == 0
 
@@ -1499,6 +1540,10 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
         ("resume", "demo-fixed-owner", artifact_dir),
         ("resume", "demo-fixed-owner", artifact_dir),
     ]
+    assert execution_started_before_resume_return == [True]
+    assert len(input_calls) == 2
+    with raises(StopIteration):
+        next(responses)
     assert not (tmp_path / "artifacts").exists()
     assert (artifact_dir / "workflow_diagram.png").exists()
     manifest = json.loads((artifact_dir / "manifest.json").read_text())
@@ -1513,6 +1558,8 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
         record["path"] for record in manifest["files"]
     }
     output = capsys.readouterr().out
+    assert "TaskGraph approved. Beginning governed Task Agent execution..." in output
+    assert "[wave 1] Starting " in output
     assert f"Workflow diagram written to: {artifact_dir / 'workflow_diagram.png'}" in (
         output
     )
@@ -1545,12 +1592,15 @@ def test_diagram_failure_does_not_fail_demo(
         assert workflow is not None
         raise RuntimeError("renderer unavailable")
 
-    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+    def build_cli_workflow(
+        *, workspace_runtime: Any, task_execution_progress_reporter: Any
+    ) -> Any:
         return build_workflow(
             analyst,
             planner,
             RecordingTaskExecutor(),
             workspace_runtime=workspace_runtime,
+            task_execution_progress_reporter=task_execution_progress_reporter,
         )
 
     artifact_dir = _fixed_cli_artifact_dir(
@@ -1605,13 +1655,16 @@ def test_cli_explicit_project_name_uses_the_injected_live_runtime(
     analyst = FakeRequirementAnalysisClient([_analysis()])
     planner = FakeTaskPlanningClient([_proposal()])
 
-    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+    def build_cli_workflow(
+        *, workspace_runtime: Any, task_execution_progress_reporter: Any
+    ) -> Any:
         assert workspace_runtime is runtime
         return build_workflow(
             analyst,
             planner,
             RecordingTaskExecutor(),
             workspace_runtime=workspace_runtime,
+            task_execution_progress_reporter=task_execution_progress_reporter,
         )
 
     def skip_diagram(
@@ -1659,12 +1712,15 @@ def test_failed_runnable_readiness_prevents_durable_export(
     analyst = FakeRequirementAnalysisClient([_analysis()])
     planner = FakeTaskPlanningClient([_proposal()])
 
-    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+    def build_cli_workflow(
+        *, workspace_runtime: Any, task_execution_progress_reporter: Any
+    ) -> Any:
         return build_workflow(
             analyst,
             planner,
             RecordingTaskExecutor(),
             workspace_runtime=workspace_runtime,
+            task_execution_progress_reporter=task_execution_progress_reporter,
         )
 
     def incomplete_readiness(
@@ -1717,12 +1773,15 @@ def test_cli_rejected_run_does_not_create_a_durable_project(
     analyst = FakeRequirementAnalysisClient([_analysis()])
     planner = FakeTaskPlanningClient([_proposal()])
 
-    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+    def build_cli_workflow(
+        *, workspace_runtime: Any, task_execution_progress_reporter: Any
+    ) -> Any:
         return build_workflow(
             analyst,
             planner,
             RecordingTaskExecutor(),
             workspace_runtime=workspace_runtime,
+            task_execution_progress_reporter=task_execution_progress_reporter,
         )
 
     artifact_dir = _fixed_cli_artifact_dir(tmp_path, monkeypatch, "rejected")
@@ -1763,12 +1822,15 @@ def test_cli_failed_analysis_safe_stop_does_not_create_a_durable_project(
     )
     planner = FakeTaskPlanningClient([_proposal()])
 
-    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+    def build_cli_workflow(
+        *, workspace_runtime: Any, task_execution_progress_reporter: Any
+    ) -> Any:
         return build_workflow(
             analyst,
             planner,
             RecordingTaskExecutor(),
             workspace_runtime=workspace_runtime,
+            task_execution_progress_reporter=task_execution_progress_reporter,
         )
 
     artifact_dir = _fixed_cli_artifact_dir(
@@ -1800,12 +1862,15 @@ def test_cli_explicit_destination_collision_fails_without_overwrite(
     analyst = FakeRequirementAnalysisClient([_analysis()])
     planner = FakeTaskPlanningClient([_proposal()])
 
-    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+    def build_cli_workflow(
+        *, workspace_runtime: Any, task_execution_progress_reporter: Any
+    ) -> Any:
         return build_workflow(
             analyst,
             planner,
             RecordingTaskExecutor(),
             workspace_runtime=workspace_runtime,
+            task_execution_progress_reporter=task_execution_progress_reporter,
         )
 
     destination = tmp_path / "projects" / "existing-project"

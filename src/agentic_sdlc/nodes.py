@@ -106,6 +106,23 @@ from agentic_sdlc.task_execution_contracts import (
     validate_execution_result,
 )
 from agentic_sdlc.task_executor import TaskExecutor, TaskExecutorError
+from agentic_sdlc.task_execution_progress import (
+    DEFAULT_TASK_EXECUTION_HEARTBEAT_SECONDS,
+    ConcurrentFutureTaskExecutionWaiter,
+    GovernedTaskExecutionStarted,
+    NullTaskExecutionProgressReporter,
+    TaskExecutionAttemptSettled,
+    TaskExecutionAttemptStarted,
+    TaskExecutionHeartbeat,
+    TaskExecutionProgressAttempt,
+    TaskExecutionProgressReporter,
+    TaskExecutionSettledOutcome,
+    TaskExecutionWaiter,
+    TaskExecutionWaveMode,
+    TaskExecutionWaveStarted,
+    TaskExecutorCompleted,
+    emit_task_execution_progress,
+)
 from agentic_sdlc.workspace_contracts import (
     ArtifactMaterializationIntent,
     ArtifactMaterializationIssueCode,
@@ -618,12 +635,20 @@ def prepare_task_graph_revision(state: WorkflowState) -> WorkflowState:
     }
 
 
-def approve_task_graph(state: WorkflowState) -> WorkflowState:
+def approve_task_graph(
+    state: WorkflowState,
+    *,
+    progress_reporter: TaskExecutionProgressReporter | None = None,
+) -> WorkflowState:
     """Promote the reviewed candidate to the authoritative plan for this run."""
 
     if state.get("task_graph_decision") != "APPROVE":
         raise ValueError("Task graph promotion requires human approval.")
     graph = _task_graph_from_data(state["candidate_task_graph"])
+    emit_task_execution_progress(
+        progress_reporter or NullTaskExecutionProgressReporter(),
+        GovernedTaskExecutionStarted(),
+    )
     return {
         "approved_task_graph": cast(TaskGraphData, graph.model_dump(mode="json")),
         "workflow_status": "pending",
@@ -713,8 +738,20 @@ def execute_task_graph_step(
     executor: TaskExecutor,
     workspace_runtime: GovernedWorkspaceRuntime,
     repository_context_path_provider: RepositoryContextPathProvider,
+    progress_reporter: TaskExecutionProgressReporter | None = None,
+    progress_waiter: TaskExecutionWaiter | None = None,
+    heartbeat_interval_seconds: float = DEFAULT_TASK_EXECUTION_HEARTBEAT_SECONDS,
 ) -> WorkflowState:
     """Execute, reconcile, mutate, and settle one governed workspace-bound wave."""
+
+    if heartbeat_interval_seconds <= 0:
+        raise ValueError("Task execution heartbeat interval must be positive.")
+    active_progress_reporter = (
+        progress_reporter or NullTaskExecutionProgressReporter()
+    )
+    active_progress_waiter = (
+        progress_waiter or ConcurrentFutureTaskExecutionWaiter()
+    )
 
     spec = _spec_from_state(state)
     graph = _task_graph_from_data(state["approved_task_graph"])
@@ -794,6 +831,15 @@ def execute_task_graph_step(
         )
         for attempt in wave.task_attempts
     ]
+    progress_attempts = _task_execution_progress_attempts(graph, records)
+    emit_task_execution_progress(
+        active_progress_reporter,
+        TaskExecutionWaveStarted(
+            wave_number=wave_number,
+            mode=_task_execution_wave_mode(dispatch_mode, len(records)),
+            attempts=tuple(progress_attempts[record.task_id] for record in records),
+        ),
+    )
 
     hard_stop_reason: str | None = None
     # Request and bounded repository-context construction are sequential.
@@ -878,8 +924,44 @@ def execute_task_graph_step(
         ) as pool:
             for record in records:
                 if record.workspace_request is not None:
+                    emit_task_execution_progress(
+                        active_progress_reporter,
+                        TaskExecutionAttemptStarted(
+                            wave_number=wave_number,
+                            attempt=progress_attempts[record.task_id],
+                        ),
+                    )
                     futures[record.task_id] = pool.submit(
                         executor.execute, record.workspace_request
+                    )
+            outstanding = set(futures.values())
+            while outstanding:
+                completed, still_outstanding = active_progress_waiter.wait(
+                    outstanding,
+                    timeout_seconds=heartbeat_interval_seconds,
+                )
+                for record in records:
+                    future = futures.get(record.task_id)
+                    if future is not None and future in completed:
+                        emit_task_execution_progress(
+                            active_progress_reporter,
+                            TaskExecutorCompleted(
+                                wave_number=wave_number,
+                                attempt=progress_attempts[record.task_id],
+                            ),
+                        )
+                outstanding = still_outstanding
+                if outstanding:
+                    emit_task_execution_progress(
+                        active_progress_reporter,
+                        TaskExecutionHeartbeat(
+                            wave_number=wave_number,
+                            outstanding_attempts=tuple(
+                                progress_attempts[record.task_id]
+                                for record in records
+                                if futures.get(record.task_id) in outstanding
+                            ),
+                        ),
                     )
             for record in records:
                 future = futures.get(record.task_id)
@@ -1146,6 +1228,17 @@ def execute_task_graph_step(
     stop_reason = " | ".join(
         _terminal_stop_reason(decision) for decision in terminal_decisions
     )
+    for record in records:
+        outcome, detail = _task_execution_progress_outcome(record)
+        emit_task_execution_progress(
+            active_progress_reporter,
+            TaskExecutionAttemptSettled(
+                wave_number=wave_number,
+                attempt=progress_attempts[record.task_id],
+                outcome=outcome,
+                detail=detail,
+            ),
+        )
     update: WorkflowState = {
         "task_graph_execution": settled,
         "governed_workspace_session": session,
@@ -1646,6 +1739,55 @@ def _terminal_stop_reason(decision: TaskExecutionRecoveryDecision) -> str:
         f"{decision.failure_kind.value}: {decision.reason} "
         f"Feedback: {decision.feedback}"
     )
+
+
+def _task_execution_progress_attempts(
+    graph: TaskGraph,
+    records: list[_WaveAttemptRecord],
+) -> dict[str, TaskExecutionProgressAttempt]:
+    """Bind display metadata to canonical wave records without persisting it."""
+
+    titles = {task.task_id: task.title for task in graph.tasks}
+    return {
+        record.task_id: TaskExecutionProgressAttempt(
+            task_id=record.task_id,
+            attempt_number=record.attempt_number,
+            title=titles[record.task_id],
+        )
+        for record in records
+    }
+
+
+def _task_execution_wave_mode(
+    dispatch_mode: WorkspaceDispatchMode,
+    attempt_count: int,
+) -> TaskExecutionWaveMode:
+    if dispatch_mode is WorkspaceDispatchMode.SERIALIZED_CONFLICT_RETRY:
+        return TaskExecutionWaveMode.SERIALIZED_RETRY
+    if attempt_count > 1:
+        return TaskExecutionWaveMode.PARALLEL
+    return TaskExecutionWaveMode.SINGLE
+
+
+def _task_execution_progress_outcome(
+    record: _WaveAttemptRecord,
+) -> tuple[TaskExecutionSettledOutcome, str]:
+    detail = _wave_record_outcome(record).replace("_", " ")
+    if record.succeeded:
+        return TaskExecutionSettledOutcome.SUCCEEDED, detail
+    if (
+        record.exit_decision is not None
+        and record.exit_decision.disposition
+        is TaskAttemptExitDisposition.SAFE_STOP_RUN
+    ):
+        return TaskExecutionSettledOutcome.SAFE_STOPPED, detail
+    if record.recovery_decision is None:
+        raise TaskExecutionError(
+            f"Task {record.task_id} has no classified progress outcome."
+        )
+    if record.recovery_decision.action is TaskExecutionRecoveryAction.RETRY:
+        return TaskExecutionSettledOutcome.RETRY_SCHEDULED, detail
+    return TaskExecutionSettledOutcome.FAILED, detail
 
 
 def _wave_record_outcome(record: _WaveAttemptRecord) -> str:

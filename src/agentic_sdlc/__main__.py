@@ -22,6 +22,9 @@ from agentic_sdlc.run_artifacts import (
     write_sdlc_artifact_manifest,
 )
 from agentic_sdlc.state import ApprovalResponse, WorkflowState, demo_input
+from agentic_sdlc.task_execution_progress import (
+    ConsoleTaskExecutionProgressReporter,
+)
 from agentic_sdlc.workflow import (
     WORKFLOW,
     build_workflow,
@@ -72,7 +75,12 @@ def main(arguments: list[str] | None = None) -> int:
     artifact_bundle = LiveRunArtifactBundle.under_repository(Path.cwd(), thread_id)
     artifact_dir = artifact_bundle.artifact_dir
     workspace_runtime = GovernedWorkspaceRuntime()
-    workflow = build_workflow(workspace_runtime=workspace_runtime)
+    workflow = build_workflow(
+        workspace_runtime=workspace_runtime,
+        task_execution_progress_reporter=(
+            ConsoleTaskExecutionProgressReporter()
+        ),
+    )
     diagram_path = artifact_bundle.workflow_diagram_path
     try:
         write_workflow_diagram(diagram_path, workflow=workflow)
