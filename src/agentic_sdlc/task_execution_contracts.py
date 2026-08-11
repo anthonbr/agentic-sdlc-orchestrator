@@ -10,6 +10,7 @@ from uuid import uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentic_sdlc.project_delivery import ProjectDeliverableRole
 from agentic_sdlc.requirement_spec import (
     LINEAGE_NAMESPACE,
     ApprovedRequirementSpec,
@@ -194,6 +195,9 @@ RETRYABLE_VALIDATION_CHECKS = frozenset(
         "expected_output_presence",
         "logical_names",
         "artifact_contents",
+        "runnable_entrypoint_deliverable",
+        "automated_tests_deliverable",
+        "run_instructions_deliverable",
     }
 )
 
@@ -448,6 +452,12 @@ def validate_execution_result(
         ),
     )
 
+    for role in request.task.deliverable_roles:
+        name, passed, detail = _deliverable_role_validation(
+            role, artifacts, result
+        )
+        record(name, passed, detail)
+
     return TaskExecutionValidationResult(
         request_id=request.request_id,
         attempt_id=request.attempt_id,
@@ -457,6 +467,64 @@ def validate_execution_result(
         checks=tuple(checks),
         errors=tuple(errors),
     )
+
+
+def _deliverable_role_validation(
+    role: ProjectDeliverableRole,
+    artifacts: tuple[EngineeringArtifact, ...],
+    result: TaskExecutionResult,
+) -> tuple[str, bool, str]:
+    """Check role output shape before canonical materialization validation."""
+
+    proposals_by_index = {
+        proposal.output_index: proposal for proposal in result.materialization_proposals
+    }
+    if role is ProjectDeliverableRole.RUNNABLE_ENTRYPOINT:
+        name = "runnable_entrypoint_deliverable"
+        passed = any(
+            artifact.artifact_type is EngineeringArtifactType.SOURCE
+            and artifact.output_index in proposals_by_index
+            for artifact in artifacts
+        )
+        detail = (
+            "RUNNABLE_ENTRYPOINT has a canonical SOURCE artifact with "
+            "materialization intent."
+            if passed
+            else "RUNNABLE_ENTRYPOINT task must produce a canonical SOURCE "
+            "artifact covered by a materialization proposal."
+        )
+        return name, passed, detail
+    if role is ProjectDeliverableRole.AUTOMATED_TESTS:
+        name = "automated_tests_deliverable"
+        passed = any(
+            artifact.artifact_type is EngineeringArtifactType.TEST
+            and artifact.output_index in proposals_by_index
+            for artifact in artifacts
+        )
+        detail = (
+            "AUTOMATED_TESTS has a canonical TEST artifact with materialization "
+            "intent."
+            if passed
+            else "AUTOMATED_TESTS task must produce a canonical TEST artifact "
+            "covered by a materialization proposal."
+        )
+        return name, passed, detail
+
+    name = "run_instructions_deliverable"
+    passed = any(
+        artifact.artifact_type is EngineeringArtifactType.DOCUMENTATION
+        and (proposal := proposals_by_index.get(artifact.output_index)) is not None
+        and proposal.target_path == "README.md"
+        for artifact in artifacts
+    )
+    detail = (
+        "RUN_INSTRUCTIONS has a canonical DOCUMENTATION artifact targeting root "
+        "README.md."
+        if passed
+        else "RUN_INSTRUCTIONS task must produce a canonical DOCUMENTATION "
+        "artifact with a materialization proposal targeting root README.md."
+    )
+    return name, passed, detail
 
 
 def classify_validation_failure(

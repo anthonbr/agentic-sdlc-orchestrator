@@ -71,6 +71,7 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
         paths["requirements.json"],
         {
             "project_name": state["project_name"],
+            "project_delivery_policy": state["project_delivery_policy"],
             "raw_requirement": state["raw_requirement"],
             "submitted_requirements": state["requirements"],
             "normalized_requirements": state["normalized_requirements"],
@@ -299,6 +300,7 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
         f"- Graph: {graph['graph_id']}",
         f"- Version: {graph['version']}",
         f"- Requirement specification: {graph['requirement_spec_id']}",
+        f"- Project delivery policy: {graph['delivery_policy']['mode']}",
         f"- Content hash: `{graph['content_hash']}`",
         "- Execution status: "
         + (
@@ -325,6 +327,8 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
                     "",
                     f"- Type: {task['task_type']}",
                     f"- Materialization policy: {task['materialization_policy']}",
+                    "- Delivery roles: "
+                    + (", ".join(task["deliverable_roles"]) or "None"),
                     f"- Depends on: {depends_on}",
                     "- Runtime status: "
                     + (
@@ -402,6 +406,7 @@ def _execution_evidence(state: WorkflowState) -> dict[str, object]:
 
 def _workspace_execution_evidence(state: WorkflowState) -> dict[str, object]:
     session = state.get("governed_workspace_session")
+    readiness = state.get("project_readiness_validation")
     return {
         "session": session.model_dump(mode="json") if session is not None else None,
         "snapshots": [
@@ -444,6 +449,9 @@ def _workspace_execution_evidence(state: WorkflowState) -> dict[str, object]:
             item.model_dump(mode="json")
             for item in state.get("task_attempt_exit_decisions", [])
         ],
+        "project_readiness": (
+            readiness.model_dump(mode="json") if readiness is not None else None
+        ),
     }
 
 
@@ -467,6 +475,10 @@ def _summary_markdown(
         (len(wave.task_attempts) for wave in waves), default=0
     )
     session = state.get("governed_workspace_session")
+    delivery_policy = state.get("project_delivery_policy", {}).get(
+        "mode", "ENGINEERING_ARTIFACTS"
+    )
+    readiness = state.get("project_readiness_validation")
     mutations = state.get("workspace_mutation_results", [])
     materialized_changes = tuple(
         f"{change.path} ({change.operation.value})"
@@ -491,6 +503,7 @@ def _summary_markdown(
         "# Workflow Summary",
         "",
         f"- Project: {state['project_name']}",
+        f"- Project delivery policy: {delivery_policy}",
         f"- Workflow result: {state['workflow_status']}",
         f"- Entry gate: {'passed' if state['entry_gate_passed'] else 'failed'}",
         "- Requirement analysis: "
@@ -532,6 +545,12 @@ def _summary_markdown(
         "- Materialized desired paths: "
         + (", ".join(sorted(set(materialized_changes))) or "None"),
         "- Generated code/tests executed: no",
+        "- Project readiness: "
+        + (
+            "not reached"
+            if readiness is None
+            else ("passed" if readiness.passed else "failed")
+        ),
         "- Exit gate: "
         + (
             "not reached"
@@ -555,7 +574,7 @@ def _summary_markdown(
     else:
         lines.extend(
             [
-                "The governed V0.5 workflow executed bounded READY waves from the "
+                "The governed workflow executed bounded READY waves from the "
                 "human-approved TaskGraph, joined concurrent executor calls, "
                 "canonicalized and reconciled results in deterministic scheduler "
                 "order, applied eligible isolated-workspace mutations serially, "

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from pydantic import ValidationError
 from pytest import mark, raises
 
@@ -10,6 +12,12 @@ from agentic_sdlc.requirement_analysis import (
     RequirementPlanningReadinessError,
 )
 from agentic_sdlc.requirement_spec import build_approved_requirement_spec
+from agentic_sdlc.project_delivery import (
+    ProjectDeliverableRole,
+    ProjectDeliveryMode,
+    ProjectDeliveryPolicy,
+    RUNNABLE_PROJECT_DELIVERY_POLICY,
+)
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
@@ -59,6 +67,7 @@ def _task(
     materialization_policy: TaskMaterializationPolicy = (
         TaskMaterializationPolicy.FORBIDDEN
     ),
+    deliverable_roles: list[ProjectDeliverableRole] | None = None,
 ) -> ProposedTask:
     return ProposedTask(
         key=key,
@@ -80,6 +89,7 @@ def _task(
         risk_refs=risk_refs if risk_refs is not None else [],
         ambiguity_refs=ambiguity_refs if ambiguity_refs is not None else [],
         expected_outputs=[f"{key}.md"],
+        deliverable_roles=deliverable_roles or [],
     )
 
 
@@ -255,6 +265,278 @@ def test_materialization_policy_participates_in_graph_identity() -> None:
     )
     assert forbidden.content_hash != required.content_hash
     assert forbidden.graph_id != required.graph_id
+
+
+def test_default_delivery_policy_preserves_engineering_artifact_graphs() -> None:
+    graph, _ = normalize_and_validate_task_graph(
+        _proposal(_task("design_only")),
+        _spec(),
+        version=1,
+        created_at=FIXED_TIME,
+    )
+
+    assert graph.delivery_policy.mode is ProjectDeliveryMode.ENGINEERING_ARTIFACTS
+    assert graph.tasks[0].deliverable_roles == ()
+
+
+def test_runnable_delivery_policy_requires_and_canonicalizes_all_roles() -> None:
+    graph, _ = normalize_and_validate_task_graph(
+        _proposal(
+            _task(
+                "entrypoint",
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                deliverable_roles=[ProjectDeliverableRole.RUNNABLE_ENTRYPOINT],
+            ),
+            _task(
+                "tests",
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+            ),
+            _task(
+                "readme",
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                deliverable_roles=[ProjectDeliverableRole.RUN_INSTRUCTIONS],
+            ),
+        ),
+        _spec(),
+        version=1,
+        created_at=FIXED_TIME,
+        delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+    )
+
+    assert graph.delivery_policy == RUNNABLE_PROJECT_DELIVERY_POLICY
+    assert [task.deliverable_roles for task in graph.tasks] == [
+        (ProjectDeliverableRole.RUNNABLE_ENTRYPOINT,),
+        (ProjectDeliverableRole.AUTOMATED_TESTS,),
+        (ProjectDeliverableRole.RUN_INSTRUCTIONS,),
+    ]
+
+
+@mark.parametrize(
+    ("missing_role", "expected"),
+    (
+        (
+            ProjectDeliverableRole.RUNNABLE_ENTRYPOINT,
+            "Runnable-project delivery policy requires RUNNABLE_ENTRYPOINT coverage.",
+        ),
+        (
+            ProjectDeliverableRole.AUTOMATED_TESTS,
+            "Runnable-project delivery policy requires AUTOMATED_TESTS coverage.",
+        ),
+        (
+            ProjectDeliverableRole.RUN_INSTRUCTIONS,
+            "Runnable-project delivery policy requires RUN_INSTRUCTIONS coverage.",
+        ),
+    ),
+)
+def test_runnable_policy_rejects_each_missing_role(
+    missing_role: ProjectDeliverableRole,
+    expected: str,
+) -> None:
+    tasks = [
+        _task(
+            role.value.casefold(),
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=[role],
+        )
+        for role in RUNNABLE_PROJECT_DELIVERY_POLICY.required_roles
+        if role is not missing_role
+    ]
+
+    with raises(TaskGraphValidationError, match=f"^{expected}$"):
+        normalize_and_validate_task_graph(
+            _proposal(*tasks),
+            _spec(),
+            version=1,
+            created_at=FIXED_TIME,
+            delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+        )
+
+
+@mark.parametrize(
+    "policy",
+    (TaskMaterializationPolicy.FORBIDDEN, TaskMaterializationPolicy.ALLOWED),
+)
+def test_runnable_role_requires_required_materialization(
+    policy: TaskMaterializationPolicy,
+) -> None:
+    proposal = _proposal(
+        _task(
+            "entrypoint",
+            materialization_policy=policy,
+            deliverable_roles=[ProjectDeliverableRole.RUNNABLE_ENTRYPOINT],
+        ),
+        _task(
+            "tests",
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+        ),
+        _task(
+            "readme",
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=[ProjectDeliverableRole.RUN_INSTRUCTIONS],
+        ),
+    )
+
+    with raises(
+        TaskGraphValidationError,
+        match="RUNNABLE_ENTRYPOINT requires REQUIRED materialization",
+    ):
+        normalize_and_validate_task_graph(
+            proposal,
+            _spec(),
+            version=1,
+            created_at=FIXED_TIME,
+            delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+        )
+
+
+def test_duplicate_role_coverage_is_allowed_and_role_order_is_canonical() -> None:
+    graph, _ = normalize_and_validate_task_graph(
+        _proposal(
+            _task(
+                "application",
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                deliverable_roles=[
+                    ProjectDeliverableRole.RUN_INSTRUCTIONS,
+                    ProjectDeliverableRole.RUNNABLE_ENTRYPOINT,
+                ],
+            ),
+            _task(
+                "alternate_entrypoint",
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                deliverable_roles=[ProjectDeliverableRole.RUNNABLE_ENTRYPOINT],
+            ),
+            _task(
+                "tests",
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+            ),
+        ),
+        _spec(),
+        version=1,
+        created_at=FIXED_TIME,
+        delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+    )
+
+    assert graph.tasks[0].deliverable_roles == (
+        ProjectDeliverableRole.RUNNABLE_ENTRYPOINT,
+        ProjectDeliverableRole.RUN_INSTRUCTIONS,
+    )
+
+
+def test_deliverable_role_and_delivery_policy_participate_in_graph_identity() -> None:
+    spec = _spec()
+    role_aware_proposal = _proposal(
+        _task(
+            "same_task",
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=list(
+                RUNNABLE_PROJECT_DELIVERY_POLICY.required_roles
+            ),
+        )
+    )
+    plain, _ = normalize_and_validate_task_graph(
+        _proposal(
+            _task(
+                "same_task",
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            )
+        ),
+        spec,
+        version=1,
+        created_at=FIXED_TIME,
+    )
+    role_aware, _ = normalize_and_validate_task_graph(
+        role_aware_proposal,
+        spec,
+        version=1,
+        created_at=FIXED_TIME,
+        delivery_policy=ProjectDeliveryPolicy(),
+    )
+    runnable, _ = normalize_and_validate_task_graph(
+        role_aware_proposal,
+        spec,
+        version=1,
+        created_at=FIXED_TIME,
+        delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+    )
+
+    assert plain.content_hash != role_aware.content_hash
+    assert plain.graph_id != role_aware.graph_id
+    assert role_aware.content_hash != runnable.content_hash
+    assert role_aware.graph_id != runnable.graph_id
+
+
+def test_unknown_deliverable_role_fails_structured_schema_validation() -> None:
+    proposed = _task("invalid_role").model_dump(mode="json")
+    proposed["deliverable_roles"] = ["DEPLOY_PRODUCT"]
+
+    with raises(ValidationError):
+        ProposedTask.model_validate_json(json.dumps(proposed))
+
+
+def test_framework_neutral_live_regression_requires_launcher_and_root_run_guide() -> None:
+    incomplete = _proposal(
+        _task(
+            "domain_service",
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+        ),
+        _task(
+            "framework_neutral_handlers",
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+        ),
+        _task(
+            "automated_tests",
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+        ),
+        _task(
+            "docs_run_guide",
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+        ),
+    )
+
+    with raises(
+        TaskGraphValidationError,
+        match="requires RUNNABLE_ENTRYPOINT coverage",
+    ):
+        normalize_and_validate_task_graph(
+            incomplete,
+            _spec(),
+            version=1,
+            created_at=FIXED_TIME,
+            delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+        )
+
+    corrected = incomplete.model_copy(
+        update={
+            "tasks": [
+                *incomplete.tasks,
+                _task(
+                    "runnable_adapter",
+                    materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                    deliverable_roles=[
+                        ProjectDeliverableRole.RUNNABLE_ENTRYPOINT
+                    ],
+                ),
+                _task(
+                    "root_readme",
+                    materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                    deliverable_roles=[ProjectDeliverableRole.RUN_INSTRUCTIONS],
+                ),
+            ]
+        }
+    )
+    graph, _ = normalize_and_validate_task_graph(
+        corrected,
+        _spec(),
+        version=1,
+        created_at=FIXED_TIME,
+        delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+    )
+
+    assert graph.delivery_policy.mode is ProjectDeliveryMode.RUNNABLE_PROJECT
 
 
 def test_proposed_task_requires_materialization_policy_from_planner_schema() -> None:

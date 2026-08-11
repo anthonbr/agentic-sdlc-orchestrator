@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import ValidationError
 from pytest import mark, raises
 
+from agentic_sdlc.project_delivery import ProjectDeliverableRole
 from agentic_sdlc.requirement_analysis import RequirementAnalysis
 from agentic_sdlc.requirement_spec import (
     ApprovedRequirementSpec,
@@ -25,6 +26,7 @@ from agentic_sdlc.task_execution import (
 )
 from agentic_sdlc.task_execution_contracts import (
     ArtifactOutput,
+    ArtifactMaterializationProposal,
     EngineeringArtifact,
     EngineeringArtifactType,
     TaskExecutionContractError,
@@ -94,13 +96,18 @@ def _proposed_task(
     risk_refs: tuple[str, ...] = (),
     ambiguity_refs: tuple[str, ...] = (),
     expected_outputs: tuple[str, ...] | None = None,
+    task_type: TaskType = TaskType.DESIGN,
+    materialization_policy: TaskMaterializationPolicy = (
+        TaskMaterializationPolicy.FORBIDDEN
+    ),
+    deliverable_roles: tuple[ProjectDeliverableRole, ...] = (),
 ) -> ProposedTask:
     return ProposedTask(
         key=key,
         title=key.replace("_", " ").title(),
         description=f"Produce the {key} engineering definition.",
-        task_type=TaskType.DESIGN,
-        materialization_policy=TaskMaterializationPolicy.FORBIDDEN,
+        task_type=task_type,
+        materialization_policy=materialization_policy,
         depends_on=list(depends_on),
         requirement_refs=list(requirement_refs),
         acceptance_criteria_refs=list(acceptance_refs),
@@ -111,6 +118,7 @@ def _proposed_task(
             if expected_outputs is not None
             else (f"{key}.md",)
         ),
+        deliverable_roles=list(deliverable_roles),
     )
 
 
@@ -184,6 +192,7 @@ def _result(
     request: TaskExecutionRequest,
     *outputs: ArtifactOutput,
     summary: str = "Proposed engineering output.",
+    materialization_proposals: tuple[ArtifactMaterializationProposal, ...] = (),
 ) -> TaskExecutionResult:
     return TaskExecutionResult(
         request_id=request.request_id,
@@ -191,6 +200,7 @@ def _result(
         task_id=request.task_id,
         summary=summary,
         outputs=tuple(outputs),
+        materialization_proposals=materialization_proposals,
         assumptions=(),
         risks=(),
     )
@@ -863,6 +873,161 @@ def test_blank_output_fields_fail_validation_after_canonicalization() -> None:
         "logical_names",
         "artifact_contents",
     }
+
+
+@mark.parametrize(
+    ("role", "artifact_type", "target_path", "check_name"),
+    (
+        (
+            ProjectDeliverableRole.RUNNABLE_ENTRYPOINT,
+            EngineeringArtifactType.SOURCE,
+            "src/product/app.py",
+            "runnable_entrypoint_deliverable",
+        ),
+        (
+            ProjectDeliverableRole.AUTOMATED_TESTS,
+            EngineeringArtifactType.TEST,
+            "tests/test_product.py",
+            "automated_tests_deliverable",
+        ),
+        (
+            ProjectDeliverableRole.RUN_INSTRUCTIONS,
+            EngineeringArtifactType.DOCUMENTATION,
+            "README.md",
+            "run_instructions_deliverable",
+        ),
+    ),
+)
+def test_deliverable_role_requires_typed_materialized_artifact(
+    role: ProjectDeliverableRole,
+    artifact_type: EngineeringArtifactType,
+    target_path: str,
+    check_name: str,
+) -> None:
+    spec = _spec()
+    graph = _graph(
+        spec,
+        _proposed_task(
+            "deliverable",
+            requirement_refs=("FR-001", "FR-002", "NFR-001", "CON-001"),
+            acceptance_refs=("AC-001", "AC-002"),
+            task_type=TaskType.IMPLEMENTATION,
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=(role,),
+        ),
+    )
+    _, request = _running_request(spec, graph)
+    result = _result(
+        request,
+        _output(artifact_type=artifact_type),
+        materialization_proposals=(
+            ArtifactMaterializationProposal(
+                output_index=1,
+                target_path=target_path,
+            ),
+        ),
+    )
+    artifacts = canonicalize_execution_result(
+        request, result, created_at=FIXED_TIME
+    )
+
+    validation = validate_execution_result(request, result, artifacts)
+
+    assert validation.passed is True
+    assert next(check for check in validation.checks if check.name == check_name).passed
+
+
+@mark.parametrize(
+    ("role", "artifact_type", "target_path", "check_name"),
+    (
+        (
+            ProjectDeliverableRole.RUNNABLE_ENTRYPOINT,
+            EngineeringArtifactType.DOCUMENTATION,
+            "docs/handlers.md",
+            "runnable_entrypoint_deliverable",
+        ),
+        (
+            ProjectDeliverableRole.AUTOMATED_TESTS,
+            EngineeringArtifactType.SOURCE,
+            "src/test_helpers.py",
+            "automated_tests_deliverable",
+        ),
+        (
+            ProjectDeliverableRole.RUN_INSTRUCTIONS,
+            EngineeringArtifactType.DOCUMENTATION,
+            "docs/run.md",
+            "run_instructions_deliverable",
+        ),
+    ),
+)
+def test_deliverable_role_defect_is_retryable(
+    role: ProjectDeliverableRole,
+    artifact_type: EngineeringArtifactType,
+    target_path: str,
+    check_name: str,
+) -> None:
+    spec = _spec()
+    graph = _graph(
+        spec,
+        _proposed_task(
+            "defective_deliverable",
+            requirement_refs=("FR-001", "FR-002", "NFR-001", "CON-001"),
+            acceptance_refs=("AC-001", "AC-002"),
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=(role,),
+        ),
+    )
+    _, request = _running_request(spec, graph)
+    result = _result(
+        request,
+        _output(artifact_type=artifact_type),
+        materialization_proposals=(
+            ArtifactMaterializationProposal(
+                output_index=1,
+                target_path=target_path,
+            ),
+        ),
+    )
+    artifacts = canonicalize_execution_result(
+        request, result, created_at=FIXED_TIME
+    )
+
+    validation = validate_execution_result(request, result, artifacts)
+
+    assert validation.passed is False
+    failed = next(check for check in validation.checks if check.name == check_name)
+    assert failed.passed is False
+    retryable, feedback = classify_validation_failure(validation)
+    assert retryable is True
+    assert role.value in feedback
+
+
+def test_deliverable_artifact_without_materialization_proposal_does_not_count() -> None:
+    spec = _spec()
+    graph = _graph(
+        spec,
+        _proposed_task(
+            "unmaterialized_entrypoint",
+            requirement_refs=("FR-001", "FR-002", "NFR-001", "CON-001"),
+            acceptance_refs=("AC-001", "AC-002"),
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=(ProjectDeliverableRole.RUNNABLE_ENTRYPOINT,),
+        ),
+    )
+    _, request = _running_request(spec, graph)
+    result = _result(
+        request,
+        _output(artifact_type=EngineeringArtifactType.SOURCE),
+    )
+    artifacts = canonicalize_execution_result(
+        request, result, created_at=FIXED_TIME
+    )
+
+    validation = validate_execution_result(request, result, artifacts)
+
+    assert validation.passed is False
+    failed = {check.name for check in validation.checks if not check.passed}
+    assert failed == {"runnable_entrypoint_deliverable"}
 
 
 def test_forged_artifact_provenance_and_identity_fail_validation() -> None:

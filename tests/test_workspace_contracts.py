@@ -7,6 +7,7 @@ from hashlib import sha256
 from pydantic import ValidationError
 from pytest import mark, raises
 
+from agentic_sdlc.project_delivery import ProjectDeliverableRole
 from agentic_sdlc.task_execution_contracts import (
     ArtifactMaterializationProposal,
     ArtifactOutput,
@@ -130,6 +131,7 @@ def _state(path: str, content: str) -> WorkspaceFileState:
 def _task(
     artifact: EngineeringArtifact,
     policy: TaskMaterializationPolicy = TaskMaterializationPolicy.REQUIRED,
+    roles: tuple[ProjectDeliverableRole, ...] = (),
 ) -> Task:
     return Task(
         task_id=artifact.task_id,
@@ -145,6 +147,7 @@ def _task(
         risk_refs=artifact.risk_refs,
         ambiguity_refs=artifact.ambiguity_refs,
         expected_outputs=("desired repository state",),
+        deliverable_roles=roles,
     )
 
 
@@ -450,6 +453,66 @@ def test_materialization_validation_enforces_approved_task_policy(
         assert ArtifactMaterializationIssueCode.POLICY in _materialization_codes(
             result
         )
+
+
+@mark.parametrize(
+    ("role", "artifact_type", "path"),
+    (
+        (
+            ProjectDeliverableRole.RUNNABLE_ENTRYPOINT,
+            EngineeringArtifactType.SOURCE,
+            "src/product/app.py",
+        ),
+        (
+            ProjectDeliverableRole.AUTOMATED_TESTS,
+            EngineeringArtifactType.TEST,
+            "tests/test_product.py",
+        ),
+        (
+            ProjectDeliverableRole.RUN_INSTRUCTIONS,
+            EngineeringArtifactType.DOCUMENTATION,
+            "README.md",
+        ),
+    ),
+)
+def test_role_materialization_binds_canonical_artifact_type_and_path(
+    role: ProjectDeliverableRole,
+    artifact_type: EngineeringArtifactType,
+    path: str,
+) -> None:
+    artifact = _artifact(path=path, artifact_type=artifact_type)
+
+    result = validate_artifact_materialization(
+        _task(artifact, roles=(role,)),
+        _validation(artifact),
+        (artifact,),
+        _intents((artifact,)),
+    )
+
+    assert result.passed is True
+
+
+def test_run_instructions_materialization_rejects_nonroot_documentation() -> None:
+    artifact = _artifact(
+        path="docs/run.md",
+        artifact_type=EngineeringArtifactType.DOCUMENTATION,
+    )
+
+    result = validate_artifact_materialization(
+        _task(
+            artifact,
+            roles=(ProjectDeliverableRole.RUN_INSTRUCTIONS,),
+        ),
+        _validation(artifact),
+        (artifact,),
+        _intents((artifact,)),
+    )
+
+    assert result.passed is False
+    assert _materialization_codes(result) == {
+        ArtifactMaterializationIssueCode.DELIVERABLE_ROLE
+    }
+    assert "root README.md" in result.issues[0].detail
 
 
 def test_materialization_rejects_unknown_duplicate_artifact_and_path() -> None:

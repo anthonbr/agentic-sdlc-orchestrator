@@ -11,6 +11,12 @@ from uuid import uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from agentic_sdlc.project_delivery import (
+    DEFAULT_PROJECT_DELIVERY_POLICY,
+    ProjectDeliverableRole,
+    ProjectDeliveryMode,
+    ProjectDeliveryPolicy,
+)
 from agentic_sdlc.requirement_spec import (
     LINEAGE_NAMESPACE,
     ApprovedRequirementSpec,
@@ -52,6 +58,7 @@ class ProposedTask(BaseModel):
     risk_refs: list[str]
     ambiguity_refs: list[str]
     expected_outputs: list[str]
+    deliverable_roles: list[ProjectDeliverableRole] = Field(default_factory=list)
 
     @field_validator(
         "depends_on",
@@ -95,6 +102,7 @@ class Task(BaseModel):
     risk_refs: tuple[str, ...]
     ambiguity_refs: tuple[str, ...]
     expected_outputs: tuple[str, ...]
+    deliverable_roles: tuple[ProjectDeliverableRole, ...] = ()
 
 
 class TaskGraph(BaseModel):
@@ -111,6 +119,7 @@ class TaskGraph(BaseModel):
     created_at: str
     content_hash: str
     tasks: tuple[Task, ...]
+    delivery_policy: ProjectDeliveryPolicy = DEFAULT_PROJECT_DELIVERY_POLICY
 
 
 class TaskGraphSemantics(BaseModel):
@@ -137,6 +146,7 @@ def normalize_and_validate_task_graph(
     supersedes_graph_id: str | None = None,
     graph_lineage_id: str | None = None,
     created_at: str | None = None,
+    delivery_policy: ProjectDeliveryPolicy = DEFAULT_PROJECT_DELIVERY_POLICY,
 ) -> tuple[TaskGraph, TaskGraphSemantics]:
     """Assign authoritative identities, validate lineage, and derive semantics."""
 
@@ -154,6 +164,7 @@ def normalize_and_validate_task_graph(
     )
     _validate_proposal_references(proposal, spec, key_to_id)
     _validate_required_specification_coverage(proposal, spec)
+    _validate_delivery_role_coverage(proposal, delivery_policy)
 
     tasks = tuple(
         Task(
@@ -175,6 +186,9 @@ def normalize_and_validate_task_graph(
             risk_refs=tuple(proposed.risk_refs),
             ambiguity_refs=tuple(proposed.ambiguity_refs),
             expected_outputs=tuple(proposed.expected_outputs),
+            deliverable_roles=tuple(
+                sorted(set(proposed.deliverable_roles), key=lambda role: role.value)
+            ),
         )
         for proposed in proposal.tasks
     )
@@ -182,6 +196,7 @@ def normalize_and_validate_task_graph(
     content = {
         "requirement_spec_id": spec.spec_id,
         "requirement_spec_version": spec.version,
+        "delivery_policy": delivery_policy.model_dump(mode="json"),
         "tasks": [task.model_dump(mode="json") for task in tasks],
     }
     content_hash = _content_hash(content)
@@ -195,6 +210,7 @@ def normalize_and_validate_task_graph(
         created_at=created_at or datetime.now(UTC).isoformat(),
         content_hash=content_hash,
         tasks=tasks,
+        delivery_policy=delivery_policy,
     )
     return graph, semantics
 
@@ -344,6 +360,37 @@ def _validate_required_specification_coverage(
             + ", ".join(uncovered)
             + "."
         )
+
+
+def _validate_delivery_role_coverage(
+    proposal: ProposedTaskGraph,
+    delivery_policy: ProjectDeliveryPolicy,
+) -> None:
+    """Enforce application delivery postconditions before human graph review."""
+
+    if delivery_policy.mode is not ProjectDeliveryMode.RUNNABLE_PROJECT:
+        return
+    for role in delivery_policy.required_roles:
+        carrying_tasks = [
+            task for task in proposal.tasks if role in task.deliverable_roles
+        ]
+        if not carrying_tasks:
+            raise TaskGraphValidationError(
+                "Runnable-project delivery policy requires "
+                f"{role.value} coverage."
+            )
+        non_required = [
+            task.key
+            for task in carrying_tasks
+            if task.materialization_policy is not TaskMaterializationPolicy.REQUIRED
+        ]
+        if non_required:
+            raise TaskGraphValidationError(
+                f"Runnable-project delivery role {role.value} requires REQUIRED "
+                "materialization; invalid task proposals: "
+                + ", ".join(non_required)
+                + "."
+            )
 
 
 def _content_hash(value: object) -> str:

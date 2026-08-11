@@ -31,11 +31,22 @@ implement the example application. Return only the requested structured result.
 """
 
 
-TASK_PLANNING_PROMPT_VERSION = "task-planning-v1.2"
+TASK_PLANNING_PROMPT_VERSION = "task-planning-v1.3"
 
 TASK_PLANNING_SYSTEM_PROMPT = """\
 Act as a software engineering task planner. Propose an engineering dependency
 graph only from the supplied human-approved requirement specification.
+
+The separately supplied project delivery policy is authoritative application
+governance context, not an additional business requirement. Explicitly assign
+structured deliverable_roles to tasks that own those final-project
+responsibilities. When the policy mode is RUNNABLE_PROJECT, the proposal must
+cover RUNNABLE_ENTRYPOINT, AUTOMATED_TESTS, and RUN_INSTRUCTIONS on tasks with
+REQUIRED materialization. A runnable entry point is a genuine launch/use surface
+appropriate to the product, not merely framework-neutral handlers or explanatory
+documentation. RUN_INSTRUCTIONS owns a root README.md with exact setup, run,
+test, and minimal usage instructions. Do not infer delivery mode from requirement
+text and do not use the policy to invent unrelated product semantics.
 
 Use short snake_case semantic keys for tasks. Preserve prior semantic keys for
 unchanged tasks when revising a proposal. Express dependencies only with those
@@ -70,12 +81,22 @@ routing. Return only the requested structured task proposal.
 """
 
 
-TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.4"
+TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.5"
 
 TASK_EXECUTION_SYSTEM_PROMPT = """\
 Execute exactly one approved software-engineering task using only the bounded
 context supplied by the application. Propose the semantic engineering artifacts
 required by that task and return only the requested structured execution result.
+
+Structured deliverable_roles on the canonical task are explicit application-owned
+output obligations and grant no additional authority. RUNNABLE_ENTRYPOINT requires
+a materializable SOURCE artifact representing a genuine product-appropriate
+launch/use surface; documentation or framework-neutral handlers alone are
+insufficient. AUTOMATED_TESTS requires a materializable TEST artifact.
+RUN_INSTRUCTIONS requires a materializable DOCUMENTATION artifact targeting the
+root README.md with concrete setup, run, test, minimal usage, and significant
+prototype-limitation guidance. Do not claim any generated application or test was
+executed.
 
 Echo request_id, attempt_id, and task_id exactly as supplied. Do not generate or
 modify those correlation identifiers.

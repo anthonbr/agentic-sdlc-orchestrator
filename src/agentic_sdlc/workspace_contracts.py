@@ -16,8 +16,10 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from agentic_sdlc.project_delivery import ProjectDeliverableRole
 from agentic_sdlc.task_execution_contracts import (
     EngineeringArtifact,
+    EngineeringArtifactType,
     TaskExecutionResult,
     TaskExecutionValidationResult,
 )
@@ -58,6 +60,7 @@ class ArtifactMaterializationIssueCode(StrEnum):
     PATH_POLICY = "PATH_POLICY"
     LINEAGE = "LINEAGE"
     POLICY = "POLICY"
+    DELIVERABLE_ROLE = "DELIVERABLE_ROLE"
 
 
 class ArtifactMaterializationValidationIssue(BaseModel):
@@ -295,6 +298,12 @@ def build_workspace_snapshot(
     )
 
 
+def workspace_snapshot_identity_is_valid(snapshot: WorkspaceSnapshot) -> bool:
+    """Return whether a snapshot ID still binds its canonical file manifest."""
+
+    return _snapshot_identity_is_valid(snapshot)
+
+
 def validate_artifact_materialization(
     task: Task,
     validation: TaskExecutionValidationResult,
@@ -424,6 +433,12 @@ def validate_artifact_materialization(
             ArtifactMaterializationIssueCode.POLICY,
             "REQUIRED task policy requires at least one materialization intent.",
         )
+    _validate_deliverable_role_intents(
+        task,
+        artifacts_by_id,
+        ordered_intents,
+        issues,
+    )
 
     canonical_issues = tuple(
         sorted(
@@ -453,6 +468,52 @@ def validate_artifact_materialization(
         materialization_validation_id=_materialization_validation_id(payload),
         **payload,
     )
+
+
+def _validate_deliverable_role_intents(
+    task: Task,
+    artifacts_by_id: dict[str, EngineeringArtifact],
+    intents: tuple[ArtifactMaterializationIntent, ...],
+    issues: list[ArtifactMaterializationValidationIssue],
+) -> None:
+    """Bind structured role obligations to canonical artifact/path intents."""
+
+    materialized = tuple(
+        (artifacts_by_id.get(intent.artifact_id), intent)
+        for intent in intents
+        if intent.artifact_id in artifacts_by_id
+    )
+    for role in task.deliverable_roles:
+        if role is ProjectDeliverableRole.RUNNABLE_ENTRYPOINT:
+            passed = any(
+                artifact is not None
+                and artifact.artifact_type is EngineeringArtifactType.SOURCE
+                for artifact, _ in materialized
+            )
+            requirement = "a materialized canonical SOURCE artifact"
+        elif role is ProjectDeliverableRole.AUTOMATED_TESTS:
+            passed = any(
+                artifact is not None
+                and artifact.artifact_type is EngineeringArtifactType.TEST
+                for artifact, _ in materialized
+            )
+            requirement = "a materialized canonical TEST artifact"
+        else:
+            passed = any(
+                artifact is not None
+                and artifact.artifact_type is EngineeringArtifactType.DOCUMENTATION
+                and intent.target_path == "README.md"
+                for artifact, intent in materialized
+            )
+            requirement = (
+                "a materialized canonical DOCUMENTATION artifact at root README.md"
+            )
+        if not passed:
+            _add_materialization_issue(
+                issues,
+                ArtifactMaterializationIssueCode.DELIVERABLE_ROLE,
+                f"{role.value} requires {requirement}.",
+            )
 
 
 def canonicalize_artifact_materialization_proposals(

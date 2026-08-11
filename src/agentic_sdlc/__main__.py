@@ -203,6 +203,7 @@ def _prompt_for_task_graph_decision(payload: dict[str, Any]) -> ApprovalResponse
     """Show canonical identities and derived layers before human authority."""
 
     spec = payload["approved_requirement_spec"]
+    delivery_policy = payload["project_delivery_policy"]
     graph = payload["candidate_task_graph"]
     semantics = payload["graph_semantics"]
     tasks = {task["task_id"]: task for task in graph["tasks"]}
@@ -212,6 +213,7 @@ def _prompt_for_task_graph_decision(payload: dict[str, Any]) -> ApprovalResponse
         f"Approved requirement spec: {spec['spec_id']} "
         f"(analysis revision {spec['source_analysis_revision']})"
     )
+    print(f"Project delivery policy: {delivery_policy['mode']}")
     for label, field_name in (
         ("Functional", "functional_requirements"),
         ("Nonfunctional", "nonfunctional_requirements"),
@@ -237,6 +239,10 @@ def _prompt_for_task_graph_decision(payload: dict[str, Any]) -> ApprovalResponse
             print(
                 "    Materialization policy: "
                 f"{task['materialization_policy']}"
+            )
+            print(
+                "    Delivery roles: "
+                + (", ".join(task["deliverable_roles"]) or "None")
             )
             print(
                 "    Depends on: "
