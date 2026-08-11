@@ -67,16 +67,18 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
     ) - set(generated):
         (output_dir / filename).unlink(missing_ok=True)
 
-    _write_json(
-        paths["requirements.json"],
-        {
-            "project_name": state["project_name"],
-            "project_delivery_policy": state["project_delivery_policy"],
-            "raw_requirement": state["raw_requirement"],
-            "submitted_requirements": state["requirements"],
-            "normalized_requirements": state["normalized_requirements"],
-        },
-    )
+    requirement_evidence: dict[str, object] = {
+        "project_name": state["project_name"],
+        "project_delivery_policy": state["project_delivery_policy"],
+        "raw_requirement": state["raw_requirement"],
+        "submitted_requirements": state["requirements"],
+        "normalized_requirements": state["normalized_requirements"],
+    }
+    if "requirement_submission" in state:
+        requirement_evidence["requirement_submission"] = state[
+            "requirement_submission"
+        ]
+    _write_json(paths["requirements.json"], requirement_evidence)
     if "requirement_analysis.md" in generated:
         paths["requirement_analysis.md"].write_text(
             _requirement_analysis_markdown(state), encoding="utf-8"
@@ -205,10 +207,7 @@ def _requirement_analysis_markdown(state: WorkflowState) -> str:
     lines = [
         "# Requirement Analysis",
         "",
-        "## Original requirement",
-        "",
-        *(f"> {line}" for line in state["raw_requirement"].splitlines()),
-        "",
+        *_requirement_input_markdown(state),
         "## Current validated analysis",
         "",
         f"- Requirement type: {analysis['requirement_type']}",
@@ -275,6 +274,39 @@ def _requirement_analysis_markdown(state: WorkflowState) -> str:
     lines.extend(["", "## Human requirement-review history", ""])
     _append_approval_history(lines, state.get("requirement_review_history", []))
     return "\n".join(lines) + "\n"
+
+
+def _requirement_input_markdown(state: WorkflowState) -> list[str]:
+    submission = state.get("requirement_submission")
+    if submission is None:
+        return [
+            "## Original requirement",
+            "",
+            *(f"> {line}" for line in state["raw_requirement"].splitlines()),
+            "",
+        ]
+
+    original_text = submission["original_text"]
+    normalized_text = submission["normalized_text"]
+    lines = [
+        "## Original submitted requirement",
+        "",
+        *(f"> {line}" for line in original_text.splitlines()),
+        "",
+    ]
+    if normalized_text != original_text:
+        lines.extend(
+            [
+                "## Normalized workflow requirement",
+                "",
+                "The following normalized requirement text entered "
+                "Requirement Analysis:",
+                "",
+                *(f"> {line}" for line in normalized_text.splitlines()),
+                "",
+            ]
+        )
+    return lines
 
 
 def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:

@@ -49,6 +49,8 @@ from agentic_sdlc.requirement_analysis import (
 )
 from agentic_sdlc.requirement_spec import ApprovedRequirementSpec
 from agentic_sdlc.state import (
+    DEMO_RAW_REQUIREMENT,
+    DEMO_REQUIREMENTS,
     MAX_REQUIREMENT_ANALYSIS_ATTEMPTS,
     MAX_REQUIREMENT_REVISIONS,
     MAX_REQUIREMENT_REVISIONS_REASON,
@@ -1574,6 +1576,201 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
         path.name: path.read_bytes() for path in artifact_dir.iterdir()
     } == {path.name: path.read_bytes() for path in packaged_dir.iterdir()}
     assert f"Packaged SDLC evidence:\n  {packaged_dir}" in output
+
+
+def test_cli_run_custom_requirement_completes_governed_pipeline(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    original_requirement = (
+        "\ufeff  Build a small task-list application that can add, list, and "
+        "complete tasks.\r\n"
+        "Return a clear error for unknown task identifiers.  \r\n"
+    )
+    normalized_requirement = (
+        "Build a small task-list application that can add, list, and complete "
+        "tasks.\nReturn a clear error for unknown task identifiers."
+    )
+    analyst = FakeRequirementAnalysisClient(
+        [
+            RequirementAnalysis(
+                normalized_problem_statement=(
+                    "Build a small task-list application with deterministic task "
+                    "creation, listing, completion, and unknown-ID handling."
+                ),
+                requirement_type="greenfield",
+                functional_requirements=[
+                    "Add a task.",
+                    "List tasks.",
+                    "Complete a known task.",
+                    "Return an error for an unknown task identifier.",
+                ],
+                nonfunctional_requirements=[
+                    "Task operations must produce deterministic results."
+                ],
+                constraints=["The persistence technology is not selected."],
+                ambiguities=[],
+                assumptions=[],
+                acceptance_criteria=[
+                    "A newly added task appears in the task list.",
+                    "Completing an unknown task returns a defined error.",
+                ],
+                risks=["Incorrect task identity handling could update the wrong task."],
+                needs_clarification=False,
+                confidence=0.9,
+            )
+        ]
+    )
+    planner = FakeTaskPlanningClient(
+        [
+            ProposedTaskGraph(
+                tasks=[
+                    _proposed_task(
+                        "define_api",
+                        "Define task-list API",
+                        requirement_refs=["FR-001", "FR-003", "FR-004"],
+                        acceptance_refs=["AC-001", "AC-002"],
+                    ),
+                    _proposed_task(
+                        "define_storage",
+                        "Define task persistence model",
+                        requirement_refs=["FR-002", "CON-001"],
+                        risk_refs=["RISK-001"],
+                    ),
+                    _proposed_task(
+                        "build_service",
+                        "Implement task-list behavior",
+                        task_type=TaskType.IMPLEMENTATION,
+                        depends_on=["define_api", "define_storage"],
+                        requirement_refs=[
+                            "FR-001",
+                            "FR-002",
+                            "FR-003",
+                            "FR-004",
+                        ],
+                        acceptance_refs=["AC-001", "AC-002"],
+                        materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                        deliverable_roles=[
+                            ProjectDeliverableRole.RUNNABLE_ENTRYPOINT
+                        ],
+                    ),
+                    _proposed_task(
+                        "verify_service",
+                        "Verify task-list behavior",
+                        task_type=TaskType.TEST,
+                        depends_on=["build_service"],
+                        requirement_refs=["NFR-001"],
+                        acceptance_refs=["AC-001", "AC-002"],
+                        risk_refs=["RISK-001"],
+                        materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                        deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+                    ),
+                    _proposed_task(
+                        "document_service",
+                        "Document task-list operation",
+                        task_type=TaskType.DOCUMENTATION,
+                        depends_on=["verify_service"],
+                        requirement_refs=["FR-001"],
+                        materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                        deliverable_roles=[ProjectDeliverableRole.RUN_INSTRUCTIONS],
+                    ),
+                ]
+            )
+        ]
+    )
+    executor = RecordingTaskExecutor()
+
+    def build_cli_workflow(
+        *, workspace_runtime: Any, task_execution_progress_reporter: Any
+    ) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            executor,
+            workspace_runtime=workspace_runtime,
+            task_execution_progress_reporter=task_execution_progress_reporter,
+        )
+
+    def write_stub_diagram(
+        output_path: Path,
+        *,
+        workflow: Any | None = None,
+    ) -> None:
+        assert workflow is not None
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "uuid4", lambda: SimpleNamespace(hex="custom-success"))
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(cli, "write_workflow_diagram", write_stub_diagram)
+    responses = iter(["a", "a"])
+    approval_prompts: list[str] = []
+
+    def approve(prompt: str = "") -> str:
+        approval_prompts.append(prompt)
+        return next(responses)
+
+    monkeypatch.setattr("builtins.input", approve)
+
+    assert (
+        cli.main(["run", "--requirement", original_requirement])
+        == 0
+    )
+
+    output = capsys.readouterr().out
+    artifact_dir = (
+        tmp_path / "runs" / "run-custom-success" / "sdlc-artifacts"
+    )
+    requirements = json.loads(
+        (artifact_dir / "requirements.json").read_text(encoding="utf-8")
+    )
+    task_execution = json.loads(
+        (artifact_dir / "task_execution.json").read_text(encoding="utf-8")
+    )
+    workspace_execution = json.loads(
+        (artifact_dir / "workspace_execution.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads(
+        (artifact_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    destination = tmp_path / "projects" / requirements["project_name"]
+    packaged_dir = destination / "sdlc-artifacts"
+
+    assert analyst.calls[0]["raw_requirement"] == normalized_requirement
+    assert "Requirement analysis requires human review." in output
+    assert "Engineering task graph requires human review." in output
+    assert len(approval_prompts) == 2
+    assert len(executor.calls) == 5
+    assert task_execution["task_graph_execution"]["status"] == "SUCCEEDED"
+    assert workspace_execution["session"]["integrity_status"] == "VERIFIED"
+    assert manifest["exit_gate_passed"] is True
+    assert manifest["workflow_status"] == "success"
+    assert "[exit_gate] passed" in output
+    assert "Workflow completed successfully." in output
+    assert destination.is_dir()
+    assert artifact_dir.is_dir()
+    assert packaged_dir.is_dir()
+    assert requirements["requirement_submission"]["source_kind"] == "inline"
+    assert requirements["requirement_submission"]["original_text"] == (
+        original_requirement
+    )
+    assert requirements["requirement_submission"]["normalized_text"] == (
+        normalized_requirement
+    )
+    assert requirements["normalized_requirements"] == [
+        {"id": "REQ-001", "text": normalized_requirement}
+    ]
+    serialized_requirements = json.dumps(requirements)
+    assert DEMO_RAW_REQUIREMENT not in serialized_requirements
+    assert all(
+        demo_requirement not in serialized_requirements
+        for demo_requirement in DEMO_REQUIREMENTS
+    )
+    assert {path.name for path in artifact_dir.iterdir()} == {
+        path.name for path in packaged_dir.iterdir()
+    }
 
 
 def test_diagram_failure_does_not_fail_demo(

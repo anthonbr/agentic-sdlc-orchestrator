@@ -1,7 +1,8 @@
-"""Minimal command-line entry point for the built-in demonstration."""
+"""Command-line entry point for governed requirement submissions."""
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,18 @@ from agentic_sdlc.run_artifacts import (
     LiveRunArtifactBundle,
     write_sdlc_artifact_manifest,
 )
-from agentic_sdlc.state import ApprovalResponse, WorkflowState, demo_input
+from agentic_sdlc.requirement_submission import (
+    RequirementSubmissionError,
+    deterministic_project_name,
+    resolve_inline_requirement,
+    resolve_requirement_file,
+)
+from agentic_sdlc.state import (
+    ApprovalResponse,
+    WorkflowState,
+    demo_input,
+    workflow_input_from_submission,
+)
 from agentic_sdlc.task_execution_progress import (
     ConsoleTaskExecutionProgressReporter,
 )
@@ -53,25 +65,63 @@ def write_workflow_diagram(
 
 
 def main(arguments: list[str] | None = None) -> int:
-    """Run the governed demonstration without introducing a CLI dependency."""
+    """Resolve one requirement source and run the shared governed workflow."""
 
     args = list(sys.argv[1:] if arguments is None else arguments)
+    parser = _argument_parser()
     try:
-        requested_project_name = _parse_project_name_argument(args)
-        if requested_project_name is not None:
+        parsed = parser.parse_args(args)
+    except SystemExit as error:
+        return int(error.code)
+
+    requested_project_name = parsed.project_name
+    try:
+        normalized_project_name = (
             normalize_project_name(requested_project_name)
-    except ProjectNameError as error:
-        print(f"Invalid project name: {error}", file=sys.stderr)
-        return 2
-    except ValueError:
-        print(
-            "Usage: python -m agentic_sdlc demo "
-            "[--project-name PROJECT_NAME]",
-            file=sys.stderr,
+            if requested_project_name is not None
+            else None
         )
+    except ProjectNameError as error:
+        _print_cli_error(parser, f"Invalid project name: {error}")
         return 2
 
-    thread_id = f"demo-{uuid4().hex}"
+    try:
+        if parsed.command == "demo":
+            workflow_input = demo_input()
+        else:
+            submission = (
+                resolve_inline_requirement(parsed.requirement)
+                if parsed.requirement is not None
+                else resolve_requirement_file(parsed.requirement_file)
+            )
+            workflow_input = workflow_input_from_submission(
+                submission,
+                project_name=(
+                    normalized_project_name
+                    if normalized_project_name is not None
+                    else deterministic_project_name(submission)
+                ),
+            )
+    except RequirementSubmissionError as error:
+        _print_cli_error(parser, str(error))
+        return 2
+
+    return _execute_workflow(
+        workflow_input,
+        command=parsed.command,
+        requested_project_name=requested_project_name,
+    )
+
+
+def _execute_workflow(
+    workflow_input: WorkflowState,
+    *,
+    command: str,
+    requested_project_name: str | None,
+) -> int:
+    """Run demo and arbitrary submissions through one governed execution path."""
+
+    thread_id = f"{command}-{uuid4().hex}"
     artifact_bundle = LiveRunArtifactBundle.under_repository(Path.cwd(), thread_id)
     artifact_dir = artifact_bundle.artifact_dir
     workspace_runtime = GovernedWorkspaceRuntime()
@@ -94,7 +144,7 @@ def main(arguments: list[str] | None = None) -> int:
         print(f"Workflow diagram written to: {diagram_path}")
 
     state = run_workflow(
-        demo_input(),
+        workflow_input,
         thread_id=thread_id,
         artifact_dir=artifact_dir,
         workflow=workflow,
@@ -171,16 +221,37 @@ def main(arguments: list[str] | None = None) -> int:
     return 1
 
 
-def _parse_project_name_argument(args: list[str]) -> str | None:
-    if args == ["demo"]:
-        return None
-    if len(args) == 3 and args[:2] == ["demo", "--project-name"]:
-        return args[2]
-    if len(args) == 2 and args[0] == "demo" and args[1].startswith(
-        "--project-name="
-    ):
-        return args[1].split("=", 1)[1]
-    raise ValueError("unsupported command-line arguments")
+def _argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="python -m agentic_sdlc")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    demo_parser = commands.add_parser(
+        "demo", help="Run the built-in URL Shortener demonstration."
+    )
+    demo_parser.add_argument("--project-name", metavar="NAME")
+
+    run_parser = commands.add_parser(
+        "run", help="Run one user-supplied natural-language requirement."
+    )
+    requirement_source = run_parser.add_mutually_exclusive_group(required=True)
+    requirement_source.add_argument(
+        "--requirement",
+        metavar="TEXT",
+        help="Inline natural-language software requirement.",
+    )
+    requirement_source.add_argument(
+        "--requirement-file",
+        type=Path,
+        metavar="PATH",
+        help="UTF-8 file containing a natural-language software requirement.",
+    )
+    run_parser.add_argument("--project-name", metavar="NAME")
+    return parser
+
+
+def _print_cli_error(parser: argparse.ArgumentParser, message: str) -> None:
+    parser.print_usage(sys.stderr)
+    print(f"{parser.prog}: error: {message}", file=sys.stderr)
 
 
 def _interrupt_payload(state: WorkflowState) -> dict[str, Any]:
