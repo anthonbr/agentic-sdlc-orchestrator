@@ -224,3 +224,6 @@ __marimo__/
 
 # Durable generated projects
 projects/
+
+# Live generated workflow-run evidence
+runs/

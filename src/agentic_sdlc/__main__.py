@@ -16,6 +16,11 @@ from agentic_sdlc.project_export import (
     normalize_project_name,
     project_export_request_from_state,
 )
+from agentic_sdlc.run_artifacts import (
+    SDLC_ARTIFACT_DIRECTORY_NAME,
+    LiveRunArtifactBundle,
+    write_sdlc_artifact_manifest,
+)
 from agentic_sdlc.state import ApprovalResponse, WorkflowState, demo_input
 from agentic_sdlc.workflow import (
     WORKFLOW,
@@ -63,10 +68,12 @@ def main(arguments: list[str] | None = None) -> int:
         )
         return 2
 
+    thread_id = f"demo-{uuid4().hex}"
+    artifact_bundle = LiveRunArtifactBundle.under_repository(Path.cwd(), thread_id)
+    artifact_dir = artifact_bundle.artifact_dir
     workspace_runtime = GovernedWorkspaceRuntime()
     workflow = build_workflow(workspace_runtime=workspace_runtime)
-    artifacts_dir = Path.cwd() / "artifacts"
-    diagram_path = artifacts_dir / "workflow_diagram.png"
+    diagram_path = artifact_bundle.workflow_diagram_path
     try:
         write_workflow_diagram(diagram_path, workflow=workflow)
     except Exception as error:
@@ -78,8 +85,6 @@ def main(arguments: list[str] | None = None) -> int:
     else:
         print(f"Workflow diagram written to: {diagram_path}")
 
-    artifact_dir = artifacts_dir / "demo-run"
-    thread_id = f"demo-{uuid4().hex}"
     state = run_workflow(
         demo_input(),
         thread_id=thread_id,
@@ -101,6 +106,9 @@ def main(arguments: list[str] | None = None) -> int:
             workflow=workflow,
         )
 
+    if state.get("workflow_status") in {"success", "safe_stopped"}:
+        write_sdlc_artifact_manifest(state, artifact_bundle)
+
     for event in state.get("trace", []):
         print(event)
 
@@ -113,12 +121,14 @@ def main(arguments: list[str] | None = None) -> int:
             request = project_export_request_from_state(
                 state,
                 workspace=workspace,
+                artifact_bundle=artifact_bundle,
                 export_root=Path.cwd() / "projects",
                 requested_project_name=requested_project_name,
             )
         except (ProjectExportContractError, WorkspaceIntegrationError) as error:
             print(f"Project export failed: {error}", file=sys.stderr)
-            print(f"Artifacts written to: {artifact_dir}")
+            print("Run evidence written to:")
+            print(f"  {artifact_dir}")
             return 1
         export_result = ProjectExporter().export(request)
         if not export_result.succeeded:
@@ -126,18 +136,25 @@ def main(arguments: list[str] | None = None) -> int:
                 f"Project export failed: {export_result.failure_reason}",
                 file=sys.stderr,
             )
-            print(f"Artifacts written to: {artifact_dir}")
+            print("Run evidence written to:")
+            print(f"  {artifact_dir}")
             return 1
         print("Project exported successfully.")
         print(f"Project: {export_result.project_name}")
-        print("Project directory:")
+        print("Durable project exported to:")
         print(f"  {export_result.destination_directory}")
-        print(f"Artifacts written to: {artifact_dir}")
+        print("Run evidence written to:")
+        print(f"  {artifact_dir}")
+        print("Packaged SDLC evidence:")
+        print(
+            f"  {export_result.destination_directory / SDLC_ARTIFACT_DIRECTORY_NAME}"
+        )
         return 0
 
     if state.get("workflow_status") == "safe_stopped":
         print(f"Workflow stopped safely: {state['safe_stop_reason']}")
-        print(f"Partial artifacts written to: {artifact_dir}")
+        print("Partial run evidence written to:")
+        print(f"  {artifact_dir}")
         return 1
 
     print(f"Workflow failed: {state.get('workflow_status', 'unknown')}")

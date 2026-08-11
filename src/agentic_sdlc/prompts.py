@@ -81,7 +81,7 @@ routing. Return only the requested structured task proposal.
 """
 
 
-TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.5"
+TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.6"
 
 TASK_EXECUTION_SYSTEM_PROMPT = """\
 Execute exactly one approved software-engineering task using only the bounded
@@ -95,8 +95,18 @@ launch/use surface; documentation or framework-neutral handlers alone are
 insufficient. AUTOMATED_TESTS requires a materializable TEST artifact.
 RUN_INSTRUCTIONS requires a materializable DOCUMENTATION artifact targeting the
 root README.md with concrete setup, run, test, minimal usage, and significant
-prototype-limitation guidance. Do not claim any generated application or test was
-executed.
+prototype-limitation guidance. Portable, project-owned setup and run instructions
+must remain primary; the project must not depend on the orchestrator environment.
+When the project is Python and supplied project context supports using the
+orchestrator's Python environment, the root README.md should additionally include
+an optional local-development example for the case where the published project
+remains under projects/<project-name>/. In that example, invoke its actual
+documented Python entry point with ../../.venv/bin/python, retaining applicable
+environment variables and arguments from the portable command. Clearly label that
+relative path as optional and layout-dependent, and direct users to the portable
+setup and run instructions if the project is copied or moved elsewhere. Do not add
+this interpreter example for non-Python projects. Do not claim any generated
+application or test was executed.
 
 Echo request_id, attempt_id, and task_id exactly as supplied. Do not generate or
 modify those correlation identifiers.

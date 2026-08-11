@@ -281,6 +281,26 @@ def test_invalid_executor_target_path_fails_before_intent_authority() -> None:
         )
 
 
+@mark.parametrize(
+    "target_path",
+    (
+        "sdlc-artifacts",
+        "sdlc-artifacts/foo.json",
+        "sdlc-artifacts/nested/file.txt",
+    ),
+)
+def test_sdlc_artifact_namespace_is_reserved_before_intent_authority(
+    target_path: str,
+) -> None:
+    artifact = _artifact()
+
+    with raises(WorkspaceContractError, match="violates repository path policy"):
+        canonicalize_artifact_materialization_proposals(
+            _result_with_proposal(artifact, target_path=target_path),
+            (artifact,),
+        )
+
+
 def _materialization_codes(
     result: ArtifactMaterializationValidationResult,
 ) -> set[ArtifactMaterializationIssueCode]:
@@ -340,6 +360,9 @@ def test_snapshot_rejects_duplicate_paths() -> None:
         ".env",
         ".venv/bin/python",
         "venv/bin/python",
+        "sdlc-artifacts",
+        "sdlc-artifacts/foo.json",
+        "sdlc-artifacts/nested/file.txt",
     ),
 )
 def test_repository_path_policy_rejects_dangerous_paths(path: str) -> None:

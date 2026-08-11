@@ -213,7 +213,7 @@ def _bound(request: TaskExecutionRequest) -> WorkspaceBoundTaskExecutionRequest:
 def test_execution_prompt_preserves_authority_boundary() -> None:
     prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
 
-    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.5"
+    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.6"
     assert "exactly one approved software-engineering task" in prompt
     assert "declare success" in prompt
     assert "change the approved task" in prompt
@@ -243,6 +243,28 @@ def test_execution_prompt_preserves_authority_boundary() -> None:
     assert "do not infer new engineering requirements" in prompt
     assert "cannot change task scope or dependencies" in prompt
     assert "never makes rejected artifact content authoritative" in prompt
+
+
+def test_run_instructions_keep_portable_commands_primary_and_local_reuse_optional(
+) -> None:
+    prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
+
+    assert "portable, project-owned setup and run instructions" in prompt
+    assert "must remain primary" in prompt
+    assert "must not depend on the orchestrator environment" in prompt
+    assert "when the project is python" in prompt
+    assert (
+        "root readme.md should additionally include an optional local-development "
+        "example"
+    ) in prompt
+    assert "published project remains under" in prompt
+    assert "projects/<project-name>/" in prompt
+    assert "../../.venv/bin/python" in prompt
+    assert "actual documented python entry point" in prompt
+    assert "applicable environment variables and arguments" in prompt
+    assert "optional and layout-dependent" in prompt
+    assert "project is copied or moved elsewhere" in prompt
+    assert "do not add this interpreter example for non-python projects" in prompt
 
 
 def test_engineering_obligations_and_meta_instructions_have_distinct_authority() -> None:
