@@ -30,7 +30,7 @@ from agentic_sdlc.requirement_spec import ApprovedRequirementSpec
 from agentic_sdlc.task_graph import ProposedTaskGraph, TaskGraph
 
 
-DEFAULT_OPENAI_MODEL = "gpt-5.6-luna"
+DEFAULT_OPENAI_MODEL = "gpt-5.6-sol"
 
 
 class RequirementAnalysisClient(Protocol):
