@@ -1,5 +1,13 @@
 # Agentic SDLC Orchestrator
 
+<p align="center">
+  <img
+    src="docs/assets/agentic_sdlc_banner.svg"
+    alt="Agentic Software Development Lifecycle: governed orchestration from description through requirements to engineering output"
+    width="100%"
+  />
+</p>
+
 The Agentic SDLC Orchestrator demonstrates how a natural-language software
 requirement can move through a governed, auditable development lifecycle. It
 combines requirement analysis, human review, TaskGraph planning, governed Task
