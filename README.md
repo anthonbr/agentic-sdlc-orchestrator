@@ -590,6 +590,12 @@ and validation/mutation evidence is in `task_execution.json` and
 | Brownfield | Bounded repository reasoning and a governed analytics enhancement | [`artifacts/brownfield-demo-run/`](artifacts/brownfield-demo-run/), especially [`summary.md`](artifacts/brownfield-demo-run/summary.md) and [`workspace_seed.json`](artifacts/brownfield-demo-run/workspace_seed.json) | [`enhanced-project/`](artifacts/brownfield-demo-run/enhanced-project/) |
 | Ambiguous | Planning blocked pending human clarification, revised authority, then governed expiration work | [`artifacts/ambiguity-demo-run/`](artifacts/ambiguity-demo-run/), especially [`summary.md`](artifacts/ambiguity-demo-run/summary.md) and [`ambiguity_resolution.json`](artifacts/ambiguity-demo-run/ambiguity_resolution.json) | [`expiration-project/`](artifacts/ambiguity-demo-run/expiration-project/) |
 
+Deterministic per-run reliability metrics for these scenarios are indexed in
+[`artifacts/reliability_metrics.json`](artifacts/reliability_metrics.json). They
+summarize existing immutable execution and mutation evidence. MTTR and end-to-end
+latency are explicitly `NOT_MEASURED` because the deterministic evidence does not
+preserve authoritative elapsed-time boundaries.
+
 The checked-in greenfield and brownfield bundles are frozen V0.5 reviewer snapshots;
 their Markdown preserves the schema and policy state at generation time. In
 particular, the greenfield snapshot's historical `needs_clarification=true` predates
