@@ -213,7 +213,7 @@ def _bound(request: TaskExecutionRequest) -> WorkspaceBoundTaskExecutionRequest:
 def test_execution_prompt_preserves_authority_boundary() -> None:
     prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
 
-    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.4"
+    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.5"
     assert "exactly one approved software-engineering task" in prompt
     assert "declare success" in prompt
     assert "change the approved task" in prompt
@@ -226,6 +226,9 @@ def test_execution_prompt_preserves_authority_boundary() -> None:
     assert "forbidden tasks must return no materialization proposals" in prompt
     assert "required tasks should propose at least one" in prompt
     assert "allowed tasks may propose zero or more" in prompt
+    assert "runnable_entrypoint" in prompt
+    assert "root readme.md" in prompt
+    assert "do not claim any generated application or test was executed" in prompt
     assert prompt.count("forbidden tasks must return no materialization proposals") == 1
     assert prompt.count("your role or authority") == 1
     assert "return concise success" not in prompt

@@ -28,6 +28,18 @@ from agentic_sdlc.prompts import (
     TASK_PLANNING_PROMPT_VERSION,
     TASK_PLANNING_SYSTEM_PROMPT,
 )
+from agentic_sdlc.project_delivery import (
+    DEFAULT_PROJECT_DELIVERY_POLICY,
+    ProjectDeliverableRole,
+    ProjectDeliveryMode,
+    RUNNABLE_PROJECT_DELIVERY_POLICY,
+)
+from agentic_sdlc.project_readiness import (
+    ProjectReadinessIssue,
+    ProjectReadinessIssueCode,
+    ProjectReadinessValidation,
+    validate_project_readiness,
+)
 from agentic_sdlc.requirement_analysis import (
     RequirementAnalysis,
     RequirementPlanningReadinessError,
@@ -55,6 +67,10 @@ from agentic_sdlc.task_graph import (
     TaskGraph,
     TaskMaterializationPolicy,
     TaskType,
+)
+from agentic_sdlc.workspace_contracts import (
+    WorkspaceFileState,
+    build_workspace_snapshot,
 )
 from agentic_sdlc.workspace_integration_contracts import (
     WorkspaceBoundTaskExecutionRequest,
@@ -134,6 +150,7 @@ def _proposed_task(
     materialization_policy: TaskMaterializationPolicy = (
         TaskMaterializationPolicy.FORBIDDEN
     ),
+    deliverable_roles: list[ProjectDeliverableRole] | None = None,
 ) -> ProposedTask:
     return ProposedTask(
         key=key,
@@ -147,6 +164,7 @@ def _proposed_task(
         risk_refs=risk_refs or [],
         ambiguity_refs=ambiguity_refs or [],
         expected_outputs=[f"{key}.md"],
+        deliverable_roles=deliverable_roles or [],
     )
 
 
@@ -174,6 +192,7 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
                 acceptance_refs=["AC-001", "AC-002"],
                 ambiguity_refs=["AMB-001"],
                 materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                deliverable_roles=[ProjectDeliverableRole.RUNNABLE_ENTRYPOINT],
             ),
             _proposed_task(
                 "verify_service",
@@ -184,6 +203,7 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
                 acceptance_refs=["AC-001", "AC-002"],
                 risk_refs=["RISK-001"],
                 materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
             ),
             _proposed_task(
                 "document_service",
@@ -192,6 +212,7 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
                 depends_on=["verify_service"],
                 requirement_refs=["FR-001"],
                 materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                deliverable_roles=[ProjectDeliverableRole.RUN_INSTRUCTIONS],
             ),
         ]
     )
@@ -265,6 +286,27 @@ def _approve_demo(artifact_dir: Path | None = None) -> WorkflowState:
     )
 
 
+def _replace_authoritative_snapshot(
+    state: WorkflowState,
+    files: tuple[WorkspaceFileState, ...],
+) -> WorkflowState:
+    session = state["governed_workspace_session"]
+    replacement = build_workspace_snapshot(session.workspace_id, files)
+    snapshots = [
+        item
+        for item in state["workspace_snapshots"]
+        if item.snapshot_id
+        not in {session.authoritative_snapshot_id, replacement.snapshot_id}
+    ]
+    return {
+        **state,
+        "governed_workspace_session": session.model_copy(
+            update={"authoritative_snapshot_id": replacement.snapshot_id}
+        ),
+        "workspace_snapshots": [*snapshots, replacement],
+    }
+
+
 def test_valid_analysis_is_json_safe_before_requirement_review() -> None:
     _, _, paused, analyst, planner = _start_demo()
 
@@ -278,6 +320,28 @@ def test_valid_analysis_is_json_safe_before_requirement_review() -> None:
     assert len(analyst.calls) == 1
     assert planner.calls == []
     assert "approved_requirement_spec" not in paused
+
+
+def test_demo_uses_application_owned_runnable_project_policy() -> None:
+    workflow_input = demo_input()
+
+    assert workflow_input["project_delivery_policy"] == {
+        "mode": ProjectDeliveryMode.RUNNABLE_PROJECT.value
+    }
+    assert "runnable" not in workflow_input["raw_requirement"].casefold()
+
+
+def test_delivery_policy_reaches_planner_as_authoritative_context() -> None:
+    workflow, thread_id, _, _, planner = _start_demo()
+
+    paused = _approve_requirements(workflow, thread_id)
+
+    assert planner.calls[0]["delivery_policy"] == (
+        RUNNABLE_PROJECT_DELIVERY_POLICY
+    )
+    assert paused["candidate_task_graph"]["delivery_policy"] == {
+        "mode": "RUNNABLE_PROJECT"
+    }
 
 
 def test_planning_readiness_is_deterministic_and_ambiguities_may_be_nonblocking(
@@ -447,6 +511,26 @@ def test_requirement_approval_builds_spec_and_reaches_task_graph_review() -> Non
     assert isinstance(supplied_spec, ApprovedRequirementSpec)
     assert supplied_spec.spec_id == spec["spec_id"]
     assert "approved_task_graph" not in paused
+
+
+def test_cli_task_graph_review_displays_delivery_policy_and_roles(
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    workflow, thread_id, _, _, _ = _start_demo()
+    paused = _approve_requirements(workflow, thread_id)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "r")
+
+    response = cli._prompt_for_task_graph_decision(
+        paused["__interrupt__"][0].value
+    )
+
+    output = capsys.readouterr().out
+    assert response["decision"] == "REJECT"
+    assert "Project delivery policy: RUNNABLE_PROJECT" in output
+    assert "Delivery roles: RUNNABLE_ENTRYPOINT" in output
+    assert "Delivery roles: AUTOMATED_TESTS" in output
+    assert "Delivery roles: RUN_INSTRUCTIONS" in output
 
 
 def test_requirement_changes_preserve_feedback_and_lineage() -> None:
@@ -660,13 +744,20 @@ def test_openai_task_planner_uses_approved_spec_and_schema_without_network() -> 
     client = OpenAITaskPlanningClient(
         model_name="test-model", client=SimpleNamespace(responses=StubResponses())
     )
-    result = client.invoke_structured(spec, prior_graph, "Add validation work.")
+    result = client.invoke_structured(
+        spec,
+        prior_graph,
+        "Add validation work.",
+        RUNNABLE_PROJECT_DELIVERY_POLICY,
+    )
 
     assert isinstance(result, ProposedTaskGraph)
     assert calls[0]["text_format"] is ProposedTaskGraph
     assert calls[0]["store"] is False
     content = calls[0]["input"][1]["content"]
     assert "Human-approved requirement specification" in content
+    assert "Authoritative application-owned project delivery policy" in content
+    assert "RUNNABLE_PROJECT" in content
     assert spec.spec_id in content
     assert "Prior validated task graph" in content
     assert "Authoritative human task-graph review feedback" in content
@@ -674,13 +765,16 @@ def test_openai_task_planner_uses_approved_spec_and_schema_without_network() -> 
 
 def test_task_planning_prompt_reserves_authoritative_metadata() -> None:
     prompt = " ".join(TASK_PLANNING_SYSTEM_PROMPT.casefold().split())
-    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.2"
+    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.3"
     assert "cover every fr, nfr, con, and ac item" in prompt
     assert "deterministic application validation is authoritative" in prompt
     assert "do not assign task-### ids" in prompt
     assert "do not silently choose an implementation outcome" in prompt
     assert "do not derive this policy mechanically from task type" in prompt
     assert "no_change may eventually satisfy required" in prompt
+    assert "runnable_entrypoint" in prompt
+    assert "run_instructions" in prompt
+    assert "not an additional business requirement" in prompt
     assert "do not execute tasks" in prompt
 
 
@@ -713,6 +807,21 @@ def test_incomplete_core_coverage_retries_before_human_review() -> None:
     )
     assert _interrupt_stage(paused) == "task_graph_review"
     assert len(planner.calls) == 2
+
+
+def test_missing_runnable_role_retries_before_human_review() -> None:
+    incomplete = _proposal().model_dump(mode="json")
+    incomplete["tasks"][2]["deliverable_roles"] = []
+    planner = FakeTaskPlanningClient([incomplete, _proposal("retry")])
+    workflow, thread_id, _, _, _ = _start_demo(planner=planner)
+
+    paused = _approve_requirements(workflow, thread_id)
+
+    assert paused["task_planning_attempt_count"] == 2
+    assert paused["task_planning_failures"][0]["reason"] == (
+        "Runnable-project delivery policy requires RUNNABLE_ENTRYPOINT coverage."
+    )
+    assert _interrupt_stage(paused) == "task_graph_review"
 
 
 def test_incomplete_core_coverage_exhaustion_safe_stops() -> None:
@@ -849,6 +958,19 @@ def test_task_graph_approval_runs_the_authoritative_task_graph_to_completion() -
     assert "test_plan" not in result
     assert result["exit_gate_passed"] is True
     assert result["workflow_status"] == "success"
+    readiness = result["project_readiness_validation"]
+    assert readiness.passed is True
+    assert readiness.required_roles == (
+        ProjectDeliverableRole.RUNNABLE_ENTRYPOINT,
+        ProjectDeliverableRole.AUTOMATED_TESTS,
+        ProjectDeliverableRole.RUN_INSTRUCTIONS,
+    )
+    assert {item.target_path for item in readiness.role_evidence} >= {
+        "src/url_shortener/app.py",
+        "tests/test_service.py",
+        "README.md",
+    }
+    assert readiness.runtime_execution_verified is False
     assert result["task_graph_review_history"] == [
         {
             "sequence": 1,
@@ -858,6 +980,128 @@ def test_task_graph_approval_runs_the_authoritative_task_graph_to_completion() -
             "revision_number": 0,
         }
     ]
+
+
+def test_readiness_rejects_materialized_role_absent_from_final_snapshot() -> None:
+    complete = _approve_demo()
+    entrypoint_paths = {
+        item.target_path
+        for item in complete["project_readiness_validation"].role_evidence
+        if item.role is ProjectDeliverableRole.RUNNABLE_ENTRYPOINT
+    }
+    session = complete["governed_workspace_session"]
+    final_snapshot = next(
+        item
+        for item in complete["workspace_snapshots"]
+        if item.snapshot_id == session.authoritative_snapshot_id
+    )
+    tampered = _replace_authoritative_snapshot(
+        complete,
+        tuple(
+            item
+            for item in final_snapshot.files
+            if item.path not in entrypoint_paths
+        ),
+    )
+
+    result = exit_gate(tampered)
+
+    assert result["exit_gate_passed"] is False
+    readiness = result["project_readiness_validation"]
+    assert readiness.passed is False
+    assert any(
+        issue.role is ProjectDeliverableRole.RUNNABLE_ENTRYPOINT
+        for issue in readiness.issues
+    )
+
+
+def test_readiness_rejects_missing_root_readme() -> None:
+    complete = _approve_demo()
+    session = complete["governed_workspace_session"]
+    final_snapshot = next(
+        item
+        for item in complete["workspace_snapshots"]
+        if item.snapshot_id == session.authoritative_snapshot_id
+    )
+    tampered = _replace_authoritative_snapshot(
+        complete,
+        tuple(item for item in final_snapshot.files if item.path != "README.md"),
+    )
+
+    result = exit_gate(tampered)
+
+    assert result["workflow_status"] == "exit_gate_failed"
+    readiness = result["project_readiness_validation"]
+    assert any(
+        issue.role is ProjectDeliverableRole.RUN_INSTRUCTIONS
+        for issue in readiness.issues
+    )
+
+
+def test_readiness_rejects_final_snapshot_content_hash_mismatch() -> None:
+    complete = _approve_demo()
+    session = complete["governed_workspace_session"]
+    final_snapshot = next(
+        item
+        for item in complete["workspace_snapshots"]
+        if item.snapshot_id == session.authoritative_snapshot_id
+    )
+    tampered = _replace_authoritative_snapshot(
+        complete,
+        tuple(
+            item.model_copy(update={"content_hash": "0" * 64})
+            if item.path == "README.md"
+            else item
+            for item in final_snapshot.files
+        ),
+    )
+
+    result = exit_gate(tampered)
+
+    assert result["exit_gate_passed"] is False
+    readiness = result["project_readiness_validation"]
+    assert any(
+        issue.role is ProjectDeliverableRole.RUN_INSTRUCTIONS
+        for issue in readiness.issues
+    )
+
+
+def test_readiness_rejects_missing_final_materialization_evidence() -> None:
+    complete = _approve_demo()
+    entrypoint_task = next(
+        task
+        for task in complete["approved_task_graph"]["tasks"]
+        if "RUNNABLE_ENTRYPOINT" in task["deliverable_roles"]
+    )
+    incomplete: WorkflowState = {
+        **complete,
+        "artifact_materialization_validations": [
+            item
+            for item in complete["artifact_materialization_validations"]
+            if item.task_id != entrypoint_task["task_id"]
+        ],
+    }
+
+    result = exit_gate(incomplete)
+
+    assert result["exit_gate_passed"] is False
+    readiness = result["project_readiness_validation"]
+    assert any(
+        issue.role is ProjectDeliverableRole.RUNNABLE_ENTRYPOINT
+        for issue in readiness.issues
+    )
+
+
+def test_neutral_policy_preserves_prior_exit_readiness_semantics() -> None:
+    validation = validate_project_readiness(
+        DEFAULT_PROJECT_DELIVERY_POLICY,
+        graph=None,
+        execution=None,
+    )
+
+    assert validation.passed is True
+    assert validation.policy.mode is ProjectDeliveryMode.ENGINEERING_ARTIFACTS
+    assert validation.required_roles == ()
 
 
 def test_task_graph_request_changes_replans_revalidates_and_can_be_approved() -> None:
@@ -1070,7 +1314,7 @@ def test_successful_run_writes_canonical_artifact_set(tmp_path: Path) -> None:
     assert "Requirement Analysis" in summary
     assert "Engineering Task Graph" in summary
     assert "TaskGraph execution: SUCCEEDED" in summary
-    assert "governed V0.5 workflow executed" in summary
+    assert "governed workflow executed" in summary
     assert "No engineering task was executed" not in summary
 
 
@@ -1117,16 +1361,25 @@ def test_cli_preserves_multiline_requirement_feedback_and_reaches_graph_review(
     expected_feedback = "\n".join(feedback_lines)
     responses = iter(["c", *feedback_lines, "", "a", "a"])
 
-    def write_stub_diagram(output_path: Path) -> None:
+    def write_stub_diagram(
+        output_path: Path,
+        *,
+        workflow: Any | None = None,
+    ) -> None:
+        assert workflow is not None
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
 
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        cli,
-        "WORKFLOW",
-        build_workflow(analyst, planner, RecordingTaskExecutor()),
-    )
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(cli, "write_workflow_diagram", write_stub_diagram)
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
 
@@ -1137,6 +1390,8 @@ def test_cli_preserves_multiline_requirement_feedback_and_reaches_graph_review(
     assert "Layer 1 — parallel" in output
     assert analyst.calls[1]["human_feedback"] == expected_feedback
     assert "[task_graph_review] approve" in output
+    assert "Project: url-shortener" in output
+    assert (tmp_path / "projects" / "url-shortener" / "README.md").exists()
     with raises(StopIteration):
         next(responses)
 
@@ -1165,19 +1420,27 @@ def test_diagram_failure_does_not_fail_demo(
     monkeypatch: MonkeyPatch,
     capsys: CaptureFixture[str],
 ) -> None:
-    def fail_to_render(_output_path: Path) -> None:
+    analyst = FakeRequirementAnalysisClient([_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def fail_to_render(
+        _output_path: Path,
+        *,
+        workflow: Any | None = None,
+    ) -> None:
+        assert workflow is not None
         raise RuntimeError("renderer unavailable")
 
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        cli,
-        "WORKFLOW",
-        build_workflow(
-            FakeRequirementAnalysisClient([_analysis()]),
-            FakeTaskPlanningClient([_proposal()]),
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
             RecordingTaskExecutor(),
-        ),
-    )
+            workspace_runtime=workspace_runtime,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(cli, "write_workflow_diagram", fail_to_render)
     responses = iter(["a", "a"])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
@@ -1187,3 +1450,247 @@ def test_diagram_failure_does_not_fail_demo(
     assert "Warning: workflow diagram was not generated" in output.err
     assert "[task_graph_review] approve" in output.out
     assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+    assert (tmp_path / "projects" / "url-shortener" / "README.md").exists()
+
+
+def test_cli_explicit_project_name_uses_the_injected_live_runtime(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    from agentic_sdlc.workspace_integration import GovernedWorkspaceRuntime
+
+    workspace_parent = tmp_path / "isolated"
+    workspace_parent.mkdir()
+
+    class RecordingWorkspaceRuntime(GovernedWorkspaceRuntime):
+        def __init__(self) -> None:
+            super().__init__(parent_directory=workspace_parent)
+            self.resolved_workspaces: list[Any] = []
+
+        def workspace_for_run(self, run_id: str) -> Any:
+            workspace = super().workspace_for_run(run_id)
+            self.resolved_workspaces.append(workspace)
+            return workspace
+
+    runtime = RecordingWorkspaceRuntime()
+    analyst = FakeRequirementAnalysisClient([_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        assert workspace_runtime is runtime
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
+    def skip_diagram(
+        _output_path: Path,
+        *,
+        workflow: Any | None = None,
+    ) -> None:
+        assert workflow is not None
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "GovernedWorkspaceRuntime", lambda: runtime)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(cli, "write_workflow_diagram", skip_diagram)
+    responses = iter(["a", "a"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
+
+    assert cli.main(["demo", "--project-name", "My Durable App"]) == 0
+
+    destination = tmp_path / "projects" / "my-durable-app"
+    output = capsys.readouterr()
+    assert "Workspace integrity: VERIFIED" in output.out
+    assert "Project exported successfully." in output.out
+    assert f"  {destination}" in output.out
+    assert (destination / "README.md").exists()
+    assert runtime.resolved_workspaces
+    assert runtime.resolved_workspaces[-1].root.parent == workspace_parent.resolve()
+    assert runtime.resolved_workspaces[-1].root != destination
+
+
+def test_failed_runnable_readiness_prevents_durable_export(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    analyst = FakeRequirementAnalysisClient([_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
+    def incomplete_readiness(
+        policy: Any,
+        **_evidence: Any,
+    ) -> ProjectReadinessValidation:
+        return ProjectReadinessValidation(
+            readiness_validation_id="READINESS-CONTROLLED-FAILURE",
+            policy=policy,
+            passed=False,
+            required_roles=policy.required_roles,
+            role_evidence=(),
+            issues=(
+                ProjectReadinessIssue(
+                    code=ProjectReadinessIssueCode.ROLE_EVIDENCE,
+                    role=ProjectDeliverableRole.RUNNABLE_ENTRYPOINT,
+                    detail="Controlled missing runnable entrypoint evidence.",
+                ),
+            ),
+            runtime_execution_verified=False,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(
+        cli,
+        "write_workflow_diagram",
+        lambda _path, *, workflow=None: None,
+    )
+    monkeypatch.setattr(
+        "agentic_sdlc.nodes.validate_project_readiness",
+        incomplete_readiness,
+    )
+    responses = iter(["a", "a"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
+
+    assert cli.main(["demo", "--project-name", "not-ready"]) == 1
+
+    output = capsys.readouterr().out
+    assert "Workflow failed: exit_gate_failed" in output
+    assert "Project exported successfully." not in output
+    assert not (tmp_path / "projects").exists()
+
+
+def test_cli_rejected_run_does_not_create_a_durable_project(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    analyst = FakeRequirementAnalysisClient([_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(
+        cli,
+        "write_workflow_diagram",
+        lambda _path, *, workflow=None: None,
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "r")
+
+    assert cli.main(["demo"]) == 1
+
+    output = capsys.readouterr().out
+    assert "Workflow stopped safely" in output
+    assert not (tmp_path / "projects").exists()
+    assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+
+
+def test_cli_failed_analysis_safe_stop_does_not_create_a_durable_project(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    analyst = FakeRequirementAnalysisClient(
+        [
+            {"normalized_problem_statement": "Incomplete"}
+            for _ in range(MAX_REQUIREMENT_ANALYSIS_ATTEMPTS)
+        ]
+    )
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(
+        cli,
+        "write_workflow_diagram",
+        lambda _path, *, workflow=None: None,
+    )
+
+    assert cli.main(["demo"]) == 1
+
+    output = capsys.readouterr().out
+    assert "Workflow stopped safely" in output
+    assert "failed after 3 attempts" in output
+    assert not (tmp_path / "projects").exists()
+    assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+
+
+def test_cli_explicit_destination_collision_fails_without_overwrite(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    analyst = FakeRequirementAnalysisClient([_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
+    destination = tmp_path / "projects" / "existing-project"
+    destination.mkdir(parents=True)
+    marker = destination / "keep.txt"
+    marker.write_text("preserve\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(
+        cli,
+        "write_workflow_diagram",
+        lambda _path, *, workflow=None: None,
+    )
+    responses = iter(["a", "a"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
+
+    assert cli.main(["demo", "--project-name", "Existing Project"]) == 1
+
+    output = capsys.readouterr()
+    assert "Workflow completed successfully." in output.out
+    assert "Project export failed" in output.err
+    assert marker.read_text(encoding="utf-8") == "preserve\n"
+    assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+
+
+def test_cli_rejects_unsafe_project_name_before_running_workflow(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.main(["demo", "--project-name", "../escape"]) == 2
+
+    output = capsys.readouterr()
+    assert "Invalid project name" in output.err
+    assert not (tmp_path / "artifacts").exists()
+    assert not (tmp_path / "projects").exists()

@@ -21,6 +21,10 @@ from agentic_sdlc.prompts import (
     REQUIREMENT_ANALYSIS_SYSTEM_PROMPT,
     TASK_PLANNING_SYSTEM_PROMPT,
 )
+from agentic_sdlc.project_delivery import (
+    DEFAULT_PROJECT_DELIVERY_POLICY,
+    ProjectDeliveryPolicy,
+)
 from agentic_sdlc.requirement_analysis import RequirementAnalysis
 from agentic_sdlc.requirement_spec import ApprovedRequirementSpec
 from agentic_sdlc.task_graph import ProposedTaskGraph, TaskGraph
@@ -177,6 +181,7 @@ class TaskPlanningClient(Protocol):
         approved_spec: ApprovedRequirementSpec,
         prior_task_graph: TaskGraph | None,
         human_feedback: str,
+        delivery_policy: ProjectDeliveryPolicy = DEFAULT_PROJECT_DELIVERY_POLICY,
     ) -> object:
         """Return a proposal that deterministic workflow code will validate."""
 
@@ -210,6 +215,7 @@ class OpenAITaskPlanningClient:
         approved_spec: ApprovedRequirementSpec,
         prior_task_graph: TaskGraph | None,
         human_feedback: str,
+        delivery_policy: ProjectDeliveryPolicy = DEFAULT_PROJECT_DELIVERY_POLICY,
     ) -> object:
         """Return an SDK-parsed semantic proposal without assigning authority."""
 
@@ -222,7 +228,10 @@ class OpenAITaskPlanningClient:
                     {
                         "role": "user",
                         "content": _task_planning_input(
-                            approved_spec, prior_task_graph, human_feedback
+                            approved_spec,
+                            delivery_policy,
+                            prior_task_graph,
+                            human_feedback,
                         ),
                     },
                 ],
@@ -279,10 +288,12 @@ class FakeTaskPlanningClient:
         approved_spec: ApprovedRequirementSpec,
         prior_task_graph: TaskGraph | None,
         human_feedback: str,
+        delivery_policy: ProjectDeliveryPolicy = DEFAULT_PROJECT_DELIVERY_POLICY,
     ) -> object:
         self.calls.append(
             {
                 "approved_spec": approved_spec,
+                "delivery_policy": delivery_policy,
                 "prior_task_graph": prior_task_graph,
                 "human_feedback": human_feedback,
             }
@@ -318,12 +329,16 @@ def _requirement_analysis_input(
 
 def _task_planning_input(
     approved_spec: ApprovedRequirementSpec,
+    delivery_policy: ProjectDeliveryPolicy,
     prior_task_graph: TaskGraph | None,
     human_feedback: str,
 ) -> str:
     sections = [
         "Human-approved requirement specification:",
         json.dumps(approved_spec.model_dump(mode="json"), indent=2),
+        "",
+        "Authoritative application-owned project delivery policy:",
+        json.dumps(delivery_policy.model_dump(mode="json"), indent=2),
     ]
     if prior_task_graph is not None:
         sections.extend(

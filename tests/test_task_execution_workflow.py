@@ -546,8 +546,12 @@ def _run_approved(
         workspace_runtime=workspace_runtime,
     )
     thread_id = thread_id or uuid4().hex
+    workflow_input = demo_input()
+    workflow_input["project_delivery_policy"] = {
+        "mode": "ENGINEERING_ARTIFACTS"
+    }
     requirement_review = run_workflow(
-        demo_input(), thread_id=thread_id, workflow=workflow
+        workflow_input, thread_id=thread_id, workflow=workflow
     )
     assert requirement_review["__interrupt__"][0].value["stage"] == (
         "requirement_analysis_review"

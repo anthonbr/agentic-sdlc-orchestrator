@@ -17,6 +17,7 @@ from agentic_sdlc.workspace_runtime import (
     WorkspaceRuntimeError,
     WorkspaceRuntimeIssueCode,
     create_isolated_workspace,
+    snapshot_directory_tree,
     snapshot_isolated_workspace,
 )
 
@@ -105,6 +106,36 @@ def test_snapshot_identity_ignores_filesystem_enumeration_order(
     assert snapshot_isolated_workspace(first).snapshot_id == (
         snapshot_isolated_workspace(second).snapshot_id
     )
+
+
+def test_directory_tree_snapshot_reuses_workspace_snapshot_identity(
+    tmp_path: Path,
+) -> None:
+    workspace = create_isolated_workspace(
+        "WORKSPACE-001", parent_directory=tmp_path
+    )
+    (workspace.root / "src").mkdir()
+    (workspace.root / "src" / "service.py").write_text(
+        "value = 1\n",
+        encoding="utf-8",
+    )
+
+    assert snapshot_directory_tree(
+        workspace.root,
+        workspace_id=workspace.workspace_id,
+    ) == snapshot_isolated_workspace(workspace)
+
+
+def test_directory_tree_snapshot_rejects_symlink_root(tmp_path: Path) -> None:
+    actual = tmp_path / "actual"
+    actual.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(actual, target_is_directory=True)
+
+    with raises(WorkspaceRuntimeError) as caught:
+        snapshot_directory_tree(linked, workspace_id="WORKSPACE-001")
+
+    assert caught.value.code is WorkspaceRuntimeIssueCode.UNSUPPORTED_FILE_TYPE
 
 
 def test_snapshot_rejects_symlink_file(tmp_path: Path) -> None:

@@ -170,6 +170,45 @@ def snapshot_isolated_workspace(workspace: IsolatedWorkspace) -> WorkspaceSnapsh
     """Snapshot regular files without following symlinks or mutating state."""
 
     root = _validated_workspace_root(workspace)
+    snapshot = _snapshot_regular_file_tree(root, workspace.workspace_id)
+    _validated_workspace_root(workspace)
+    return snapshot
+
+
+def snapshot_directory_tree(
+    root: Path,
+    *,
+    workspace_id: str,
+) -> WorkspaceSnapshot:
+    """Snapshot an application-selected real directory with workspace semantics.
+
+    This read-only helper intentionally creates no ``IsolatedWorkspace``
+    capability.  It lets a promotion boundary verify a durable copy with the
+    same canonical file/hash model used for the governed source workspace.
+    """
+
+    if not workspace_id:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.INVALID_CAPABILITY,
+            "Directory snapshot workspace_id must be non-empty.",
+        )
+    canonical_root, root_identity = _validated_directory_root(Path(root))
+    snapshot = _snapshot_regular_file_tree(canonical_root, workspace_id)
+    _, observed_identity = _validated_directory_root(canonical_root)
+    if observed_identity != root_identity:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.WORKSPACE_UNAVAILABLE,
+            "Snapshot directory root changed identity during inspection.",
+        )
+    return snapshot
+
+
+def _snapshot_regular_file_tree(
+    root: Path,
+    workspace_id: str,
+) -> WorkspaceSnapshot:
+    """Build the canonical regular-file snapshot for one validated root."""
+
     file_states: list[WorkspaceFileState] = []
     directories = [root]
     while directories:
@@ -223,8 +262,7 @@ def snapshot_isolated_workspace(workspace: IsolatedWorkspace) -> WorkspaceSnapsh
                     content_hash=hashlib.sha256(contents).hexdigest(),
                 )
             )
-    _validated_workspace_root(workspace)
-    return build_workspace_snapshot(workspace.workspace_id, tuple(file_states))
+    return build_workspace_snapshot(workspace_id, tuple(file_states))
 
 
 def read_isolated_workspace_file(
@@ -291,6 +329,36 @@ def _validated_workspace_root(workspace: object) -> Path:
             "Isolated workspace root identity changed.",
         )
     return root
+
+
+def _validated_directory_root(root: Path) -> tuple[Path, tuple[int, int]]:
+    """Resolve and bind one real directory for a read-only tree snapshot."""
+
+    try:
+        root_stat = root.lstat()
+        resolved = root.resolve(strict=True)
+        resolved_stat = resolved.lstat()
+    except OSError as exc:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.WORKSPACE_UNAVAILABLE,
+            "Snapshot directory root is unavailable.",
+        ) from exc
+    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.UNSUPPORTED_FILE_TYPE,
+            "Snapshot root must be a real directory.",
+        )
+    if stat.S_ISLNK(resolved_stat.st_mode) or not stat.S_ISDIR(resolved_stat.st_mode):
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.UNSUPPORTED_FILE_TYPE,
+            "Resolved snapshot root must be a real directory.",
+        )
+    if _identity(root_stat) != _identity(resolved_stat):
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.PATH_CONTAINMENT,
+            "Snapshot root resolved to a different filesystem entry.",
+        )
+    return resolved, _identity(resolved_stat)
 
 
 def _inspect_workspace_target(

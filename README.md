@@ -23,7 +23,7 @@ The orchestrator materializes runnable application code and tests in an isolated
 workspace, but deliberately does not execute generated code as part of its exit
 gate or autonomously perform Git promotion, CI/CD promotion, or deployment.
 
-`V0.1` through `V0.6` below are engineering milestone labels for the incremental
+`V0.1` through `V0.8` below are engineering milestone labels for the incremental
 assessment implementation; they are distinct from the Python package version in
 `pyproject.toml` and do not imply semantic compatibility with it.
 
@@ -48,6 +48,14 @@ assessment implementation; they are distinct from the Python package version in
   analysis-revision loop, stale TaskGraph/source-spec execution protection, and a
   reproducible third reviewer scenario that resolves an intentionally ambiguous
   URL-expiration requirement before planning and governed brownfield execution.
+- **V0.7 — Durable project export:** promotion of an exit-verified isolated
+  workspace snapshot into a new non-overwriting `projects/<project-name>/`
+  directory, with staging/final verification and descriptor-relative no-follow
+  filesystem containment.
+- **V0.8 — Runnable project readiness:** an application-owned delivery policy,
+  structured `RUNNABLE_ENTRYPOINT`, `AUTOMATED_TESTS`, and `RUN_INSTRUCTIONS`
+  task roles, deterministic artifact/materialization/readiness evidence, and
+  exit-gate enforcement for runnable-project workflows.
 
 The V0.5 execution slices execute approved engineering tasks as bounded semantic
 LLM calls and may transactionally materialize validated executable URL-shortener
@@ -670,14 +678,43 @@ set +a
 .venv/bin/python -m agentic_sdlc demo
 ```
 
+An optional project name selects the durable destination folder:
+
+```bash
+.venv/bin/python -m agentic_sdlc demo --project-name my-url-shortener
+```
+
 The CLI presents the full requirement analysis first. After requirement approval,
 it displays the canonical specification namespaces, TaskGraph tasks and links,
-derived execution layers, parallelism, joins, and ENTRY/EXIT semantics. It then
-pauses for separate TaskGraph approval. REQUEST_CHANGES feedback at either stage
-may span multiple lines and ends with a blank line.
+application-owned project delivery policy, structured delivery roles, derived
+execution layers, parallelism, joins, and ENTRY/EXIT semantics. It then pauses for
+separate TaskGraph approval. REQUEST_CHANGES feedback at either stage may span
+multiple lines and ends with a blank line.
+
+The built-in URL-shortener demo explicitly selects `RUNNABLE_PROJECT`; this
+governance context is separate from the human-approved business requirement. Its
+TaskGraph must assign REQUIRED materialization responsibility for a genuine
+launch/use surface, automated tests, and a root `README.md` containing exact
+setup, run, test, usage, and material prototype-limitation guidance. Structured
+role coverage is validated before human TaskGraph review rather than inferred from
+task titles or filenames.
 
 Missing credentials never trigger a fake fallback. A missing task-executor key is
 classified non-retryable, records a clear failure, and safely stops.
+
+For `RUNNABLE_PROJECT`, the exit gate additionally requires final project-readiness
+evidence linking the approved roles to successful final attempts, canonical typed
+artifacts, passed materialization/change-set evidence, applied workspace mutations,
+and matching paths/content hashes in the authoritative final snapshot. Only after
+that gate passes does the CLI promote the authoritative regular-file snapshot into
+`projects/<project-name>/`. The isolated temporary workspace remains the sole task
+execution environment. The exporter revalidates that live capability before
+copying, rejects symlinks and special files through the existing snapshot policy,
+and uses descriptor-relative, no-follow POSIX operations for staging writes and
+promotion. It fails closed when those primitives are unavailable, verifies both
+the staged and durable copies, and never overwrites an explicit destination.
+Failed, rejected, or safe-stopped runs do not create a durable project;
+automatically selected name collisions receive a deterministic run-derived suffix.
 
 Successful artifacts are written under `artifacts/demo-run/`:
 
@@ -699,8 +736,8 @@ that includes derived layers, execution status, and governance history.
 membership plus correlated requests, results, validations, failures, retry
 contexts, and recovery decisions. `workspace_execution.json` retains the governed
 session and snapshot history, wave bindings, bounded requests, canonical intents,
-materialization/change-set validations, conflict evidence, mutation results, and
-task-attempt exit decisions;
+materialization/change-set validations, conflict evidence, mutation results,
+task-attempt exit decisions, and final project-readiness evidence;
 `engineering_artifacts.json` contains immutable
 application-canonicalized outputs, including failed-validation output for audit.
 The checked-in `artifacts/demo-run/` snapshot is generated network-free through the
@@ -729,7 +766,14 @@ to `generated-project/` for reviewer inspection. This export is not promotion in
 an authoritative repository and grants the scheduler no additional filesystem
 authority.
 
-The orchestrator never executes the materialized source or tests. Reviewers and
+The live CLI uses the same governed promotion boundary to create a separate
+durable project under `projects/`. That directory is an output, never the agent
+workspace, and the export grants no Git, shell, package-installation, test-execution,
+deployment, or overwrite authority.
+
+Runnable-project readiness proves that the required project surfaces and reviewer
+instructions are materially present; it is not runtime execution evidence. The
+orchestrator never executes the materialized source or tests. Reviewers and
 development tooling may validate the exported copy manually, outside workflow
 authority:
 

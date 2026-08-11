@@ -21,6 +21,11 @@ from agentic_sdlc.prompts import (
     REQUIREMENT_ANALYSIS_PROMPT_VERSION,
     TASK_PLANNING_PROMPT_VERSION,
 )
+from agentic_sdlc.project_delivery import project_delivery_policy_from_value
+from agentic_sdlc.project_readiness import (
+    ProjectReadinessValidation,
+    validate_project_readiness,
+)
 from agentic_sdlc.requirement_analysis import (
     RequirementAnalysis,
     RequirementPlanningReadiness,
@@ -47,6 +52,7 @@ from agentic_sdlc.state import (
     RequirementAnalysisFailure,
     RequirementAnalysisRecord,
     RequirementPlanningReadinessData,
+    ProjectDeliveryPolicyData,
     TaskGraphData,
     TaskGraphRecord,
     TaskGraphSemanticsData,
@@ -149,6 +155,9 @@ from agentic_sdlc.workspace_runtime import WorkspaceRuntimeError, snapshot_isola
 def requirements_intake(state: WorkflowState) -> WorkflowState:
     """Preserve submitted requirements and initialize governed workflow state."""
 
+    delivery_policy = project_delivery_policy_from_value(
+        state.get("project_delivery_policy")
+    )
     original_requirements = list(state.get("requirements", []))
     normalized_texts = [
         requirement.strip()
@@ -165,6 +174,10 @@ def requirements_intake(state: WorkflowState) -> WorkflowState:
 
     return {
         "project_name": state.get("project_name", "").strip(),
+        "project_delivery_policy": cast(
+            ProjectDeliveryPolicyData,
+            delivery_policy.model_dump(mode="json"),
+        ),
         "requirements": original_requirements,
         "raw_requirement": raw_requirement,
         "normalized_requirements": normalized_requirements,
@@ -440,8 +453,14 @@ def task_decomposition_task(
     if state.get("candidate_task_graph"):
         prior_graph = _task_graph_from_data(state["candidate_task_graph"])
     try:
+        delivery_policy = project_delivery_policy_from_value(
+            state.get("project_delivery_policy")
+        )
         candidate = client.invoke_structured(
-            spec, prior_graph, state.get("task_graph_feedback", "")
+            spec,
+            prior_graph,
+            state.get("task_graph_feedback", ""),
+            delivery_policy,
         )
     except TaskPlanningClientError as error:
         failure = _task_planning_failure(
@@ -493,6 +512,9 @@ def normalize_and_validate_task_graph(state: WorkflowState) -> WorkflowState:
             ),
             graph_lineage_id=(
                 previous_graph.lineage_id if previous_graph is not None else None
+            ),
+            delivery_policy=project_delivery_policy_from_value(
+                state.get("project_delivery_policy")
             ),
         )
     except ValidationError as error:
@@ -552,6 +574,7 @@ def task_graph_review(state: WorkflowState) -> WorkflowState:
                 "checkpoint": "task_graph",
                 "message": "Engineering task graph requires human review.",
                 "approved_requirement_spec": state["approved_requirement_spec"],
+                "project_delivery_policy": state["project_delivery_policy"],
                 "candidate_task_graph": state["candidate_task_graph"],
                 "graph_semantics": state["task_graph_semantics"],
                 "revision_number": state.get("task_graph_revision_count", 0),
@@ -1304,6 +1327,7 @@ def _materialization_validation_is_retryable(
         ArtifactMaterializationIssueCode.DUPLICATE_ARTIFACT,
         ArtifactMaterializationIssueCode.DUPLICATE_PATH,
         ArtifactMaterializationIssueCode.PATH_POLICY,
+        ArtifactMaterializationIssueCode.DELIVERABLE_ROLE,
     }
 
 
@@ -1696,6 +1720,7 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
     """Validate governed planning and deterministic TaskGraph execution outputs."""
 
     execution = state.get("task_graph_execution")
+    readiness = _project_readiness_from_state(state)
 
     validations = {
         "processed requirements": bool(
@@ -1735,21 +1760,68 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
         "complete workspace execution evidence": bool(
             _has_complete_final_workspace_evidence(state)
         ),
+        "complete project readiness evidence": readiness.passed,
     }
     missing = [label for label, passed in validations.items() if not passed]
     if missing:
         reason = "Exit gate failed; incomplete output: " + ", ".join(missing)
         return {
+            "project_readiness_validation": readiness,
             "exit_gate_passed": False,
             "workflow_status": "exit_gate_failed",
             "errors": [*state.get("errors", []), reason],
             "trace": ["[exit_gate] failed"],
         }
     return {
+        "project_readiness_validation": readiness,
         "exit_gate_passed": True,
         "workflow_status": "success",
         "trace": ["[exit_gate] passed"],
     }
+
+
+def _project_readiness_from_state(
+    state: WorkflowState,
+) -> ProjectReadinessValidation:
+    """Build final readiness only from retained canonical state evidence."""
+
+    policy = project_delivery_policy_from_value(
+        state.get("project_delivery_policy")
+    )
+    graph = None
+    if state.get("approved_task_graph"):
+        graph = _task_graph_from_data(state["approved_task_graph"])
+    execution = None
+    if state.get("task_graph_execution") is not None:
+        execution = _execution_from_state(state["task_graph_execution"])
+    authoritative_snapshot = None
+    session = state.get("governed_workspace_session")
+    if session is not None:
+        try:
+            authoritative_snapshot = _authoritative_workspace_snapshot(
+                state, _workspace_session_from_state(state)
+            )
+        except TaskExecutionError:
+            authoritative_snapshot = None
+    return validate_project_readiness(
+        policy,
+        graph=graph,
+        execution=execution,
+        requests=tuple(state.get("task_execution_requests", [])),
+        execution_validations=tuple(
+            state.get("task_execution_validations", [])
+        ),
+        artifacts=tuple(state.get("engineering_artifacts", [])),
+        materialization_validations=tuple(
+            state.get("artifact_materialization_validations", [])
+        ),
+        change_sets=tuple(state.get("workspace_change_sets", [])),
+        change_set_validations=tuple(
+            state.get("workspace_change_set_validations", [])
+        ),
+        mutations=tuple(state.get("workspace_mutation_results", [])),
+        authoritative_snapshot=authoritative_snapshot,
+    )
 
 
 def _has_complete_final_execution_evidence(state: WorkflowState) -> bool:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Literal, TypedDict
 
+from agentic_sdlc.project_delivery import RUNNABLE_PROJECT_DELIVERY_POLICY
+from agentic_sdlc.project_readiness import ProjectReadinessValidation
 from agentic_sdlc.task_execution import (
     TaskExecutionFailure,
     TaskExecutionRecoveryDecision,
@@ -146,7 +148,17 @@ TaskTypeData = Literal[
     "DESIGN", "IMPLEMENTATION", "TEST", "DOCUMENTATION", "VALIDATION", "RELEASE"
 ]
 TaskMaterializationPolicyData = Literal["FORBIDDEN", "ALLOWED", "REQUIRED"]
+ProjectDeliveryModeData = Literal["ENGINEERING_ARTIFACTS", "RUNNABLE_PROJECT"]
+ProjectDeliverableRoleData = Literal[
+    "RUNNABLE_ENTRYPOINT", "AUTOMATED_TESTS", "RUN_INSTRUCTIONS"
+]
 TaskPlanningStatus = Literal["pending", "candidate", "validated", "failed"]
+
+
+class ProjectDeliveryPolicyData(TypedDict):
+    """JSON-safe application-owned project delivery context."""
+
+    mode: ProjectDeliveryModeData
 
 
 class TaskData(TypedDict):
@@ -165,6 +177,7 @@ class TaskData(TypedDict):
     risk_refs: list[str]
     ambiguity_refs: list[str]
     expected_outputs: list[str]
+    deliverable_roles: list[ProjectDeliverableRoleData]
 
 
 class TaskGraphData(TypedDict):
@@ -179,6 +192,7 @@ class TaskGraphData(TypedDict):
     created_at: str
     content_hash: str
     tasks: list[TaskData]
+    delivery_policy: ProjectDeliveryPolicyData
 
 
 class TaskGraphSemanticsData(TypedDict):
@@ -227,6 +241,7 @@ class WorkflowState(TypedDict, total=False):
     """Shared JSON-safe state updated by the static LangGraph control plane."""
 
     project_name: str
+    project_delivery_policy: ProjectDeliveryPolicyData
     run_id: str
     requirements: list[str]
     raw_requirement: str
@@ -305,6 +320,7 @@ class WorkflowState(TypedDict, total=False):
     ]
     serialized_conflict_retry_task_ids: list[str]
     safe_stop_reason: str
+    project_readiness_validation: ProjectReadinessValidation
     exit_gate_passed: bool
     workflow_status: WorkflowStatus
     errors: list[str]
@@ -349,6 +365,9 @@ def demo_input() -> WorkflowState:
 
     return {
         "project_name": "URL Shortener",
+        "project_delivery_policy": RUNNABLE_PROJECT_DELIVERY_POLICY.model_dump(
+            mode="json"
+        ),
         "requirements": list(DEMO_REQUIREMENTS),
         "raw_requirement": DEMO_RAW_REQUIREMENT,
     }
