@@ -8,11 +8,44 @@ The governing idea is simple: probabilistic components propose engineering inten
 
 ## 2. Architecture at a Glance
 
-Requirement intake normalizes the submitted requirement text and preserves a separate application-owned project delivery policy. Before any LLM call, the deterministic `entry_gate` requires a non-empty project name and at least one normalized non-empty requirement; failure ends as `entry_gate_failed`. Valid input then moves through structured analysis, deterministic readiness, human review, canonical specification packaging, TaskGraph planning, DAG and delivery-role validation, and a second human review. The approved TaskGraph is interpreted by a deterministic scheduler. Task executors reason against task-scoped requirements, accepted dependency artifacts, structured deliverable roles, and an exact bounded repository view. Only validated desired-file proposals can reach the mutation layer, and only inside the workflow's isolated workspace. Completion requires the final exit gate; safe stops retain evidence without claiming success.
+The input/CLI boundary offers a built-in `demo` choice and a `run` choice that
+resolves either inline text or one UTF-8 file. All choices produce an immutable
+`RequirementSubmission` before the control graph runs. That record retains the
+exact original text, minimally normalized workflow text, source kind, content
+hashes, and an optional safe source filename. The normalized text is mapped into
+the initial `WorkflowState`; the original text remains source evidence rather than
+human requirement-review feedback.
+
+File input is read and decoded once at this boundary. During human-review resumes,
+the checkpointed `WorkflowState` remains authoritative; the workflow does not
+reread an external requirement file whose contents may have changed.
+
+Requirement intake consumes the constructed state and preserves a separate
+application-owned project delivery policy. Before any LLM call, the deterministic
+`entry_gate` requires a non-empty project name and at least one normalized
+non-empty requirement; failure ends as `entry_gate_failed`. Valid input then moves
+through structured analysis, deterministic readiness, human review, canonical
+specification packaging, TaskGraph planning, DAG and delivery-role validation,
+and a second human review. The approved TaskGraph is interpreted by a deterministic
+scheduler. Task executors reason against task-scoped requirements, accepted
+dependency artifacts, structured deliverable roles, and an exact bounded
+repository view. Only validated desired-file proposals can reach the mutation
+layer, and only inside the workflow's isolated workspace. Completion requires the
+final exit gate; safe stops retain evidence without claiming success.
 
 ```mermaid
 flowchart TD
-    A[Requirement intake] --> E0[Deterministic entry gate]
+    subgraph INPUT[Input / CLI boundary]
+        DEMO[demo]
+        RI[run --requirement]
+        RF[run --requirement-file]
+    end
+    DEMO --> RS[RequirementSubmission]
+    RI --> RS
+    RF --> RS
+    RS --> W[Initial WorkflowState]
+    W --> A[Requirement intake]
+    A --> E0[Deterministic entry gate]
     E0 -->|valid| B[LLM requirement analysis]
     E0 -->|missing project name or non-empty requirement| X[END: entry_gate_failed]
     B --> C[Schema validation and READY/BLOCKED policy]
@@ -76,6 +109,8 @@ Generation is not authority. Each component receives only the authority required
 
 | Component or record | Authority and trust boundary |
 |---|---|
+| `RequirementSubmission` | Immutable application-owned source evidence containing exact original and normalized input lineage; it carries no human approval authority. |
+| Human requirement-review feedback | A separate additive review-lineage input used only to request a new analysis revision; it does not replace or amend the original submission record. |
 | LLM analyst, planner, executor | Proposes structured analysis, task decomposition, semantic outputs, and output-to-path suggestions; cannot approve, settle tasks, assign canonical evidence identity, or mutate files. |
 | Human reviewer | May `APPROVE`, `REQUEST_CHANGES`, or `REJECT` validated requirement analysis and TaskGraph candidates; a blocked analysis cannot be approved. |
 | Control graph / orchestrator | Enforces routing, budgets, canonical ordering, validation, scheduling, settlement, safe stop, and exit-gate decisions. |
@@ -92,6 +127,11 @@ Generation is not authority. Each component receives only the authority required
 TaskGraph approval includes each task's `FORBIDDEN`, `ALLOWED`, or `REQUIRED` materialization policy. That approval grants bounded execution authority only within the isolated workspace. It grants no shell, generated-code execution, deployment, or Git authority.
 
 ## 5. Requirement Authority and TaskGraph Authority
+
+The `RequirementSubmission` is immutable source evidence. The workflow's separate
+requirement-review feedback field and decision lineage are the only inputs through
+which a human requests changes; they never overwrite or append to the original
+submission.
 
 Validated requirement analyses are accumulated as ordered revision records containing revision and attempt numbers, prompt/model provenance, reviewer feedback, the exact analysis, and its deterministic planning-readiness decision. `REQUEST_CHANGES` preserves the prior record, passes the human feedback into a new analysis revision, and resets only the bounded machine-attempt budget. The normal workflow creates one version-1 `ApprovedRequirementSpec` after a READY revision is approved; the package records `source_analysis_revision`, canonical item IDs and lineages, a content hash, and the exact approved text without another LLM rewrite.
 
