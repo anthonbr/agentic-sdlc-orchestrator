@@ -1,7 +1,77 @@
 # Agentic SDLC Orchestrator
 
-This repository incrementally demonstrates controlled, auditable execution across
-the software-development lifecycle.
+The Agentic SDLC Orchestrator demonstrates how a natural-language software
+requirement can move through a governed, auditable development lifecycle. It
+combines requirement analysis, human review, TaskGraph planning, governed Task
+Agent execution, deterministic validation, isolated-workspace mutation, and
+durable project publication. When a governed run succeeds, its result is a
+runnable application packaged with the SDLC evidence and decision lineage that
+produced it.
+
+## Built-in end-to-end demo
+
+The current CLI intentionally demonstrates this architecture through one built-in
+URL-shortener scenario. Before any LLM requirement analysis, the `demo` command
+supplies this exact source requirement:
+
+```text
+Build a URL Shortener that:
+1. Accept a long URL.
+2. Generate a unique short URL.
+3. Redirect the short URL to the original URL.
+4. Return an error for unknown short URLs.
+```
+
+The governed path is:
+
+```text
+Built-in URL-shortener requirement
+    -> governed requirement analysis and human approval
+    -> approved Engineering TaskGraph and human approval
+    -> governed Task Agent execution and workspace validation
+    -> runnable-project readiness and exit gate
+    -> projects/<project-name>/
+```
+
+Run the scenario with an optional durable project name:
+
+```bash
+.venv/bin/python -m agentic_sdlc demo
+.venv/bin/python -m agentic_sdlc demo --project-name my-url-shortener
+```
+
+A successful run publishes a composite delivery package like:
+
+```text
+projects/<project-name>/
+├── <generated application files>
+├── <generated tests and documentation>
+└── sdlc-artifacts/
+    ├── manifest.json
+    ├── requirements.json
+    ├── requirement_analysis.md
+    ├── approved_requirement_spec.json
+    ├── task_graph.json
+    ├── task_graph.md
+    ├── task_execution.json
+    ├── workspace_execution.json
+    ├── engineering_artifacts.json
+    ├── workflow_diagram.png
+    └── summary.md
+```
+
+The generated application and verified SDLC evidence travel together, while the
+original live evidence remains retained independently under
+`runs/<run-id>/sdlc-artifacts/`. Diagram rendering is non-fatal, so
+`workflow_diagram.png` is present only when rendering succeeds.
+
+Today the CLI accepts the built-in demo requirement, plus optional project naming;
+it does **not** yet accept an arbitrary user-supplied software request as a general
+build prompt. A planned extension is to accept user-provided natural-language
+requirements while reusing the same governed pipeline. Runnable-project readiness
+proves required launch, test, and documentation surfaces are present; the
+orchestrator still does not autonomously execute generated code, install packages,
+perform Git promotion, run CI/CD, or deploy the project.
 
 ## Evaluator guide
 
@@ -33,7 +103,7 @@ The orchestrator materializes runnable application code and tests in an isolated
 workspace, but deliberately does not execute generated code as part of its exit
 gate or autonomously perform Git promotion, CI/CD promotion, or deployment.
 
-`V0.1` through `V0.9` below are engineering milestone labels for the incremental
+`V0.1` through `V0.10` below are engineering milestone labels for the incremental
 assessment implementation; they are distinct from the Python package version in
 `pyproject.toml` and do not imply semantic compatibility with it.
 
@@ -694,7 +764,7 @@ cp .env.example .env
 ```
 
 Set a real `OPENAI_API_KEY` in the ignored local `.env`. `OPENAI_MODEL` defaults
-to `gpt-5.6-luna`. The project does not load `.env` itself, so export it before the
+to `gpt-5.6-sol`. The project does not load `.env` itself, so export it before the
 interactive demo:
 
 ```bash
