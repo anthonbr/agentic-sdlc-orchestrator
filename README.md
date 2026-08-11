@@ -3,6 +3,30 @@
 This repository incrementally demonstrates controlled, auditable execution across
 the software-development lifecycle.
 
+## Evaluator guide
+
+For the quickest evaluation path, use these documents and retained evidence:
+
+| Purpose | Start here |
+| --- | --- |
+| Evaluate and judge: engineering approach, rationale, evidence, decisions, risks, trade-offs, assumptions, limitations, and readiness | [Engineering summary](ENGINEERING_SUMMARY.md) |
+| Inspect and verify: detailed architecture, authority model, orchestration, TaskGraph execution, mutation/rollback, and reliability mechanics | [Architecture](ARCHITECTURE.md) |
+| Inspect cross-scenario reliability evidence | [`artifacts/reliability_metrics.json`](artifacts/reliability_metrics.json) |
+
+| Scenario | Reviewer bundle | Runnable product | Verified product validation |
+| --- | --- | --- | --- |
+| Greenfield | [`artifacts/demo-run/`](artifacts/demo-run/) | [`generated-project/`](artifacts/demo-run/generated-project/) | 11 tests passed |
+| Brownfield | [`artifacts/brownfield-demo-run/`](artifacts/brownfield-demo-run/) | [`enhanced-project/`](artifacts/brownfield-demo-run/enhanced-project/) | 18 tests passed |
+| Ambiguous requirement | [`artifacts/ambiguity-demo-run/`](artifacts/ambiguity-demo-run/) | [`expiration-project/`](artifacts/ambiguity-demo-run/expiration-project/) | 20 tests passed |
+
+The orchestrator materializes runnable application code and tests in an isolated
+workspace, but deliberately does not execute generated code as part of its exit
+gate or autonomously perform Git promotion, CI/CD promotion, or deployment.
+
+`V0.1` through `V0.6` below are engineering milestone labels for the incremental
+assessment implementation; they are distinct from the Python package version in
+`pyproject.toml` and do not imply semantic compatibility with it.
+
 ## Version progression
 
 - **V0.1 — LangGraph orchestration foundation:** explicit sequential and parallel
@@ -26,11 +50,11 @@ the software-development lifecycle.
   URL-expiration requirement before planning and governed brownfield execution.
 
 The V0.5 execution slices execute approved engineering tasks as bounded semantic
-LLM calls and may transactionally materialize validated desired files only beneath
-one factory-created disposable workspace. They do **not** mutate the orchestrator
-checkout or an authoritative repository, run generated code or commands, perform
-Git operations, use fallback models, or implement the URL Shortener demonstration
-service as executable application code.
+LLM calls and may transactionally materialize validated executable URL-shortener
+application code and tests only beneath one factory-created disposable workspace.
+They do **not** mutate the orchestrator checkout or an authoritative repository,
+run generated code or commands, perform Git operations, use fallback models,
+promote through CI/CD, or deploy.
 
 ## Two distinct graphs
 
