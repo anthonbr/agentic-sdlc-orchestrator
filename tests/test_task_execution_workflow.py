@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import threading
+from concurrent.futures import Future, wait
 from pathlib import Path
+from typing import Any, Collection
 from uuid import uuid4
 
 from pytest import MonkeyPatch, mark
@@ -42,6 +44,18 @@ from agentic_sdlc.task_execution_contracts import (
     TaskExecutionResult,
 )
 from agentic_sdlc.task_executor import TaskExecutor, TaskExecutorError
+from agentic_sdlc.task_execution_progress import (
+    GovernedTaskExecutionStarted,
+    TaskExecutionAttemptSettled,
+    TaskExecutionAttemptStarted,
+    TaskExecutionHeartbeat,
+    TaskExecutionProgressEvent,
+    TaskExecutionProgressReporter,
+    TaskExecutionSettledOutcome,
+    TaskExecutionWaiter,
+    TaskExecutionWaveStarted,
+    TaskExecutorCompleted,
+)
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
@@ -284,6 +298,95 @@ class CoordinatedExecutor:
                 self.active -= 1
             if request.task_id == "TASK-003":
                 self.task_three_completed.set()
+
+
+class RecordingProgressReporter:
+    """Retain ephemeral progress events and their orchestration thread."""
+
+    def __init__(self) -> None:
+        self.events: list[TaskExecutionProgressEvent] = []
+        self.thread_ids: list[int] = []
+
+    def report(self, event: TaskExecutionProgressEvent) -> None:
+        self.events.append(event)
+        self.thread_ids.append(threading.get_ident())
+
+
+class ExplodingProgressReporter:
+    """Prove rendering failure has no governed workflow authority."""
+
+    def report(self, event: TaskExecutionProgressEvent) -> None:
+        del event
+        raise RuntimeError("controlled progress-rendering failure")
+
+
+class BlockingDeterministicExecutor(DeterministicExecutor):
+    """Hold a singleton executor future until a deterministic waiter release."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = threading.Event()
+
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
+        if not self.release.wait(timeout=2):
+            raise AssertionError("Singleton progress test did not release worker.")
+        return super().execute(request)
+
+
+class ParallelReleaseExecutor(CoordinatedExecutor):
+    """Hold a parallel wave until its test waiter emits one heartbeat."""
+
+    def __init__(self) -> None:
+        super().__init__(reverse_completion=True)
+        self.release = threading.Event()
+
+    def execute(
+        self, request: WorkspaceBoundTaskExecutionRequest
+    ) -> TaskExecutionResult:
+        if request.task_id in self.parallel_task_ids:
+            if not self.release.wait(timeout=2):
+                raise AssertionError("Parallel progress test did not release workers.")
+        return super().execute(request)
+
+
+class HeartbeatThenReleaseWaiter:
+    """Produce one deterministic heartbeat without a real-time interval."""
+
+    def __init__(
+        self,
+        release: threading.Event,
+        *,
+        parallel_only: bool = False,
+    ) -> None:
+        self.release = release
+        self.parallel_only = parallel_only
+        self.heartbeat_emitted = False
+
+    def wait(
+        self,
+        futures: Collection[Future[Any]],
+        *,
+        timeout_seconds: float,
+    ) -> tuple[set[Future[Any]], set[Future[Any]]]:
+        assert timeout_seconds > 0
+        current = set(futures)
+        if self.parallel_only and len(current) <= 1:
+            done, outstanding = wait(current, timeout=2)
+            assert not outstanding
+            return set(done), set(outstanding)
+        should_heartbeat = not self.heartbeat_emitted and (
+            not self.parallel_only or len(current) > 1
+        )
+        if should_heartbeat:
+            assert current and all(not future.done() for future in current)
+            self.heartbeat_emitted = True
+            return set(), current
+        self.release.set()
+        done, outstanding = wait(current, timeout=2)
+        assert not outstanding
+        return set(done), set(outstanding)
 
 
 class MaterializingExecutor:
@@ -538,12 +641,16 @@ def _run_approved(
     *,
     workspace_runtime: GovernedWorkspaceRuntime | None = None,
     thread_id: str | None = None,
+    progress_reporter: TaskExecutionProgressReporter | None = None,
+    progress_waiter: TaskExecutionWaiter | None = None,
 ) -> WorkflowState:
     workflow = build_workflow(
         FakeRequirementAnalysisClient([_analysis()]),
         FakeTaskPlanningClient([proposal]),
         executor,
         workspace_runtime=workspace_runtime,
+        task_execution_progress_reporter=progress_reporter,
+        task_execution_progress_waiter=progress_waiter,
     )
     thread_id = thread_id or uuid4().hex
     workflow_input = demo_input()
@@ -628,6 +735,66 @@ def test_compiled_topology_uses_one_fixed_loop_and_no_dynamic_task_nodes() -> No
         "test_plan",
         "synchronization_complete",
     }.isdisjoint(WorkflowState.__annotations__)
+
+
+def test_default_noop_progress_preserves_execution_without_output(
+    capsys: Any,
+) -> None:
+    result = _run_approved(_single_proposal(), DeterministicExecutor())
+
+    assert result["workflow_status"] == "success"
+    assert capsys.readouterr().out == ""
+    assert not any("still running" in event for event in result["trace"])
+
+
+def test_singleton_wave_reports_heartbeat_and_settlement_in_order() -> None:
+    executor = BlockingDeterministicExecutor()
+    reporter = RecordingProgressReporter()
+    orchestration_thread_id = threading.get_ident()
+
+    result = _run_approved(
+        _single_proposal(),
+        executor,
+        progress_reporter=reporter,
+        progress_waiter=HeartbeatThenReleaseWaiter(executor.release),
+    )
+
+    assert result["workflow_status"] == "success"
+    assert [type(event) for event in reporter.events] == [
+        GovernedTaskExecutionStarted,
+        TaskExecutionWaveStarted,
+        TaskExecutionAttemptStarted,
+        TaskExecutionHeartbeat,
+        TaskExecutorCompleted,
+        TaskExecutionAttemptSettled,
+    ]
+    wave = reporter.events[1]
+    assert isinstance(wave, TaskExecutionWaveStarted)
+    assert [
+        (attempt.task_id, attempt.attempt_number, attempt.title)
+        for attempt in wave.attempts
+    ] == [("TASK-001", 1, "Only Task")]
+    heartbeat = reporter.events[3]
+    assert isinstance(heartbeat, TaskExecutionHeartbeat)
+    assert [attempt.task_id for attempt in heartbeat.outstanding_attempts] == [
+        "TASK-001"
+    ]
+    settled = reporter.events[-1]
+    assert isinstance(settled, TaskExecutionAttemptSettled)
+    assert settled.outcome is TaskExecutionSettledOutcome.SUCCEEDED
+    assert settled.detail == "succeeded"
+    assert set(reporter.thread_ids) == {orchestration_thread_id}
+
+
+def test_reporter_failure_cannot_change_governed_execution() -> None:
+    result = _run_approved(
+        _single_proposal(),
+        DeterministicExecutor(),
+        progress_reporter=ExplodingProgressReporter(),
+    )
+
+    assert result["workflow_status"] == "success"
+    assert _statuses(result) == {"TASK-001": TaskExecutionStatus.SUCCEEDED}
 
 
 def test_stale_graph_is_rejected_before_execution_or_workspace_initialization(
@@ -799,6 +966,92 @@ def test_parallel_calls_overlap_while_persisted_evidence_stays_canonical() -> No
         for event in result["trace"]
         if event.startswith("[execute_task_graph_step] wave 2")
     ] == ["TASK-002", "TASK-003"]
+
+
+def test_parallel_progress_is_orchestration_owned_and_settles_canonically() -> None:
+    executor = ParallelReleaseExecutor()
+    reporter = RecordingProgressReporter()
+    orchestration_thread_id = threading.get_ident()
+
+    result = _run_approved(
+        _fanout_fanin_proposal(),
+        executor,
+        progress_reporter=reporter,
+        progress_waiter=HeartbeatThenReleaseWaiter(
+            executor.release,
+            parallel_only=True,
+        ),
+    )
+
+    assert result["workflow_status"] == "success"
+    assert executor.completions.index("TASK-003") < executor.completions.index(
+        "TASK-002"
+    )
+    parallel_wave = next(
+        event
+        for event in reporter.events
+        if isinstance(event, TaskExecutionWaveStarted)
+        and len(event.attempts) == 2
+    )
+    assert [attempt.task_id for attempt in parallel_wave.attempts] == [
+        "TASK-002",
+        "TASK-003",
+    ]
+    heartbeat = next(
+        event
+        for event in reporter.events
+        if isinstance(event, TaskExecutionHeartbeat)
+    )
+    assert [attempt.task_id for attempt in heartbeat.outstanding_attempts] == [
+        "TASK-002",
+        "TASK-003",
+    ]
+    parallel_settlements = [
+        event
+        for event in reporter.events
+        if isinstance(event, TaskExecutionAttemptSettled)
+        and event.wave_number == parallel_wave.wave_number
+    ]
+    assert [event.attempt.task_id for event in parallel_settlements] == [
+        "TASK-002",
+        "TASK-003",
+    ]
+    assert set(reporter.thread_ids) == {orchestration_thread_id}
+
+
+def test_retry_progress_reports_validation_retry_then_incremented_attempt() -> None:
+    reporter = RecordingProgressReporter()
+    executor = ScriptedRecoveryExecutor({"TASK-001": ("blank", "valid")})
+
+    result = _run_approved(
+        _single_proposal(),
+        executor,
+        progress_reporter=reporter,
+    )
+
+    assert result["workflow_status"] == "success"
+    task_waves = [
+        event
+        for event in reporter.events
+        if isinstance(event, TaskExecutionWaveStarted)
+    ]
+    assert [
+        (event.wave_number, event.attempts[0].attempt_number)
+        for event in task_waves
+    ] == [(1, 1), (2, 2)]
+    settlements = [
+        event
+        for event in reporter.events
+        if isinstance(event, TaskExecutionAttemptSettled)
+    ]
+    assert [event.outcome for event in settlements] == [
+        TaskExecutionSettledOutcome.RETRY_SCHEDULED,
+        TaskExecutionSettledOutcome.SUCCEEDED,
+    ]
+    assert settlements[0].detail == "scheduled retry after validation"
+    assert not any(
+        isinstance(event, TaskExecutionHeartbeat) for event in reporter.events
+    )
 
 
 def test_parallel_wave_cap_defers_third_ready_branch() -> None:

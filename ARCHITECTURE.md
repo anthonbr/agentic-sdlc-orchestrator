@@ -107,6 +107,19 @@ Runtime progress is separate from the immutable approved plan. Tasks start as `R
 
 Only `TaskExecutor.execute()` calls run in worker threads. Request building, bounded repository reads, canonicalization, validation, conflict analysis, mutation, recovery categorization, and state settlement remain single-threaded. Thus engineering reasoning can overlap while audit order and filesystem mutation remain deterministic. A terminal peer failure freezes new dispatch, while already-running peers are joined and may retain valid evidence without unlocking further work.
 
+The live CLI injects an application-owned progress reporter into this orchestration
+boundary. The orchestration thread reports execution start, canonical wave
+membership, executor completion, and settled outcomes. A bounded five-second wait
+emits a heartbeat only while executor futures remain incomplete; completed results
+are still consumed, validated, mutated, and settled in canonical TaskGraph order
+rather than physical completion order. Worker threads never render output. The
+reporter is a no-op for callers that do not supply one, and reporter failure cannot
+alter execution authority. These events are ephemeral UI only: they do not enter
+workflow state, the canonical trace, checkpoints, SDLC artifacts, manifests, or
+reliability metrics, and they do not imply percentage completion. After TaskGraph
+approval, no additional keyboard input is required unless the workflow presents a
+new explicit governance interrupt.
+
 Each task can make at most three attempts. Application policy—not the LLM—classifies a constrained set of provider, correlation, semantic-validation, materialization, conflict, and mutation failures as retryable. A retry re-executes the same approved task with application-owned feedback and a new deterministic request/attempt identity. There is no hidden SDK retry, delay/backoff, or fallback model/provider. The only execution fallback is bounded serialization after a same-wave write conflict: conflicting tasks consume retry budget and rerun one at a time against the latest snapshot.
 
 The live filesystem capability is a factory-created unique temporary directory bound by workspace ID plus root device/inode. Snapshots walk regular files without following symlinks. A governed session preserves an immutable baseline snapshot and advances an authoritative snapshot only after verified mutation. Workspaces are disposable in scope but currently retained for inspection rather than automatically deleted.
