@@ -84,6 +84,7 @@ Generation is not authority. Each component receives only the authority required
 | Approved `TaskGraph` | Human-authorized work, dependencies, references, outputs, deliverable roles, and per-task materialization policy for one source-spec identity/version and delivery policy. |
 | Isolated workspace and session | The only live repository-like filesystem capability; its authoritative snapshot advances only after verified application. |
 | Mutation layer | Derives and applies the restricted complete-file vocabulary `CREATE`, `MODIFY`, and `NO_CHANGE`; it does not accept an LLM-declared operation. |
+| Live run evidence bundle | Application-owned output under `runs/<run-id>/sdlc-artifacts/`; Task Agents receive no path or mutation authority over it. |
 | Authoritative Git repository | Outside autonomous execution authority. The runtime exposes no commit, branch, push, PR, merge, worktree, or promotion operation. |
 | Reliability reporter | Reads terminal evidence, validates accounting, and emits a separate deterministic metrics projection; it cannot alter execution. |
 
@@ -164,6 +165,19 @@ This is an evidence-completeness and workspace-integrity boundary, not runtime e
 ## 10. Traceability and Reliability Evidence
 
 Within a workflow run, frozen Pydantic contracts make canonical plan, execution, artifact, workspace, mutation, and final project-readiness records immutable by contract, while `operator.add` state reducers accumulate histories rather than replace them. Together they retain requirement analyses and human decisions, TaskGraph candidates and approvals, execution waves, requests, results, failures, recovery decisions, canonical engineering artifacts, bounded workspace requests, snapshots, materialization validations, change sets, conflicts, mutation results, task-attempt exit decisions, and role-to-final-snapshot readiness evidence. Deterministic UUIDv5 identifiers and content hashes bind specification, graph, task, attempt, request, artifact slot, content, references, and mutation evidence. Failed attempts remain audit evidence; only the final successful attempt's exactly validated artifact set can feed dependents. The default `InMemorySaver` checkpoint is process-local, and exported JSON/Markdown reviewer artifacts are ordinary files rather than a tamper-evident durable event store.
+
+The repository separates artifact ownership. `artifacts/` contains curated,
+checked-in evaluator/reference evidence and remains the source for deterministic
+cross-scenario reliability metrics. A live CLI invocation instead derives one
+`runs/<run-id>/sdlc-artifacts/` directory from the existing governed run ID and
+uses it for initial execution, approval resumes, terminal evidence, and the static
+workflow diagram. At successful or safely stopped termination, an
+`sdlc-artifact-manifest-v1` manifest binds run/status/policy/exit metadata to sorted
+bundle-relative file hashes and byte sizes. It lists only evidence actually
+present, excludes itself, and makes no signing or tamper-proofing claim. This
+application-owned directory is outside Task Agent workspace and mutation authority.
+It is not yet copied into `projects/<project-name>/`; composite packaging is a
+separate promotion concern.
 
 `artifacts/reliability_metrics.json` is generated as a deterministic projection over the checked-in terminal `task_execution.json` and `workspace_execution.json` evidence for the three scenarios. The derivation validates that every started attempt has exactly one exit decision, then reports task outcomes, attempt outcomes, success ratios, retry frequency, mutation and rollback counts/frequency, and safe-stop count. It is read-only with respect to execution behavior and is not a telemetry subsystem.
 

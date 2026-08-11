@@ -94,6 +94,15 @@ class RecordingTaskExecutor:
         return deterministic_demo_result(request)
 
 
+def _fixed_cli_artifact_dir(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    run_suffix: str,
+) -> Path:
+    monkeypatch.setattr(cli, "uuid4", lambda: SimpleNamespace(hex=run_suffix))
+    return tmp_path / "runs" / f"demo-{run_suffix}" / "sdlc-artifacts"
+
+
 def _analysis(version: str = "v1") -> RequirementAnalysis:
     return RequirementAnalysis(
         normalized_problem_statement=(
@@ -1410,9 +1419,104 @@ def test_workflow_diagram_writer_uses_compiled_graph(
             return StubGraph()
 
     monkeypatch.setattr(cli, "WORKFLOW", StubWorkflow())
-    diagram_path = tmp_path / "artifacts" / "workflow_diagram.png"
+    diagram_path = tmp_path / "runs" / "demo-fixed" / "sdlc-artifacts" / (
+        "workflow_diagram.png"
+    )
     cli.write_workflow_diagram(diagram_path)
     assert diagram_path.read_bytes() == png_bytes
+
+
+def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    capsys: CaptureFixture[str],
+) -> None:
+    analyst = FakeRequirementAnalysisClient([_analysis()])
+    planner = FakeTaskPlanningClient([_proposal()])
+    artifact_dir = _fixed_cli_artifact_dir(tmp_path, monkeypatch, "fixed-owner")
+    observed_calls: list[tuple[str, str, Path | None]] = []
+    original_run_workflow = cli.run_workflow
+    original_resume_workflow = cli.resume_workflow
+
+    def build_cli_workflow(*, workspace_runtime: Any) -> Any:
+        return build_workflow(
+            analyst,
+            planner,
+            RecordingTaskExecutor(),
+            workspace_runtime=workspace_runtime,
+        )
+
+    def write_stub_diagram(
+        output_path: Path,
+        *,
+        workflow: Any | None = None,
+    ) -> None:
+        assert workflow is not None
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    def recording_run_workflow(
+        workflow_input: Any,
+        *,
+        thread_id: str,
+        artifact_dir: Path | None = None,
+        workflow: Any | None = None,
+    ) -> WorkflowState:
+        observed_calls.append(("run", thread_id, artifact_dir))
+        return original_run_workflow(
+            workflow_input,
+            thread_id=thread_id,
+            artifact_dir=artifact_dir,
+            workflow=workflow,
+        )
+
+    def recording_resume_workflow(
+        thread_id: str,
+        decision: Any,
+        *,
+        artifact_dir: Path | None = None,
+        workflow: Any | None = None,
+    ) -> WorkflowState:
+        observed_calls.append(("resume", thread_id, artifact_dir))
+        return original_resume_workflow(
+            thread_id,
+            decision,
+            artifact_dir=artifact_dir,
+            workflow=workflow,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(cli, "write_workflow_diagram", write_stub_diagram)
+    monkeypatch.setattr(cli, "run_workflow", recording_run_workflow)
+    monkeypatch.setattr(cli, "resume_workflow", recording_resume_workflow)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "a")
+
+    assert cli.main(["demo"]) == 0
+
+    assert observed_calls == [
+        ("run", "demo-fixed-owner", artifact_dir),
+        ("resume", "demo-fixed-owner", artifact_dir),
+        ("resume", "demo-fixed-owner", artifact_dir),
+    ]
+    assert not (tmp_path / "artifacts").exists()
+    assert (artifact_dir / "workflow_diagram.png").exists()
+    manifest = json.loads((artifact_dir / "manifest.json").read_text())
+    assert manifest["run_id"] == "demo-fixed-owner"
+    assert manifest["workflow_status"] == "success"
+    assert manifest["project_delivery_policy"] == "RUNNABLE_PROJECT"
+    assert manifest["exit_gate_passed"] is True
+    assert [record["path"] for record in manifest["files"]] == sorted(
+        (*ARTIFACT_FILENAMES, "workflow_diagram.png")
+    )
+    assert "manifest.json" not in {
+        record["path"] for record in manifest["files"]
+    }
+    output = capsys.readouterr().out
+    assert f"Workflow diagram written to: {artifact_dir / 'workflow_diagram.png'}" in (
+        output
+    )
+    assert f"Artifacts written to: {artifact_dir}" in output
 
 
 def test_diagram_failure_does_not_fail_demo(
@@ -1439,6 +1543,9 @@ def test_diagram_failure_does_not_fail_demo(
             workspace_runtime=workspace_runtime,
         )
 
+    artifact_dir = _fixed_cli_artifact_dir(
+        tmp_path, monkeypatch, "diagram-failure"
+    )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(cli, "write_workflow_diagram", fail_to_render)
@@ -1449,7 +1556,12 @@ def test_diagram_failure_does_not_fail_demo(
     output = capsys.readouterr()
     assert "Warning: workflow diagram was not generated" in output.err
     assert "[task_graph_review] approve" in output.out
-    assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+    assert (artifact_dir / "summary.md").exists()
+    assert not (artifact_dir / "workflow_diagram.png").exists()
+    manifest = json.loads((artifact_dir / "manifest.json").read_text())
+    assert "workflow_diagram.png" not in {
+        record["path"] for record in manifest["files"]
+    }
     assert (tmp_path / "projects" / "url-shortener" / "README.md").exists()
 
 
@@ -1587,6 +1699,7 @@ def test_cli_rejected_run_does_not_create_a_durable_project(
             workspace_runtime=workspace_runtime,
         )
 
+    artifact_dir = _fixed_cli_artifact_dir(tmp_path, monkeypatch, "rejected")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(
@@ -1601,7 +1714,14 @@ def test_cli_rejected_run_does_not_create_a_durable_project(
     output = capsys.readouterr().out
     assert "Workflow stopped safely" in output
     assert not (tmp_path / "projects").exists()
-    assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+    assert (artifact_dir / "summary.md").exists()
+    manifest = json.loads((artifact_dir / "manifest.json").read_text())
+    assert manifest["workflow_status"] == "safe_stopped"
+    assert [record["path"] for record in manifest["files"]] == [
+        "requirement_analysis.md",
+        "requirements.json",
+        "summary.md",
+    ]
 
 
 def test_cli_failed_analysis_safe_stop_does_not_create_a_durable_project(
@@ -1625,6 +1745,9 @@ def test_cli_failed_analysis_safe_stop_does_not_create_a_durable_project(
             workspace_runtime=workspace_runtime,
         )
 
+    artifact_dir = _fixed_cli_artifact_dir(
+        tmp_path, monkeypatch, "analysis-failed"
+    )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(
@@ -1639,7 +1762,8 @@ def test_cli_failed_analysis_safe_stop_does_not_create_a_durable_project(
     assert "Workflow stopped safely" in output
     assert "failed after 3 attempts" in output
     assert not (tmp_path / "projects").exists()
-    assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+    assert (artifact_dir / "summary.md").exists()
+    assert (artifact_dir / "manifest.json").exists()
 
 
 def test_cli_explicit_destination_collision_fails_without_overwrite(
@@ -1662,6 +1786,7 @@ def test_cli_explicit_destination_collision_fails_without_overwrite(
     destination.mkdir(parents=True)
     marker = destination / "keep.txt"
     marker.write_text("preserve\n", encoding="utf-8")
+    artifact_dir = _fixed_cli_artifact_dir(tmp_path, monkeypatch, "collision")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(
@@ -1678,7 +1803,8 @@ def test_cli_explicit_destination_collision_fails_without_overwrite(
     assert "Workflow completed successfully." in output.out
     assert "Project export failed" in output.err
     assert marker.read_text(encoding="utf-8") == "preserve\n"
-    assert (tmp_path / "artifacts" / "demo-run" / "summary.md").exists()
+    assert (artifact_dir / "summary.md").exists()
+    assert (artifact_dir / "manifest.json").exists()
 
 
 def test_cli_rejects_unsafe_project_name_before_running_workflow(
@@ -1693,4 +1819,5 @@ def test_cli_rejects_unsafe_project_name_before_running_workflow(
     output = capsys.readouterr()
     assert "Invalid project name" in output.err
     assert not (tmp_path / "artifacts").exists()
+    assert not (tmp_path / "runs").exists()
     assert not (tmp_path / "projects").exists()

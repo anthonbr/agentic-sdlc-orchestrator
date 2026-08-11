@@ -19,6 +19,11 @@ For the quickest evaluation path, use these documents and retained evidence:
 | Brownfield | [`artifacts/brownfield-demo-run/`](artifacts/brownfield-demo-run/) | [`enhanced-project/`](artifacts/brownfield-demo-run/enhanced-project/) | 18 tests passed |
 | Ambiguous requirement | [`artifacts/ambiguity-demo-run/`](artifacts/ambiguity-demo-run/) | [`expiration-project/`](artifacts/ambiguity-demo-run/expiration-project/) | 20 tests passed |
 
+The `artifacts/` tree is curated, checked-in evaluator/reference evidence. Normal
+live CLI runs do not rewrite it: per-run SDLC evidence is generated under the
+ignored `runs/` tree, while successful durable applications remain under the
+separate ignored `projects/` tree.
+
 The orchestrator materializes runnable application code and tests in an isolated
 workspace, but deliberately does not execute generated code as part of its exit
 gate or autonomously perform Git promotion, CI/CD promotion, or deployment.
@@ -716,19 +721,32 @@ the staged and durable copies, and never overwrites an explicit destination.
 Failed, rejected, or safe-stopped runs do not create a durable project;
 automatically selected name collisions receive a deterministic run-derived suffix.
 
-Successful artifacts are written under `artifacts/demo-run/`:
+Each live CLI invocation uses its existing governed run ID to own one evidence
+bundle. A successful run is written under:
 
 ```text
-requirements.json
-requirement_analysis.md
-approved_requirement_spec.json
-task_graph.json
-task_graph.md
-task_execution.json
-workspace_execution.json
-engineering_artifacts.json
-summary.md
+runs/
+└── demo-<uuid>/
+    └── sdlc-artifacts/
+        ├── manifest.json
+        ├── requirements.json
+        ├── requirement_analysis.md
+        ├── approved_requirement_spec.json
+        ├── task_graph.json
+        ├── task_graph.md
+        ├── task_execution.json
+        ├── workspace_execution.json
+        ├── engineering_artifacts.json
+        ├── workflow_diagram.png
+        └── summary.md
 ```
+
+The same directory is retained across human-approval resumes. Safe-stopped runs
+contain only evidence for stages that actually occurred, plus `manifest.json` and
+the workflow diagram when rendering succeeded. Diagram failure remains non-fatal
+and produces no placeholder file. The deterministic manifest binds the governed
+run ID and terminal metadata to sorted bundle-relative file paths, byte sizes, and
+SHA-256 hashes; it is an integrity index, not a signature or tamper-proof store.
 
 `task_graph.json` is the canonical graph. `task_graph.md` is a human-readable view
 that includes derived layers, execution status, and governance history.
@@ -769,7 +787,8 @@ authority.
 The live CLI uses the same governed promotion boundary to create a separate
 durable project under `projects/`. That directory is an output, never the agent
 workspace, and the export grants no Git, shell, package-installation, test-execution,
-deployment, or overwrite authority.
+deployment, or overwrite authority. This slice does not copy `sdlc-artifacts/`
+into the durable project; composite project/evidence packaging remains separate.
 
 Runnable-project readiness proves that the required project surfaces and reviewer
 instructions are materially present; it is not runtime execution evidence. The
@@ -784,9 +803,10 @@ PYTHONPATH=src python -m url_shortener.app
 ```
 
 The generated application uses the standard library, process-local in-memory
-storage, a thin WSGI HTTP adapter, and executable `unittest` coverage. The generated
-`artifacts/workflow_diagram.png` documents the static LangGraph control plane, not
-the per-run engineering TaskGraph.
+storage, a thin WSGI HTTP adapter, and executable `unittest` coverage. A live run's
+`runs/<run-id>/sdlc-artifacts/workflow_diagram.png` documents the static LangGraph
+control plane, not the per-run engineering TaskGraph; the existing copy under
+`artifacts/` remains curated reference evidence.
 
 ### Deterministic governed brownfield analytics demo
 

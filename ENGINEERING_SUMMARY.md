@@ -52,11 +52,19 @@ Together, these decisions favor bounded blast radius, reproducibility, and revie
 
 Validation is intentionally split between the orchestrator and the products it creates or enhances.
 
-The final orchestrator checkpoint completed with **471 tests passed**. The suite uses scripted model adapters and deterministic executors, so control behavior can be exercised without API credentials or network variability. It covers structured-output parsing, deterministic requirement and project readiness, both human approval loops, canonical identities, specification and TaskGraph lineage, DAG and deliverable-role coverage, sequential and fan-out/fan-in scheduling, true bounded overlap, retry exhaustion, stale-source rejection, artifact filtering, conflict reconciliation, isolated workspace containment, preimage and postimage checks, rollback, rollback failure, hard safe stops, exit-gate completeness, verified non-overwriting project export, and reliability derivation. Fault injection verifies failure paths rather than inferring them from positive demonstrations.
+The final orchestrator checkpoint completed with **484 tests passed**. The suite uses scripted model adapters and deterministic executors, so control behavior can be exercised without API credentials or network variability. It covers structured-output parsing, deterministic requirement and project readiness, both human approval loops, canonical identities, specification and TaskGraph lineage, DAG and deliverable-role coverage, sequential and fan-out/fan-in scheduling, true bounded overlap, retry exhaustion, stale-source rejection, artifact filtering, conflict reconciliation, isolated workspace containment, preimage and postimage checks, rollback, rollback failure, hard safe stops, exit-gate completeness, live run-evidence ownership and manifest integrity, verified non-overwriting project export, and reliability derivation. Fault injection verifies failure paths rather than inferring them from positive demonstrations.
 
 Generated-product validation is a separate layer. Runnable-project readiness proves required project surfaces, root instructions, materialization evidence, and final snapshot identities are present; it does not prove the generated application or tests executed. The exported greenfield, brownfield, and expiration products are dependency-free, independently runnable URL-shortener projects whose suites completed with 11, 18, and 20 passing tests respectively. Those product checks were performed separately and are not silently performed by the orchestrator; they confer no Git, CI/CD, release, or deployment authority.
 
 Each reviewer bundle retains the approved specification, requirement decisions, TaskGraph, execution attempts/results, engineering artifacts, workspace mutation records, and summary needed to inspect the demonstrated path. Within a run, frozen records and additive histories provide immutable-by-contract evidence. The default LangGraph checkpoint is process-local, and exported JSON and Markdown are ordinary files, not a tamper-evident durable event store. The evidence is therefore strong for deterministic reconstruction and review within the prototype's trust model, but it is not a claim of production proof or durable audit infrastructure.
+
+Artifact ownership is explicit: `artifacts/` remains curated checked-in evaluator
+evidence, live CLI evidence is isolated by the governed identity under
+`runs/<run-id>/sdlc-artifacts/`, and successful durable applications are promoted
+separately under `projects/`. A deterministic terminal manifest indexes the live
+bundle's actual relative files, sizes, and SHA-256 values without claiming signing
+or tamper-proofing. Task Agents have no authority over the run-evidence directory,
+and this slice does not yet package that evidence inside the durable project.
 
 ## 6. Reliability and Failure Handling
 
@@ -124,6 +132,6 @@ The most efficient review path is each bundle's `summary.md`, followed by its re
 
 ## 12. Final Readiness
 
-The repository demonstrates a controlled-autonomy lifecycle from deterministic intake and governed requirement authority through validated planning, bounded dependency-aware execution, transactional isolated-workspace mutation, runnable-project readiness, exit evaluation, verified durable project export, and retained evidence. The final checkpoints are 471 passing orchestrator tests and independently runnable generated products with 11, 18, and 20 passing tests.
+The repository demonstrates a controlled-autonomy lifecycle from deterministic intake and governed requirement authority through validated planning, bounded dependency-aware execution, transactional isolated-workspace mutation, runnable-project readiness, exit evaluation, verified durable project export, and retained evidence. The final checkpoints are 484 passing orchestrator tests and independently runnable generated products with 11, 18, and 20 passing tests.
 
 This describes the implemented prototype, not autonomous Git, release, or production deployment. Its authority boundaries, failure behavior, trade-offs, and unmeasured reliability dimensions are explicit, and the checked-in evidence provides concrete paths for independent verification.

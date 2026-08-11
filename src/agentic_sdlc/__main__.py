@@ -16,6 +16,10 @@ from agentic_sdlc.project_export import (
     normalize_project_name,
     project_export_request_from_state,
 )
+from agentic_sdlc.run_artifacts import (
+    LiveRunArtifactBundle,
+    write_sdlc_artifact_manifest,
+)
 from agentic_sdlc.state import ApprovalResponse, WorkflowState, demo_input
 from agentic_sdlc.workflow import (
     WORKFLOW,
@@ -63,10 +67,12 @@ def main(arguments: list[str] | None = None) -> int:
         )
         return 2
 
+    thread_id = f"demo-{uuid4().hex}"
+    artifact_bundle = LiveRunArtifactBundle.under_repository(Path.cwd(), thread_id)
+    artifact_dir = artifact_bundle.artifact_dir
     workspace_runtime = GovernedWorkspaceRuntime()
     workflow = build_workflow(workspace_runtime=workspace_runtime)
-    artifacts_dir = Path.cwd() / "artifacts"
-    diagram_path = artifacts_dir / "workflow_diagram.png"
+    diagram_path = artifact_bundle.workflow_diagram_path
     try:
         write_workflow_diagram(diagram_path, workflow=workflow)
     except Exception as error:
@@ -78,8 +84,6 @@ def main(arguments: list[str] | None = None) -> int:
     else:
         print(f"Workflow diagram written to: {diagram_path}")
 
-    artifact_dir = artifacts_dir / "demo-run"
-    thread_id = f"demo-{uuid4().hex}"
     state = run_workflow(
         demo_input(),
         thread_id=thread_id,
@@ -100,6 +104,9 @@ def main(arguments: list[str] | None = None) -> int:
             artifact_dir=artifact_dir,
             workflow=workflow,
         )
+
+    if state.get("workflow_status") in {"success", "safe_stopped"}:
+        write_sdlc_artifact_manifest(state, artifact_bundle)
 
     for event in state.get("trace", []):
         print(event)
