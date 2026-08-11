@@ -8,11 +8,16 @@ durable project publication. When a governed run succeeds, its result is a
 runnable application packaged with the SDLC evidence and decision lineage that
 produced it.
 
+The CLI accepts either the built-in URL-shortener demonstration or an arbitrary
+user-supplied natural-language software requirement. Both input paths cross the
+same requirement-submission boundary and enter the same governed SDLC lifecycle;
+custom input does not select a separate workflow or bypass either human approval.
+
 ## Built-in end-to-end demo
 
-The current CLI intentionally demonstrates this architecture through one built-in
-URL-shortener scenario. Before any LLM requirement analysis, the `demo` command
-supplies this exact source requirement:
+The quickest evaluator walkthrough is the convenient built-in URL-shortener
+scenario. Before any LLM requirement analysis, the `demo` command supplies this
+exact source requirement:
 
 ```text
 Build a URL Shortener that:
@@ -65,13 +70,92 @@ original live evidence remains retained independently under
 `runs/<run-id>/sdlc-artifacts/`. Diagram rendering is non-fatal, so
 `workflow_diagram.png` is present only when rendering succeeds.
 
-Today the CLI accepts the built-in demo requirement, plus optional project naming;
-it does **not** yet accept an arbitrary user-supplied software request as a general
-build prompt. A planned extension is to accept user-provided natural-language
-requirements while reusing the same governed pipeline. Runnable-project readiness
-proves required launch, test, and documentation surfaces are present; the
-orchestrator still does not autonomously execute generated code, install packages,
-perform Git promotion, run CI/CD, or deploy the project.
+## User-supplied requirements
+
+For a short requirement, supply the text inline:
+
+```bash
+.venv/bin/python -m agentic_sdlc run \
+  --requirement "Build a small task manager that can add, list, and complete tasks."
+```
+
+For a substantial or multiline story, prefer a UTF-8 requirement file:
+
+```bash
+.venv/bin/python -m agentic_sdlc run \
+  --requirement-file requirement.md
+```
+
+An optional project name may be supplied with either input form:
+
+```bash
+.venv/bin/python -m agentic_sdlc run \
+  --requirement-file requirement.md \
+  --project-name task-manager
+```
+
+`run` requires exactly one of `--requirement` and `--requirement-file`.
+`--requirement` is convenient for short requirements; `--requirement-file` avoids
+shell-quoting problems and is preferable for substantial or multiline
+requirements. Standard input is not currently supported as a requirement source
+because the CLI uses interactive stdin for the existing human governance prompts.
+`--project-name` is optional.
+
+All three sources converge before orchestration:
+
+```text
+Requirement source
+    |
+    +-- built-in demo
+    +-- inline --requirement
+    +-- file --requirement-file
+            |
+            v
+   RequirementSubmission boundary
+            |
+            v
+   same governed SDLC workflow
+```
+
+The shared downstream lifecycle remains:
+
+```text
+requirement intake
+-> Requirement Analysis Agent
+-> ambiguity detection
+-> human requirement review/revision
+-> approved requirement specification
+-> Task Planning Agent / TaskGraph
+-> deterministic validation and traceability
+-> human TaskGraph approval
+-> Task Agent execution
+-> controlled workspace mutation
+-> readiness validation
+-> exit gate
+-> durable project + SDLC evidence
+```
+
+The V0.11 submission record preserves the exact original text, the
+deterministically normalized workflow text, the source type (`demo`, `inline`, or
+`file`), SHA-256 identities for both text forms, and a safe source filename for
+file input when applicable. Normalization is intentionally minimal: it removes an
+optional UTF-8 BOM, converts CRLF or CR line endings to LF, and trims outer
+whitespace. It performs no semantic rewriting or CLI-layer decomposition. The
+normalized custom story enters Requirement Analysis as one coarse `REQ-001`; the
+exact original remains immutable evidence, separate from later human
+requirement-review feedback.
+
+An explicit `--project-name` is safety-validated and used as the requested durable
+name. When it is omitted, the application derives a safe deterministic identity
+of the form `project-<first 12 normalized-requirement SHA-256 characters>`.
+Publication remains non-destructive: an occupied automatic-name destination may
+receive the existing deterministic run-derived suffix, while an occupied
+explicitly requested destination fails rather than being overwritten.
+
+Runnable-project readiness proves required launch, test, and documentation
+surfaces are present. The orchestrator still does not autonomously execute
+generated code, install packages, perform Git promotion, run CI/CD, or deploy the
+project.
 
 ## Evaluator guide
 
@@ -103,7 +187,7 @@ The orchestrator materializes runnable application code and tests in an isolated
 workspace, but deliberately does not execute generated code as part of its exit
 gate or autonomously perform Git promotion, CI/CD promotion, or deployment.
 
-`V0.1` through `V0.10` below are engineering milestone labels for the incremental
+`V0.1` through `V0.11` below are engineering milestone labels for the incremental
 assessment implementation; they are distinct from the Python package version in
 `pyproject.toml` and do not imply semantic compatibility with it.
 
@@ -143,6 +227,10 @@ assessment implementation; they are distinct from the Python package version in
 - **V0.10 — live Task Agent execution progress:** application-owned wave,
   attempt, heartbeat, executor-completion, and settled-outcome output during the
   blocking post-approval execution interval, without changing workflow evidence.
+- **V0.11 — user-requirement input foundation:** inline and UTF-8 file requirement
+  sources, immutable original/normalized submission lineage, deterministic input
+  identity and project naming, and convergence with the built-in demo before the
+  existing governed workflow.
 
 The V0.5 execution slices execute approved engineering tasks as bounded semantic
 LLM calls and may transactionally materialize validated executable URL-shortener
@@ -764,8 +852,8 @@ cp .env.example .env
 ```
 
 Set a real `OPENAI_API_KEY` in the ignored local `.env`. `OPENAI_MODEL` defaults
-to `gpt-5.6-sol`. The project does not load `.env` itself, so export it before the
-interactive demo:
+to `gpt-5.6-sol`. The project does not load `.env` itself, so export it before an
+interactive CLI run:
 
 ```bash
 set -a
@@ -780,6 +868,18 @@ An optional project name selects the durable destination folder:
 .venv/bin/python -m agentic_sdlc demo --project-name my-url-shortener
 ```
 
+To run a user-supplied requirement, use exactly one of the inline and file forms
+documented above; the optional project name works for `run` as well:
+
+```bash
+.venv/bin/python -m agentic_sdlc run \
+  --requirement "Build a small task manager that can add, list, and complete tasks."
+
+.venv/bin/python -m agentic_sdlc run \
+  --requirement-file requirement.md \
+  --project-name task-manager
+```
+
 The CLI presents the full requirement analysis first. After requirement approval,
 it displays the canonical specification namespaces, TaskGraph tasks and links,
 application-owned project delivery policy, structured delivery roles, derived
@@ -787,9 +887,9 @@ execution layers, parallelism, joins, and ENTRY/EXIT semantics. It then pauses f
 separate TaskGraph approval. REQUEST_CHANGES feedback at either stage may span
 multiple lines and ends with a blank line.
 
-The built-in URL-shortener demo explicitly selects `RUNNABLE_PROJECT`; this
-governance context is separate from the human-approved business requirement. Its
-TaskGraph must assign REQUIRED materialization responsibility for a genuine
+Both `demo` and `run` explicitly select `RUNNABLE_PROJECT`; this governance context
+is separate from the human-approved business requirement. Their TaskGraphs must
+assign REQUIRED materialization responsibility for a genuine
 launch/use surface, automated tests, and a root `README.md` containing exact
 setup, run, test, usage, and material prototype-limitation guidance. Structured
 role coverage is validated before human TaskGraph review rather than inferred from
@@ -1038,8 +1138,8 @@ fault-injected rollback, and explicit rollback-failure evidence.
 
 ## Deliberately deferred
 
-The current V0.6 scope does not include cancellation, production task/wave timeout
-policy, work-conserving streaming dispatch, fallback models or providers, delayed
+The current prototype scope does not include cancellation, production task/wave
+timeout policy, work-conserving streaming dispatch, fallback models or providers, delayed
 retry/backoff policy, distributed workers, repository copying or Git worktrees,
 DELETE support, generated-code execution,
 authoritative-repository promotion, crash-recovery journaling, dynamically generated
@@ -1047,3 +1147,12 @@ LangGraph nodes, read/write stale-context conflict detection, full dynamic
 replanning, autonomous repository discovery,
 cross-process rollback, skill loading, a persistent execution store, deployment,
 or a web UI.
+
+Independent model selection by orchestration role remains planned rather than
+implemented. The intended configuration keeps `OPENAI_MODEL` as the global
+fallback while permitting stage-specific overrides such as
+`OPENAI_REQUIREMENT_MODEL`, `OPENAI_PLANNING_MODEL`, and
+`OPENAI_EXECUTION_MODEL`; the architectural requirement is configurability, not a
+particular model name. Future evaluator terminology work also remains for making
+the Requirement Analysis Agent, Task Planning Agent, independently instantiated
+Task Agents, and the concurrent Task Agent topology explicit wherever applicable.

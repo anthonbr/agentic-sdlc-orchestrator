@@ -189,7 +189,7 @@ def requirements_intake(state: WorkflowState) -> WorkflowState:
     if not raw_requirement:
         raw_requirement = "\n".join(normalized_texts)
 
-    return {
+    update: WorkflowState = {
         "project_name": state.get("project_name", "").strip(),
         "project_delivery_policy": cast(
             ProjectDeliveryPolicyData,
@@ -229,6 +229,9 @@ def requirements_intake(state: WorkflowState) -> WorkflowState:
         "errors": [],
         "trace": ["[requirements_intake] complete"],
     }
+    if "requirement_submission" in state:
+        update["requirement_submission"] = state["requirement_submission"]
+    return update
 
 
 def entry_gate(state: WorkflowState) -> WorkflowState:

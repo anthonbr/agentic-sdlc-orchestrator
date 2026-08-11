@@ -1,4 +1,4 @@
-"""Typed shared state and demonstration input for the governed workflow."""
+"""Typed shared state and initial input construction for the governed workflow."""
 
 from __future__ import annotations
 
@@ -7,6 +7,11 @@ from typing import Annotated, Literal, TypedDict
 
 from agentic_sdlc.project_delivery import RUNNABLE_PROJECT_DELIVERY_POLICY
 from agentic_sdlc.project_readiness import ProjectReadinessValidation
+from agentic_sdlc.requirement_submission import (
+    RequirementSourceKind,
+    RequirementSubmission,
+    RequirementSubmissionData,
+)
 from agentic_sdlc.task_execution import (
     TaskExecutionFailure,
     TaskExecutionRecoveryDecision,
@@ -245,6 +250,7 @@ class WorkflowState(TypedDict, total=False):
     run_id: str
     requirements: list[str]
     raw_requirement: str
+    requirement_submission: RequirementSubmissionData
     normalized_requirements: list[NormalizedRequirement]
     entry_gate_passed: bool
     requirement_analysis_candidate: object | None
@@ -363,11 +369,36 @@ DEMO_RAW_REQUIREMENT = "Build a URL Shortener that:\n" + "\n".join(
 def demo_input() -> WorkflowState:
     """Return a fresh copy of the built-in URL Shortener requirements."""
 
+    submission = RequirementSubmission.from_text(
+        RequirementSourceKind.DEMO,
+        DEMO_RAW_REQUIREMENT,
+    )
+    return workflow_input_from_submission(
+        submission,
+        project_name="URL Shortener",
+        submitted_requirements=DEMO_REQUIREMENTS,
+    )
+
+
+def workflow_input_from_submission(
+    submission: RequirementSubmission,
+    *,
+    project_name: str,
+    submitted_requirements: tuple[str, ...] | list[str] | None = None,
+) -> WorkflowState:
+    """Build the sole application boundary into the governed workflow state."""
+
+    requirements = (
+        list(submitted_requirements)
+        if submitted_requirements is not None
+        else [submission.normalized_text]
+    )
     return {
-        "project_name": "URL Shortener",
+        "project_name": project_name,
         "project_delivery_policy": RUNNABLE_PROJECT_DELIVERY_POLICY.model_dump(
             mode="json"
         ),
-        "requirements": list(DEMO_REQUIREMENTS),
-        "raw_requirement": DEMO_RAW_REQUIREMENT,
+        "requirements": requirements,
+        "raw_requirement": submission.normalized_text,
+        "requirement_submission": submission.as_state_data(),
     }
