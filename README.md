@@ -21,7 +21,7 @@ user-supplied natural-language software requirement. Both input paths cross the
 same requirement-submission boundary and enter the same governed SDLC lifecycle;
 custom input does not select a separate workflow or bypass either human approval.
 
-> **[Reviewer walkthrough](<docs/Agentic SDLC Orchestrator - Walkthrough.html>)**
+> **[Reviewer walkthrough](https://anthonbr.github.io/agentic-sdlc-orchestrator/)**
 > — Start here for a guided mapping of the implementation to the assessment
 > requirements, architecture, scenarios, governance controls, validation evidence,
 > and limitations.
