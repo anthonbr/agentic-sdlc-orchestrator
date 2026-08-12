@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 import agentic_sdlc.__main__ as cli
+import agentic_sdlc.application as application
 from pydantic import ValidationError
 from pytest import CaptureFixture, MonkeyPatch, raises
 
@@ -106,7 +107,11 @@ def _fixed_cli_artifact_dir(
     monkeypatch: MonkeyPatch,
     run_suffix: str,
 ) -> Path:
-    monkeypatch.setattr(cli, "uuid4", lambda: SimpleNamespace(hex=run_suffix))
+    monkeypatch.setattr(
+        application,
+        "uuid4",
+        lambda: SimpleNamespace(hex=run_suffix),
+    )
     return tmp_path / "runs" / f"demo-{run_suffix}" / "sdlc-artifacts"
 
 
@@ -1398,8 +1403,8 @@ def test_cli_preserves_multiline_requirement_feedback_and_reaches_graph_review(
         )
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
-    monkeypatch.setattr(cli, "write_workflow_diagram", write_stub_diagram)
+    monkeypatch.setattr(application, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(application, "write_workflow_diagram", write_stub_diagram)
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
 
     assert cli.main(["demo"]) == 0
@@ -1428,11 +1433,10 @@ def test_workflow_diagram_writer_uses_compiled_graph(
         def get_graph(self) -> StubGraph:
             return StubGraph()
 
-    monkeypatch.setattr(cli, "WORKFLOW", StubWorkflow())
     diagram_path = tmp_path / "runs" / "demo-fixed" / "sdlc-artifacts" / (
         "workflow_diagram.png"
     )
-    cli.write_workflow_diagram(diagram_path)
+    application.write_workflow_diagram(diagram_path, workflow=StubWorkflow())
     assert diagram_path.read_bytes() == png_bytes
 
 
@@ -1447,8 +1451,8 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
     observed_calls: list[tuple[str, str, Path | None]] = []
     resume_state = {"count": 0, "task_graph_active": False, "returned": False}
     execution_started_before_resume_return: list[bool] = []
-    original_run_workflow = cli.run_workflow
-    original_resume_workflow = cli.resume_workflow
+    original_run_workflow = application.run_workflow
+    original_resume_workflow = application.resume_workflow
 
     class TimingConsoleReporter(ConsoleTaskExecutionProgressReporter):
         def report(self, event: TaskExecutionProgressEvent) -> None:
@@ -1517,10 +1521,10 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
         return result
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
-    monkeypatch.setattr(cli, "write_workflow_diagram", write_stub_diagram)
-    monkeypatch.setattr(cli, "run_workflow", recording_run_workflow)
-    monkeypatch.setattr(cli, "resume_workflow", recording_resume_workflow)
+    monkeypatch.setattr(application, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(application, "write_workflow_diagram", write_stub_diagram)
+    monkeypatch.setattr(application, "run_workflow", recording_run_workflow)
+    monkeypatch.setattr(application, "resume_workflow", recording_resume_workflow)
     monkeypatch.setattr(
         cli,
         "ConsoleTaskExecutionProgressReporter",
@@ -1702,9 +1706,13 @@ def test_cli_run_custom_requirement_completes_governed_pipeline(
         output_path.write_bytes(b"\x89PNG\r\n\x1a\n")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "uuid4", lambda: SimpleNamespace(hex="custom-success"))
-    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
-    monkeypatch.setattr(cli, "write_workflow_diagram", write_stub_diagram)
+    monkeypatch.setattr(
+        application,
+        "uuid4",
+        lambda: SimpleNamespace(hex="custom-success"),
+    )
+    monkeypatch.setattr(application, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(application, "write_workflow_diagram", write_stub_diagram)
     responses = iter(["a", "a"])
     approval_prompts: list[str] = []
 
@@ -1804,8 +1812,8 @@ def test_diagram_failure_does_not_fail_demo(
         tmp_path, monkeypatch, "diagram-failure"
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
-    monkeypatch.setattr(cli, "write_workflow_diagram", fail_to_render)
+    monkeypatch.setattr(application, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(application, "write_workflow_diagram", fail_to_render)
     responses = iter(["a", "a"])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
 
@@ -1872,9 +1880,9 @@ def test_cli_explicit_project_name_uses_the_injected_live_runtime(
         assert workflow is not None
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "GovernedWorkspaceRuntime", lambda: runtime)
-    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
-    monkeypatch.setattr(cli, "write_workflow_diagram", skip_diagram)
+    monkeypatch.setattr(application, "GovernedWorkspaceRuntime", lambda: runtime)
+    monkeypatch.setattr(application, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(application, "write_workflow_diagram", skip_diagram)
     responses = iter(["a", "a"])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(responses))
 
@@ -1941,9 +1949,9 @@ def test_failed_runnable_readiness_prevents_durable_export(
         )
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(application, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(
-        cli,
+        application,
         "write_workflow_diagram",
         lambda _path, *, workflow=None: None,
     )
@@ -1983,9 +1991,9 @@ def test_cli_rejected_run_does_not_create_a_durable_project(
 
     artifact_dir = _fixed_cli_artifact_dir(tmp_path, monkeypatch, "rejected")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(application, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(
-        cli,
+        application,
         "write_workflow_diagram",
         lambda _path, *, workflow=None: None,
     )
@@ -2034,9 +2042,9 @@ def test_cli_failed_analysis_safe_stop_does_not_create_a_durable_project(
         tmp_path, monkeypatch, "analysis-failed"
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(application, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(
-        cli,
+        application,
         "write_workflow_diagram",
         lambda _path, *, workflow=None: None,
     )
@@ -2076,9 +2084,9 @@ def test_cli_explicit_destination_collision_fails_without_overwrite(
     marker.write_text("preserve\n", encoding="utf-8")
     artifact_dir = _fixed_cli_artifact_dir(tmp_path, monkeypatch, "collision")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "build_workflow", build_cli_workflow)
+    monkeypatch.setattr(application, "build_workflow", build_cli_workflow)
     monkeypatch.setattr(
-        cli,
+        application,
         "write_workflow_diagram",
         lambda _path, *, workflow=None: None,
     )

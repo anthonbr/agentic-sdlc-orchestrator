@@ -4,23 +4,17 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
-from langgraph.graph.state import CompiledStateGraph
-
+from agentic_sdlc.application import GovernedRunRequest, GovernedRunService
 from agentic_sdlc.project_export import (
-    ProjectExportContractError,
-    ProjectExporter,
     ProjectNameError,
     normalize_project_name,
-    project_export_request_from_state,
 )
 from agentic_sdlc.run_artifacts import (
     SDLC_ARTIFACT_DIRECTORY_NAME,
-    LiveRunArtifactBundle,
-    write_sdlc_artifact_manifest,
 )
 from agentic_sdlc.requirement_submission import (
     RequirementSubmissionError,
@@ -37,31 +31,6 @@ from agentic_sdlc.state import (
 from agentic_sdlc.task_execution_progress import (
     ConsoleTaskExecutionProgressReporter,
 )
-from agentic_sdlc.workflow import (
-    WORKFLOW,
-    build_workflow,
-    resume_workflow,
-    run_workflow,
-)
-from agentic_sdlc.workspace_integration import (
-    GovernedWorkspaceRuntime,
-    WorkspaceIntegrationError,
-)
-
-
-def write_workflow_diagram(
-    output_path: Path,
-    *,
-    workflow: CompiledStateGraph | None = None,
-) -> None:
-    """Render the actual compiled workflow graph to a PNG file."""
-
-    active_workflow = workflow or WORKFLOW
-    png_bytes = active_workflow.get_graph().draw_mermaid_png()
-    if not png_bytes:
-        raise ValueError("The workflow diagram renderer returned no PNG data.")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(png_bytes)
 
 
 def main(arguments: list[str] | None = None) -> int:
@@ -119,54 +88,41 @@ def _execute_workflow(
     command: str,
     requested_project_name: str | None,
 ) -> int:
-    """Run demo and arbitrary submissions through one governed execution path."""
+    """Present one governed run coordinated by the shared application service."""
 
-    thread_id = f"{command}-{uuid4().hex}"
-    artifact_bundle = LiveRunArtifactBundle.under_repository(Path.cwd(), thread_id)
-    artifact_dir = artifact_bundle.artifact_dir
-    workspace_runtime = GovernedWorkspaceRuntime()
-    workflow = build_workflow(
-        workspace_runtime=workspace_runtime,
-        task_execution_progress_reporter=(
-            ConsoleTaskExecutionProgressReporter()
+    service = GovernedRunService(repository_root=Path.cwd())
+    snapshot = service.start_run(
+        GovernedRunRequest(
+            command=command,
+            workflow_input=workflow_input,
+            requested_project_name=requested_project_name,
         ),
+        progress_reporter=ConsoleTaskExecutionProgressReporter(),
     )
-    diagram_path = artifact_bundle.workflow_diagram_path
-    try:
-        write_workflow_diagram(diagram_path, workflow=workflow)
-    except Exception as error:
-        detail = str(error).splitlines()[0] or type(error).__name__
+    if snapshot.workflow_diagram_generated:
         print(
-            f"Warning: workflow diagram was not generated: {detail}",
-            file=sys.stderr,
+            "Workflow diagram written to: "
+            f"{snapshot.artifact_bundle.workflow_diagram_path}"
         )
-    else:
-        print(f"Workflow diagram written to: {diagram_path}")
+    for warning in snapshot.warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
 
-    state = run_workflow(
-        workflow_input,
-        thread_id=thread_id,
-        artifact_dir=artifact_dir,
-        workflow=workflow,
-    )
-    while state.get("__interrupt__"):
-        payload = _interrupt_payload(state)
-        if payload.get("stage") == "requirement_analysis_review":
+    while snapshot.human_gate is not None:
+        payload = snapshot.human_gate.payload
+        if snapshot.human_gate.stage == "requirement_analysis_review":
             response = _prompt_for_requirement_analysis_decision(payload)
-        elif payload.get("stage") == "task_graph_review":
+        elif snapshot.human_gate.stage == "task_graph_review":
             response = _prompt_for_task_graph_decision(payload)
         else:
             raise ValueError("The workflow paused at an unknown review stage.")
-        state = resume_workflow(
-            thread_id,
+        snapshot = service.resume_run(
+            snapshot.run_id,
             response,
-            artifact_dir=artifact_dir,
-            workflow=workflow,
+            gate_token=snapshot.human_gate.gate_token,
         )
 
-    if state.get("workflow_status") in {"success", "safe_stopped"}:
-        write_sdlc_artifact_manifest(state, artifact_bundle)
-
+    state = snapshot.workflow_state
+    artifact_dir = snapshot.artifact_bundle.artifact_dir
     for event in state.get("trace", []):
         print(event)
 
@@ -174,26 +130,14 @@ def _execute_workflow(
         print("Workflow completed successfully.")
         session = state["governed_workspace_session"]
         print(f"Workspace integrity: {session.integrity_status.value}")
-        try:
-            workspace = workspace_runtime.workspace_for_run(thread_id)
-            request = project_export_request_from_state(
-                state,
-                workspace=workspace,
-                artifact_bundle=artifact_bundle,
-                export_root=Path.cwd() / "projects",
-                requested_project_name=requested_project_name,
-            )
-        except (ProjectExportContractError, WorkspaceIntegrationError) as error:
-            print(f"Project export failed: {error}", file=sys.stderr)
+        if snapshot.application_error is not None:
+            print(snapshot.application_error, file=sys.stderr)
             print("Run evidence written to:")
             print(f"  {artifact_dir}")
             return 1
-        export_result = ProjectExporter().export(request)
-        if not export_result.succeeded:
-            print(
-                f"Project export failed: {export_result.failure_reason}",
-                file=sys.stderr,
-            )
+        export_result = snapshot.export_result
+        if export_result is None or not export_result.succeeded:
+            print("Project export failed: no verified result.", file=sys.stderr)
             print("Run evidence written to:")
             print(f"  {artifact_dir}")
             return 1
@@ -254,13 +198,8 @@ def _print_cli_error(parser: argparse.ArgumentParser, message: str) -> None:
     print(f"{parser.prog}: error: {message}", file=sys.stderr)
 
 
-def _interrupt_payload(state: WorkflowState) -> dict[str, Any]:
-    interrupt_event = state["__interrupt__"][0]
-    return interrupt_event.value
-
-
 def _prompt_for_requirement_analysis_decision(
-    payload: dict[str, Any],
+    payload: Mapping[str, Any],
 ) -> ApprovalResponse:
     """Show the complete analysis boundary before collecting human authority."""
 
@@ -286,7 +225,7 @@ def _prompt_for_requirement_analysis_decision(
     return _prompt_for_decision(payload["allowed_decisions"])
 
 
-def _print_analysis_list(label: str, values: list[str]) -> None:
+def _print_analysis_list(label: str, values: Sequence[str]) -> None:
     print(f"{label}:")
     if not values:
         print("  - None identified.")
@@ -295,7 +234,9 @@ def _print_analysis_list(label: str, values: list[str]) -> None:
         print(f"  - {value}")
 
 
-def _prompt_for_task_graph_decision(payload: dict[str, Any]) -> ApprovalResponse:
+def _prompt_for_task_graph_decision(
+    payload: Mapping[str, Any],
+) -> ApprovalResponse:
     """Show canonical identities and derived layers before human authority."""
 
     spec = payload["approved_requirement_spec"]
@@ -368,7 +309,7 @@ def _prompt_for_task_graph_decision(payload: dict[str, Any]) -> ApprovalResponse
 
 
 def _prompt_for_decision(
-    allowed_decisions: list[str] | None = None,
+    allowed_decisions: Sequence[str] | None = None,
 ) -> ApprovalResponse:
     all_choices = {"a": "APPROVE", "c": "REQUEST_CHANGES", "r": "REJECT"}
     allowed = set(
