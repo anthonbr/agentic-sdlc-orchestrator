@@ -890,8 +890,10 @@ The current V0.12 GUI accepts an inline natural-language requirement and an
 optional project name. It visually presents the authoritative Requirement
 Analysis and canonical TaskGraph, and supports governed APPROVE, REQUEST_CHANGES,
 and REJECT when the current human gate allows them. After TaskGraph approval, the
-workflow continues with a simple in-flight status; detailed live Task Agent
-progress belongs to a later GUI slice.
+GUI displays live governed execution progress: observed scheduler waves,
+authoritative execution layers, concurrent Task Agents, starts, completions,
+elapsed progress, and retry or failure information when present. It retains the
+final progress summary alongside the authoritative terminal result.
 
 An optional project name selects the durable destination folder:
 

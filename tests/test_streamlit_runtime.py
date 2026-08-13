@@ -35,6 +35,13 @@ from agentic_sdlc.streamlit_runtime import (
     StreamlitRunRuntime,
     governed_run_request_from_inline_requirement,
 )
+from agentic_sdlc.task_execution_progress import (
+    TaskExecutionAttemptStarted,
+    TaskExecutionProgressAttempt,
+    TaskExecutionProgressReporter,
+    TaskExecutionWaveMode,
+    TaskExecutionWaveStarted,
+)
 from tests.test_application import _service
 from tests.test_workflow import _analysis, _proposal
 
@@ -68,6 +75,19 @@ class QueuedExecutor:
             future.set_result(result)
 
 
+class ManualClock:
+    """Deterministic monotonic presentation clock without timing sleeps."""
+
+    def __init__(self, initial: float = 100.0) -> None:
+        self.now = initial
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
 class RecordingService:
     def __init__(
         self,
@@ -80,9 +100,16 @@ class RecordingService:
         self.start_calls: list[GovernedRunRequest] = []
         self.resume_calls: list[tuple[str, ApprovalResponse, str]] = []
         self.inspect_calls: list[str] = []
+        self.progress_reporter: TaskExecutionProgressReporter | None = None
 
-    def start_run(self, request: GovernedRunRequest) -> GovernedRunSnapshot:
+    def start_run(
+        self,
+        request: GovernedRunRequest,
+        *,
+        progress_reporter: TaskExecutionProgressReporter | None = None,
+    ) -> GovernedRunSnapshot:
         self.start_calls.append(request)
+        self.progress_reporter = progress_reporter
         self.current_snapshot = self.start_snapshot
         return self.start_snapshot
 
@@ -535,6 +562,34 @@ def test_empty_inline_request_fails_before_a_runtime_can_schedule(
         governed_run_request_from_inline_requirement(requirement, "")
 
 
+def test_runtime_exposes_monotonic_elapsed_only_while_operation_is_in_flight(
+    tmp_path: Path,
+) -> None:
+    first_gate = _snapshot(tmp_path)
+    service = RecordingService(first_gate, [])
+    executor = QueuedExecutor()
+    clock = ManualClock()
+    runtime = StreamlitRunRuntime(service, executor=executor, clock=clock)
+    request = GovernedRunRequest(command="demo", workflow_input=demo_input())
+
+    assert runtime.poll().operation_elapsed_seconds is None
+    assert runtime.schedule_start("timed-start", request)
+    assert runtime.poll().operation_elapsed_seconds == 0.0
+
+    clock.advance(402.75)
+    in_flight = runtime.poll()
+    assert in_flight.in_flight
+    assert in_flight.operation_elapsed_seconds == 402.75
+    assert len(executor.jobs) == 1
+    assert service.start_calls == []
+
+    executor.run_next()
+    completed = runtime.poll()
+    assert not completed.in_flight
+    assert completed.snapshot == first_gate
+    assert completed.operation_elapsed_seconds is None
+
+
 def test_runtime_serializes_start_and_resume_with_gate_token_idempotency(
     tmp_path: Path,
 ) -> None:
@@ -664,7 +719,8 @@ def test_task_graph_approve_runs_real_governed_lifecycle_to_terminal(
     )
     assert runtime.poll().in_flight
     executor.run_next()
-    terminal = runtime.poll().snapshot
+    terminal_view = runtime.poll()
+    terminal = terminal_view.snapshot
 
     assert terminal is not None
     assert terminal.application_status is GovernedRunApplicationStatus.SUCCEEDED
@@ -675,6 +731,96 @@ def test_task_graph_approve_runs_real_governed_lifecycle_to_terminal(
     )
     assert len(task_executor.calls) == 5
     assert executor.jobs == deque()
+    assert terminal_view.execution_progress is not None
+    assert terminal_view.execution_progress.telemetry_status == (
+        "OBSERVATION_COMPLETE"
+    )
+    assert terminal_view.execution_progress.completed_task_count == 5
+    assert all(
+        task.status == "SUCCEEDED"
+        for task in terminal_view.execution_progress.tasks
+        if not task.unknown_task
+    )
+
+
+def test_runtime_exposes_parallel_structured_progress_while_resume_is_in_flight(
+    tmp_path: Path,
+) -> None:
+    graph_gate = _task_graph_snapshot(tmp_path)
+    terminal = _snapshot(
+        tmp_path,
+        gate_token=None,
+        application_status=GovernedRunApplicationStatus.SUCCEEDED,
+        workflow_status="success",
+    )
+    service = RecordingService(graph_gate, [terminal])
+    executor = QueuedExecutor()
+    runtime = StreamlitRunRuntime(service, executor=executor)
+
+    assert runtime.schedule_start(
+        "start-for-progress",
+        GovernedRunRequest(command="demo", workflow_input=demo_input()),
+    )
+    executor.run_next()
+    assert runtime.poll().snapshot == graph_gate
+    assert service.progress_reporter is not None
+
+    assert runtime.schedule_resume(
+        "approve-for-progress",
+        graph_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=graph_gate.human_gate.gate_token,
+    )
+    attempts = (
+        TaskExecutionProgressAttempt(
+            task_id="TASK-002",
+            attempt_number=1,
+            title="Untrusted event title",
+        ),
+        TaskExecutionProgressAttempt(
+            task_id="TASK-003",
+            attempt_number=1,
+            title="Another event title",
+        ),
+    )
+    service.progress_reporter.report(
+        TaskExecutionWaveStarted(
+            wave_number=2,
+            mode=TaskExecutionWaveMode.PARALLEL,
+            attempts=attempts,
+        )
+    )
+    for attempt in attempts:
+        service.progress_reporter.report(
+            TaskExecutionAttemptStarted(wave_number=2, attempt=attempt)
+        )
+
+    active = runtime.poll()
+
+    assert active.in_flight
+    assert active.execution_progress is not None
+    assert active.execution_progress.run_id == graph_gate.run_id
+    assert active.execution_progress.operation_id == "approve-for-progress"
+    assert active.execution_progress.current_wave_number == 2
+    assert active.execution_progress.current_wave_mode == "PARALLEL"
+    assert active.execution_progress.current_layer_numbers == (2,)
+    running = [
+        task
+        for task in active.execution_progress.tasks
+        if task.status == "RUNNING"
+    ]
+    assert [(task.task_id, task.title) for task in running] == [
+        ("TASK-002", "Implement shortener"),
+        ("TASK-003", "Build validation suite"),
+    ]
+
+    executor.run_next()
+    completed = runtime.poll()
+
+    assert not completed.in_flight
+    assert completed.execution_progress is not None
+    assert completed.execution_progress.telemetry_status == "OBSERVATION_COMPLETE"
+    assert len(completed.execution_progress.recent_events) == 3
 
 
 def test_task_graph_revision_uses_new_token_and_rejects_stale_prior_token(
@@ -703,9 +849,11 @@ def test_task_graph_revision_uses_new_token_and_rejects_stale_prior_token(
         gate_token=old_token,
     )
     executor.run_next()
-    revised = runtime.poll().snapshot
+    revised_view = runtime.poll()
+    revised = revised_view.snapshot
 
     assert revised is not None
+    assert revised_view.execution_progress is None
     assert revised.human_gate is not None
     assert revised.human_gate.stage == "task_graph_review"
     assert revised.human_gate.gate_token != old_token
@@ -762,31 +910,33 @@ def test_task_graph_reject_uses_real_governed_safe_stop(
 
 
 def test_background_runtime_has_no_streamlit_api_imports_or_calls() -> None:
-    runtime_path = (
-        Path(__file__).parents[1]
-        / "src"
-        / "agentic_sdlc"
-        / "streamlit_runtime.py"
-    )
-    tree = ast.parse(runtime_path.read_text(encoding="utf-8"))
+    source_root = Path(__file__).parents[1] / "src" / "agentic_sdlc"
+    for filename in (
+        "streamlit_runtime.py",
+        "streamlit_execution_progress.py",
+    ):
+        tree = ast.parse((source_root / filename).read_text(encoding="utf-8"))
 
-    imported_modules = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    }
-    imported_from_modules = {
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    }
-    attribute_roots = {
-        node.value.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
-    }
+        imported_modules = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        }
+        imported_from_modules = {
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        }
+        attribute_roots = {
+            node.value.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+        }
 
-    assert "streamlit" not in imported_modules
-    assert all(not module.startswith("streamlit") for module in imported_from_modules)
-    assert "st" not in attribute_roots
+        assert "streamlit" not in imported_modules
+        assert all(
+            not module.startswith("streamlit")
+            for module in imported_from_modules
+        )
+        assert "st" not in attribute_roots

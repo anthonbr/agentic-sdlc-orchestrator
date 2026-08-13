@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from threading import Lock
+from time import monotonic
 from typing import Any, Protocol
 
 from agentic_sdlc.application import (
@@ -24,6 +25,11 @@ from agentic_sdlc.requirement_submission import (
     resolve_inline_requirement,
 )
 from agentic_sdlc.state import ApprovalResponse, workflow_input_from_submission
+from agentic_sdlc.streamlit_execution_progress import (
+    StreamlitExecutionProgressCollector,
+    StreamlitExecutionProgressView,
+)
+from agentic_sdlc.task_execution_progress import TaskExecutionProgressReporter
 
 
 class StreamlitOperationKind(StrEnum):
@@ -42,12 +48,19 @@ class StreamlitRuntimeView:
     operation_kind: StreamlitOperationKind | None
     in_flight: bool
     error_message: str | None
+    operation_elapsed_seconds: float | None = None
+    execution_progress: StreamlitExecutionProgressView | None = None
 
 
 class GovernedRunLifecycle(Protocol):
     """Public GovernedRunService surface used by the session runtime."""
 
-    def start_run(self, request: GovernedRunRequest) -> GovernedRunSnapshot: ...
+    def start_run(
+        self,
+        request: GovernedRunRequest,
+        *,
+        progress_reporter: TaskExecutionProgressReporter | None = None,
+    ) -> GovernedRunSnapshot: ...
 
     def inspect_run(self, run_id: str) -> GovernedRunSnapshot: ...
 
@@ -103,6 +116,8 @@ class StreamlitRunRuntime:
         service: GovernedRunLifecycle,
         *,
         executor: BackgroundExecutor | None = None,
+        progress_collector: StreamlitExecutionProgressCollector | None = None,
+        clock: Callable[[], float] = monotonic,
     ) -> None:
         self._service = service
         self._executor = executor or ThreadPoolExecutor(
@@ -110,8 +125,13 @@ class StreamlitRunRuntime:
             thread_name_prefix="agentic-sdlc-streamlit",
         )
         self._owns_executor = executor is None
+        self._progress_collector = (
+            progress_collector or StreamlitExecutionProgressCollector()
+        )
+        self._clock = clock
         self._lock = Lock()
         self._future: Future[GovernedRunSnapshot] | None = None
+        self._operation_started_at: float | None = None
         self._operation_id: str | None = None
         self._operation_kind: StreamlitOperationKind | None = None
         self._operation_gate_token: str | None = None
@@ -151,7 +171,13 @@ class StreamlitRunRuntime:
             self._operation_gate_token = None
             self._error_message = None
             self._start_scheduled = True
-            self._future = self._executor.submit(self._service.start_run, request)
+            self._progress_collector.reset()
+            self._future = self._executor.submit(
+                self._service.start_run,
+                request,
+                progress_reporter=self._progress_collector,
+            )
+            self._operation_started_at = self._clock()
             return True
 
     def schedule_resume(
@@ -184,19 +210,43 @@ class StreamlitRunRuntime:
             if gate_token in self._scheduled_gate_tokens:
                 return False
 
+            response_copy = deepcopy(response)
+            if gate.stage == "task_graph_review" and (
+                response_copy.get("decision") == "APPROVE"
+            ):
+                graph = gate.payload.get("candidate_task_graph")
+                semantics = gate.payload.get("graph_semantics")
+                if not isinstance(graph, Mapping) or not isinstance(
+                    semantics,
+                    Mapping,
+                ):
+                    raise GovernedRunLifecycleError(
+                        "The authoritative TaskGraph gate has no renderable execution "
+                        "telemetry context."
+                    )
+                if not self._progress_collector.begin_execution(
+                    run_id=run_id,
+                    operation_id=operation_id,
+                    candidate_task_graph=graph,
+                    graph_semantics=semantics,
+                ):
+                    raise GovernedRunLifecycleError(
+                        "Execution telemetry is not bound to the displayed governed "
+                        "run."
+                    )
             self._known_operation_ids.add(operation_id)
             self._scheduled_gate_tokens.add(gate_token)
             self._operation_id = operation_id
             self._operation_kind = StreamlitOperationKind.RESUME
             self._operation_gate_token = gate_token
             self._error_message = None
-            response_copy = deepcopy(response)
             self._future = self._executor.submit(
                 self._service.resume_run,
                 run_id,
                 response_copy,
                 gate_token=gate_token,
             )
+            self._operation_started_at = self._clock()
             return True
 
     def poll(self) -> StreamlitRuntimeView:
@@ -209,12 +259,26 @@ class StreamlitRunRuntime:
                     self._snapshot = self._service.inspect_run(self._snapshot.run_id)
                 except GovernedRunError as error:
                     self._error_message = str(error)
+            operation_elapsed_seconds = None
+            if self._future is not None and self._operation_started_at is not None:
+                operation_elapsed_seconds = max(
+                    0.0,
+                    self._clock() - self._operation_started_at,
+                )
             return StreamlitRuntimeView(
                 snapshot=self._snapshot,
                 operation_id=self._operation_id,
                 operation_kind=self._operation_kind,
                 in_flight=self._future is not None,
                 error_message=self._error_message,
+                operation_elapsed_seconds=operation_elapsed_seconds,
+                execution_progress=self._progress_collector.snapshot(
+                    run_id=(
+                        self._snapshot.run_id
+                        if self._snapshot is not None
+                        else None
+                    )
+                ),
             )
 
     def close(self, *, wait: bool = False) -> None:
@@ -231,6 +295,7 @@ class StreamlitRunRuntime:
             return
 
         operation_kind = self._operation_kind
+        operation_id = self._operation_id
         gate_token = self._operation_gate_token
         try:
             self._snapshot = future.result()
@@ -252,7 +317,22 @@ class StreamlitRunRuntime:
         else:
             self._error_message = None
         finally:
+            if (
+                operation_kind is StreamlitOperationKind.START
+                and self._snapshot is not None
+            ):
+                self._progress_collector.attach_run(self._snapshot.run_id)
+            elif (
+                operation_kind is StreamlitOperationKind.RESUME
+                and operation_id is not None
+                and self._snapshot is not None
+            ):
+                self._progress_collector.finish_execution(
+                    run_id=self._snapshot.run_id,
+                    operation_id=operation_id,
+                )
             self._future = None
+            self._operation_started_at = None
             self._operation_gate_token = None
 
     @staticmethod

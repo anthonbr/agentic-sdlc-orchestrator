@@ -18,6 +18,10 @@ from agentic_sdlc.application import (
 from agentic_sdlc.project_export import ProjectNameError
 from agentic_sdlc.requirement_submission import RequirementSubmissionError
 from agentic_sdlc.state import ApprovalDecision, ApprovalResponse
+from agentic_sdlc.streamlit_execution_progress import (
+    StreamlitExecutionProgressView,
+    StreamlitTaskExecutionProgress,
+)
 from agentic_sdlc.streamlit_runtime import (
     StreamlitOperationKind,
     StreamlitRunRuntime,
@@ -90,7 +94,11 @@ def render_app(runtime: StreamlitRunRuntime) -> None:
         return
 
     st.session_state[_RUN_ID_KEY] = snapshot.run_id
-    _render_snapshot(runtime, snapshot)
+    _render_snapshot(
+        runtime,
+        snapshot,
+        execution_progress=view.execution_progress,
+    )
 
 
 @st.fragment(run_every=0.5)
@@ -106,17 +114,70 @@ def _render_polling_fragment(
         st.rerun()
 
     operation_kind = view.operation_kind or initial_view.operation_kind
+    if ui_phase == "task_graph_execution":
+        _render_engineering_execution(view.execution_progress)
+        st.caption(
+            "Structured progress is observed from the governed execution engine; "
+            "this dashboard does not schedule tasks or retries."
+        )
+        return
+    _render_governed_operation(
+        operation_kind=operation_kind,
+        ui_phase=ui_phase,
+        elapsed_seconds=view.operation_elapsed_seconds,
+    )
+
+
+def _render_governed_operation(
+    *,
+    operation_kind: StreamlitOperationKind | None,
+    ui_phase: str,
+    elapsed_seconds: float | None,
+) -> None:
+    """Render truthful presentation-only context for non-execution work."""
+
+    actor: str | None
     if operation_kind is StreamlitOperationKind.START:
-        message = "Analyzing requirement..."
-    elif ui_phase == "task_graph_execution":
-        message = "TaskGraph approved. Executing the governed engineering workflow..."
+        title = "Analyzing Requirement"
+        actor = "Requirement Analysis Agent"
+        description = (
+            "Normalizing the submitted requirement and producing the first "
+            "governed Requirement Analysis."
+        )
+    elif ui_phase == "requirement_analysis_revision":
+        title = "Re-analyzing Requirement"
+        actor = "Requirement Analysis Agent"
+        description = (
+            "Applying the human clarification feedback and producing a revised "
+            "authoritative Requirement Analysis."
+        )
+    elif ui_phase == "task_planning":
+        title = "Planning Engineering Work"
+        actor = "Task Planning Agent"
+        description = (
+            "Generating and deterministically validating the canonical TaskGraph."
+        )
     elif ui_phase == "task_graph_revision":
-        message = "Applying feedback and generating a revised TaskGraph..."
+        title = "Revising TaskGraph"
+        actor = "Task Planning Agent"
+        description = (
+            "Applying the human TaskGraph review feedback and producing a revised "
+            "canonical TaskGraph."
+        )
     else:
-        message = "Applying the human decision and advancing the governed workflow..."
-    if ui_phase not in {"task_graph_execution", "task_graph_revision"}:
-        st.session_state[_UI_PHASE_KEY] = "executing"
-    st.info(message)
+        title = "Advancing Governed Workflow"
+        actor = None
+        description = (
+            "The governed lifecycle is running in the session-owned background "
+            "worker."
+        )
+
+    st.header(title)
+    with st.container(border=True):
+        if actor is not None:
+            st.subheader(actor)
+        st.write(description)
+        st.metric("Elapsed", _format_elapsed(elapsed_seconds))
     st.caption(
         "The governed lifecycle is running in one session-owned background worker. "
         "Submission controls remain disabled until it reaches the next gate."
@@ -176,13 +237,15 @@ def _render_requirement_entry(runtime: StreamlitRunRuntime) -> None:
         return
 
     st.session_state[_OPERATION_ID_KEY] = operation_id
-    st.session_state[_UI_PHASE_KEY] = "executing"
+    st.session_state[_UI_PHASE_KEY] = "requirement_analysis"
     st.rerun()
 
 
 def _render_snapshot(
     runtime: StreamlitRunRuntime,
     snapshot: GovernedRunSnapshot,
+    *,
+    execution_progress: StreamlitExecutionProgressView | None,
 ) -> None:
     for warning in snapshot.warnings:
         st.warning(warning)
@@ -220,12 +283,16 @@ def _render_snapshot(
         )
         st.write(safe_stop_reason)
         _render_run_context(snapshot, None)
+        if execution_progress is not None:
+            _render_engineering_execution(execution_progress)
         return
 
     if snapshot.application_status is GovernedRunApplicationStatus.SUCCEEDED:
         st.session_state[_UI_PHASE_KEY] = "succeeded"
         st.success("The governed workflow completed successfully.")
         _render_run_context(snapshot, None)
+        if execution_progress is not None:
+            _render_engineering_execution(execution_progress)
         return
 
     st.session_state[_UI_PHASE_KEY] = "failed"
@@ -235,6 +302,156 @@ def _render_snapshot(
     for error in _string_sequence(snapshot.workflow_state.get("errors", ())):
         st.write(f"- {error}")
     _render_run_context(snapshot, None)
+    if execution_progress is not None:
+        _render_engineering_execution(execution_progress)
+
+
+def _render_engineering_execution(
+    progress: StreamlitExecutionProgressView | None,
+) -> None:
+    """Render supplementary structured telemetry without inferring authority."""
+
+    st.header("Engineering Execution")
+    if progress is None:
+        st.info(
+            "TaskGraph approved. Waiting for structured Task Agent execution "
+            "telemetry..."
+        )
+        return
+
+    metric_columns = st.columns(5)
+    metric_columns[0].metric("Progress status", progress.telemetry_status)
+    metric_columns[1].metric(
+        "Completed tasks",
+        f"{progress.completed_task_count} / {progress.total_task_count}",
+    )
+    metric_columns[2].metric(
+        "Current wave",
+        (
+            f"{progress.current_wave_number} · {progress.current_wave_mode}"
+            if progress.current_wave_number is not None
+            else "Not started"
+        ),
+    )
+    metric_columns[3].metric(
+        "Observed elapsed",
+        _format_elapsed(progress.elapsed_seconds),
+    )
+    metric_columns[4].metric(
+        "Retries / failed",
+        f"{progress.retry_count} / {progress.failed_task_count}",
+    )
+    st.caption(
+        f"Run ID: {progress.run_id} · Execution operation: "
+        f"{progress.operation_id}"
+    )
+    if progress.current_layer_numbers:
+        st.caption(
+            "Current canonical layer context: "
+            + ", ".join(
+                str(layer_number)
+                for layer_number in progress.current_layer_numbers
+            )
+            + ". Scheduler waves remain distinct from canonical layers because "
+            "parallelism limits and retries may create additional waves."
+        )
+
+    task_by_id = {task.task_id: task for task in progress.tasks}
+    st.subheader("Canonical execution layers")
+    rendered_task_ids: set[str] = set()
+    for layer_number, task_ids in enumerate(progress.execution_layers, start=1):
+        parallel_suffix = " — parallel" if len(task_ids) > 1 else ""
+        with st.container(border=True):
+            st.subheader(f"Layer {layer_number}{parallel_suffix}")
+            for task_id in task_ids:
+                task = task_by_id.get(task_id)
+                if task is None:
+                    st.warning(
+                        "Canonical execution semantics reference a task without "
+                        f"progress metadata: {task_id}"
+                    )
+                    continue
+                rendered_task_ids.add(task_id)
+                _render_execution_task(task)
+
+    for task in progress.tasks:
+        if task.task_id in rendered_task_ids:
+            continue
+        if task.unknown_task:
+            st.warning(
+                "Structured execution telemetry referenced an unknown canonical "
+                f"task ID: {task.task_id}"
+            )
+        _render_execution_task(task)
+
+    with st.expander(
+        f"Execution events ({len(progress.recent_events)} recent)",
+    ):
+        if not progress.recent_events:
+            st.caption("No structured execution event has arrived yet.")
+        for event in progress.recent_events:
+            wave = (
+                f" · wave {event.wave_number}"
+                if event.wave_number is not None
+                else ""
+            )
+            tasks = (
+                f" · {', '.join(event.task_ids)}" if event.task_ids else ""
+            )
+            st.text(
+                f"{_format_elapsed(event.elapsed_seconds)} · "
+                f"{event.event_type}{wave}{tasks} · {event.detail}"
+            )
+        if progress.dropped_event_count:
+            st.caption(
+                f"{progress.dropped_event_count} older event(s) were discarded by "
+                "the bounded in-memory timeline."
+            )
+
+
+def _render_execution_task(task: StreamlitTaskExecutionProgress) -> None:
+    icons = {
+        "AWAITING_EVENT": "⏳",
+        "PREPARING": "⏳",
+        "RUNNING": "🔄",
+        "VALIDATING": "🔄",
+        "RETRY_SCHEDULED": "🔁",
+        "SUCCEEDED": "✅",
+        "FAILED": "❌",
+        "SAFE_STOPPED": "❌",
+    }
+    identity = (
+        f"{task.task_id} — {task.title}" if task.title else task.task_id
+    )
+    st.markdown(
+        f"{icons.get(task.status, 'ℹ️')} **{identity}** · `{task.status}`"
+    )
+    details = []
+    if task.wave_number is not None:
+        details.append(f"wave {task.wave_number}")
+    if task.attempt_number:
+        details.append(f"attempt {task.attempt_number}")
+    if task.retry_count:
+        details.append(f"retries {task.retry_count}")
+    if task.attempt_elapsed_seconds is not None:
+        details.append(
+            "attempt elapsed " + _format_elapsed(task.attempt_elapsed_seconds)
+        )
+    if task.latest_detail:
+        details.append(task.latest_detail)
+    if details:
+        st.caption(" · ".join(details))
+
+
+def _format_elapsed(seconds: float | None) -> str:
+    if seconds is None:
+        return "Not available"
+    total_seconds = max(0, int(seconds))
+    minutes, remaining_seconds = divmod(total_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{remaining_seconds:02d}"
+    return f"{minutes:02d}:{remaining_seconds:02d}"
 
 
 def _render_requirement_analysis_review(
@@ -433,7 +650,13 @@ def _render_requirement_decision_form(
         return
 
     st.session_state[_OPERATION_ID_KEY] = operation_id
-    st.session_state[_UI_PHASE_KEY] = "executing"
+    st.session_state[_UI_PHASE_KEY] = (
+        "requirement_analysis_revision"
+        if decision == "REQUEST_CHANGES"
+        else "task_planning"
+        if decision == "APPROVE"
+        else "executing"
+    )
     st.rerun()
 
 
