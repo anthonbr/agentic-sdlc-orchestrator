@@ -16,7 +16,7 @@ from agentic_sdlc.streamlit_runtime import (
     StreamlitOperationKind,
     StreamlitRuntimeView,
 )
-from tests.test_streamlit_runtime import _snapshot
+from tests.test_streamlit_runtime import _snapshot, _task_graph_snapshot
 
 
 def _render_for_test(runtime: object) -> None:
@@ -269,7 +269,7 @@ def test_revised_analysis_uses_new_gate_token_and_revision_context(
     ]
 
 
-def test_approve_reaches_read_only_task_graph_review_without_auto_approval(
+def test_requirement_approve_reaches_interactive_task_graph_without_auto_decision(
     tmp_path: Path,
 ) -> None:
     requirement_gate = _snapshot(tmp_path)
@@ -283,22 +283,217 @@ def test_approve_reaches_read_only_task_graph_review_without_auto_approval(
     assert runtime.resume_calls[0][2] == {"decision": "APPROVE", "feedback": ""}
     assert runtime.resume_calls[0][3] == requirement_gate.human_gate.gate_token
 
-    task_graph_gate = _snapshot(
+    task_graph_gate = _task_graph_snapshot(
         tmp_path,
         gate_token="run-streamlit:human-gate:2",
-        stage="task_graph_review",
     )
     runtime.complete(task_graph_gate)
     app.run()
 
+    assert "TaskGraph Review" in _values(app.header)
+    assert app.radio[0].label == "TaskGraph decision"
+    assert app.button[0].label == "Submit TaskGraph Decision"
+    assert all("next GUI slice" not in value for value in _values(app.info))
+    assert len(runtime.resume_calls) == 1
+
+
+def test_task_graph_review_renders_authoritative_visual_metadata_and_details(
+    tmp_path: Path,
+) -> None:
+    snapshot = _task_graph_snapshot(tmp_path)
+    runtime = FakeUIRuntime(snapshot)
+
+    app = _app_for(runtime)
+
+    assert app.exception == []
+    assert [metric.label for metric in app.metric] == [
+        "TaskGraph revision",
+        "Canonical tasks",
+        "Execution layers",
+        "Synchronization points",
+    ]
+    assert [metric.value for metric in app.metric] == ["0", "4", "3", "1"]
+    captions = _values(app.caption)
+    assert any("GRAPH-DEMO-V001" in value for value in captions)
+    assert any("SPEC-DEMO-V001" in value for value in captions)
+    assert any("Source Requirement Analysis revision: 2" in value for value in captions)
+    assert any("RUNNABLE_PROJECT" in value for value in captions)
+
+    mermaid = next(
+        value for value in _values(app.markdown) if "flowchart LR" in value
+    )
+    assert 'ENTRY(["ENTRY"])' in mermaid
+    assert 'EXIT(["EXIT"])' in mermaid
+    for task_id in ("TASK-001", "TASK-002", "TASK-003", "TASK-004"):
+        assert mermaid.count(task_id) == 1
+
+    subheaders = _values(app.subheader)
+    assert "Layer 1" in subheaders
+    assert "Layer 2 — parallel" in subheaders
+    assert "Layer 3" in subheaders
     assert any(
-        "Interactive TaskGraph review will be added in the next GUI slice"
+        value == "Parallel tasks: TASK-002, TASK-003"
+        for value in _values(app.info)
+    )
+    expander_labels = [expander.label for expander in app.expander]
+    assert "TASK-001 — Define API contract" in expander_labels
+    assert "TASK-002 — Implement shortener" in expander_labels
+    assert "TASK-003 — Build validation suite" in expander_labels
+    assert "TASK-004 — Publish run guide" in expander_labels
+    assert "TaskGraph governance history (1 generated graphs)" in expander_labels
+
+    text_values = _values(app.text)
+    assert "Depends on: ENTRY" in text_values
+    assert "Depends on: TASK-002, TASK-003" in text_values
+    assert "FR-002 — Redirect a short code." in text_values
+    assert "NFR-001 — Short-code lookup is reliable." in text_values
+    assert "AC-002 — A known code redirects correctly." in text_values
+    assert "RISK-001 — Code collisions can misdirect users." in text_values
+    assert "AMB-001 — Expiration behavior is unspecified." in text_values
+    assert "Expected outputs: src/url_shortener/app.py" in text_values
+    assert "Deliverable roles: RUNNABLE_ENTRYPOINT" in text_values
+    assert "Graph generation 1: revision 0, attempt 1" in text_values
+    assert "Prompt: task-planning-v1.3 · Model: fake-task-planner" in text_values
+
+
+def test_task_graph_decisions_come_only_from_authoritative_allowed_decisions(
+    tmp_path: Path,
+) -> None:
+    snapshot = _task_graph_snapshot(
+        tmp_path,
+        allowed_decisions=("REQUEST_CHANGES", "REJECT"),
+    )
+
+    app = _app_for(FakeUIRuntime(snapshot))
+
+    assert app.radio[0].options == [
+        "Request TaskGraph changes",
+        "Reject TaskGraph and safely stop",
+    ]
+    assert all("Approve" not in option for option in app.radio[0].options)
+
+
+def test_task_graph_request_changes_validates_and_preserves_exact_feedback(
+    tmp_path: Path,
+) -> None:
+    snapshot = _task_graph_snapshot(tmp_path)
+    runtime = FakeUIRuntime(snapshot)
+    app = _app_for(runtime)
+
+    app.radio[0].set_value("Request TaskGraph changes")
+    app.text_area[0].input(" \t\n ")
+    app.button[0].click().run()
+
+    assert runtime.resume_calls == []
+    assert any("provide feedback" in value for value in _values(app.error))
+
+    feedback = "  Preserve this context.\nAdd a validation task.  "
+    app.radio[0].set_value("Request TaskGraph changes")
+    app.text_area[0].input(feedback)
+    app.button[0].click().run()
+
+    assert len(runtime.resume_calls) == 1
+    _, run_id, response, gate_token = runtime.resume_calls[0]
+    assert run_id == snapshot.run_id
+    assert gate_token == snapshot.human_gate.gate_token
+    assert response == {"decision": "REQUEST_CHANGES", "feedback": feedback}
+    assert any(
+        "generating a revised TaskGraph" in value for value in _values(app.info)
+    )
+    app.run()
+    assert len(runtime.resume_calls) == 1
+
+
+def test_revised_task_graph_renders_new_authority_and_prior_review_history(
+    tmp_path: Path,
+) -> None:
+    old_token = "run-streamlit:human-gate:2"
+    new_token = "run-streamlit:human-gate:3"
+    feedback = "Add explicit validation before the run guide."
+    revised = _task_graph_snapshot(
+        tmp_path,
+        gate_token=new_token,
+        revision=1,
+        title_suffix=" revised",
+        prior_feedback=feedback,
+    )
+    runtime = FakeUIRuntime(revised)
+
+    app = _app_for(runtime)
+
+    assert app.metric[0].value == "1"
+    assert any("GRAPH-DEMO-V002" in value for value in _values(app.caption))
+    assert any(new_token in value for value in _values(app.caption))
+    assert all(old_token not in value for value in _values(app.caption))
+    assert "TASK-002 — Implement shortener revised" in [
+        expander.label for expander in app.expander
+    ]
+    text_values = _values(app.text)
+    assert "Graph generation 2: revision 1, attempt 1" in text_values
+    assert f"Human feedback used: {feedback}" in text_values
+    assert "Human decision 1: REQUEST_CHANGES on revision 0" in text_values
+    assert f"Decision feedback: {feedback}" in text_values
+
+    app.radio[0].set_value("Approve TaskGraph and execute")
+    app.button[0].click().run()
+
+    assert runtime.resume_calls[0][3] == new_token
+    assert runtime.resume_calls[0][2] == {"decision": "APPROVE", "feedback": ""}
+
+
+def test_task_graph_approve_uses_current_token_and_shows_execution_status(
+    tmp_path: Path,
+) -> None:
+    snapshot = _task_graph_snapshot(tmp_path)
+    runtime = FakeUIRuntime(snapshot)
+    app = _app_for(runtime)
+
+    app.radio[0].set_value("Approve TaskGraph and execute")
+    app.button[0].click().run()
+
+    assert len(runtime.resume_calls) == 1
+    assert runtime.resume_calls[0][2] == {"decision": "APPROVE", "feedback": ""}
+    assert runtime.resume_calls[0][3] == snapshot.human_gate.gate_token
+    assert any(
+        "TaskGraph approved. Executing the governed engineering workflow"
         in value
         for value in _values(app.info)
     )
-    assert app.radio == []
-    assert app.button == []
+    app.run()
     assert len(runtime.resume_calls) == 1
+
+
+def test_task_graph_reject_uses_governed_resume_and_renders_safe_stop(
+    tmp_path: Path,
+) -> None:
+    snapshot = _task_graph_snapshot(tmp_path)
+    runtime = FakeUIRuntime(snapshot)
+    app = _app_for(runtime)
+
+    app.radio[0].set_value("Reject TaskGraph and safely stop")
+    app.button[0].click().run()
+
+    assert runtime.resume_calls[0][2] == {"decision": "REJECT", "feedback": ""}
+    assert runtime.resume_calls[0][3] == snapshot.human_gate.gate_token
+
+    stopped = _snapshot(
+        tmp_path,
+        gate_token=None,
+        application_status=GovernedRunApplicationStatus.SAFE_STOPPED,
+        workflow_status="safe_stopped",
+    )
+    stopped.workflow_state["safe_stop_reason"] = (  # type: ignore[index]
+        "Engineering task graph rejected by human."
+    )
+    runtime.complete(stopped)
+    app.run()
+
+    assert any("stopped safely" in value for value in _values(app.warning))
+    assert any(
+        "Engineering task graph rejected by human" in value
+        for value in _values(app.markdown)
+    )
+    assert app.button == []
 
 
 def test_reject_schedules_resume_and_renders_safe_stopped_result(

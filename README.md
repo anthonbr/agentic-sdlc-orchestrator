@@ -888,10 +888,10 @@ Streamlit GUI:
 
 The current V0.12 GUI accepts an inline natural-language requirement and an
 optional project name. It visually presents the authoritative Requirement
-Analysis and supports APPROVE, REQUEST_CHANGES, and REJECT when the current human
-gate allows them. After Requirement Analysis approval, it stops at TaskGraph
-review and displays that gate read-only; interactive TaskGraph review belongs to
-a later GUI slice.
+Analysis and canonical TaskGraph, and supports governed APPROVE, REQUEST_CHANGES,
+and REJECT when the current human gate allows them. After TaskGraph approval, the
+workflow continues with a simple in-flight status; detailed live Task Agent
+progress belongs to a later GUI slice.
 
 An optional project name selects the durable destination folder:
 

@@ -24,6 +24,10 @@ from agentic_sdlc.streamlit_runtime import (
     StreamlitRuntimeView,
     governed_run_request_from_inline_requirement,
 )
+from agentic_sdlc.task_graph_presentation import (
+    TaskGraphPresentationError,
+    task_graph_mermaid,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -72,7 +76,11 @@ def render_app(runtime: StreamlitRunRuntime) -> None:
         st.error(view.error_message)
 
     if view.in_flight:
-        _render_polling_fragment(runtime, view)
+        _render_polling_fragment(
+            runtime,
+            view,
+            str(st.session_state.get(_UI_PHASE_KEY, "executing")),
+        )
         return
 
     snapshot = view.snapshot
@@ -89,6 +97,7 @@ def render_app(runtime: StreamlitRunRuntime) -> None:
 def _render_polling_fragment(
     runtime: StreamlitRunRuntime,
     initial_view: StreamlitRuntimeView,
+    ui_phase: str,
 ) -> None:
     """Poll background work without allowing worker threads to call Streamlit."""
 
@@ -99,9 +108,14 @@ def _render_polling_fragment(
     operation_kind = view.operation_kind or initial_view.operation_kind
     if operation_kind is StreamlitOperationKind.START:
         message = "Analyzing requirement..."
+    elif ui_phase == "task_graph_execution":
+        message = "TaskGraph approved. Executing the governed engineering workflow..."
+    elif ui_phase == "task_graph_revision":
+        message = "Applying feedback and generating a revised TaskGraph..."
     else:
         message = "Applying the human decision and advancing the governed workflow..."
-    st.session_state[_UI_PHASE_KEY] = "executing"
+    if ui_phase not in {"task_graph_execution", "task_graph_revision"}:
+        st.session_state[_UI_PHASE_KEY] = "executing"
     st.info(message)
     st.caption(
         "The governed lifecycle is running in one session-owned background worker. "
@@ -184,7 +198,7 @@ def _render_snapshot(
             return
         if gate.stage == TASK_GRAPH_REVIEW_STAGE:
             st.session_state[_UI_PHASE_KEY] = "task_graph_review"
-            _render_task_graph_arrival(snapshot, gate)
+            _render_task_graph_review(runtime, snapshot, gate)
             return
         st.session_state[_UI_PHASE_KEY] = "unsupported_gate"
         st.warning(
@@ -423,18 +437,327 @@ def _render_requirement_decision_form(
     st.rerun()
 
 
-def _render_task_graph_arrival(
+def _render_task_graph_review(
+    runtime: StreamlitRunRuntime,
     snapshot: GovernedRunSnapshot,
     gate: HumanGovernanceGate,
 ) -> None:
-    st.success("Requirement Analysis approved.")
-    st.header("TaskGraph review reached")
-    st.info(
-        "Requirement Analysis approved. The workflow has reached TaskGraph review. "
-        "Interactive TaskGraph review will be added in the next GUI slice."
+    payload = gate.payload
+    spec = _mapping(payload.get("approved_requirement_spec"))
+    delivery_policy = _mapping(payload.get("project_delivery_policy"))
+    graph = _mapping(payload.get("candidate_task_graph"))
+    semantics = _mapping(payload.get("graph_semantics"))
+    tasks = _mapping_sequence(graph.get("tasks", ()))
+    execution_layers = _nested_string_sequences(
+        semantics.get("execution_layers", ())
     )
-    st.caption("No TaskGraph decision has been submitted by this GUI.")
+    synchronization_points = _string_sequence(
+        semantics.get("synchronization_points", ())
+    )
+
+    st.success("Requirement Analysis approved.")
+    st.warning(
+        "Agent/LLM proposed this canonical TaskGraph. Human approval is required "
+        "before governed engineering execution can begin."
+    )
+    st.header("TaskGraph Review")
     _render_run_context(snapshot, gate)
+
+    summary_columns = st.columns(4)
+    summary_columns[0].metric(
+        "TaskGraph revision",
+        payload.get("revision_number", 0),
+    )
+    summary_columns[1].metric("Canonical tasks", len(tasks))
+    summary_columns[2].metric("Execution layers", len(execution_layers))
+    summary_columns[3].metric(
+        "Synchronization points",
+        len(synchronization_points),
+    )
+    st.caption(
+        f"Graph ID: {graph.get('graph_id', 'unknown')} · "
+        f"Graph version: {graph.get('version', 'unknown')} · "
+        f"Delivery mode: {delivery_policy.get('mode', 'unknown')}"
+    )
+    st.caption(
+        f"Approved requirement spec: {spec.get('spec_id', 'unknown')} · "
+        f"Spec version: {spec.get('version', 'unknown')} · "
+        "Source Requirement Analysis revision: "
+        f"{spec.get('source_analysis_revision', 'unknown')}"
+    )
+
+    st.subheader("Canonical dependency DAG")
+    try:
+        mermaid = task_graph_mermaid(graph, semantics)
+    except TaskGraphPresentationError as error:
+        st.error(f"The canonical TaskGraph could not be visualized: {error}")
+    else:
+        st.mermaid_chart(mermaid)
+
+    _render_task_graph_semantics(semantics)
+    _render_task_execution_layers(tasks, execution_layers, spec)
+    _render_task_graph_history(snapshot)
+    _render_task_graph_decision_form(runtime, snapshot, gate)
+
+
+def _render_task_graph_semantics(semantics: Mapping[str, Any]) -> None:
+    st.subheader("Authoritative execution semantics")
+    st.text(
+        "Topological order: "
+        + _joined_or_none(_string_sequence(semantics.get("topological_order", ())))
+    )
+    st.text(
+        "ENTRY-ready tasks: "
+        + _joined_or_none(
+            _string_sequence(semantics.get("entry_ready_tasks", ()))
+        )
+    )
+    st.text(
+        "Synchronization points: "
+        + _joined_or_none(
+            _string_sequence(semantics.get("synchronization_points", ()))
+        )
+    )
+    st.text(
+        "EXIT predecessors: "
+        + _joined_or_none(
+            _string_sequence(semantics.get("exit_predecessor_tasks", ()))
+        )
+    )
+
+
+def _render_task_execution_layers(
+    tasks: Sequence[Mapping[str, Any]],
+    execution_layers: Sequence[Sequence[str]],
+    spec: Mapping[str, Any],
+) -> None:
+    task_by_id = {
+        str(task.get("task_id")): task
+        for task in tasks
+        if isinstance(task.get("task_id"), str)
+    }
+    reference_lookup = _approved_spec_reference_lookup(spec)
+    st.subheader("Execution-layer review")
+    for layer_number, task_ids in enumerate(execution_layers, start=1):
+        parallel_suffix = " — parallel" if len(task_ids) > 1 else ""
+        with st.container(border=True):
+            st.subheader(f"Layer {layer_number}{parallel_suffix}")
+            if len(task_ids) > 1:
+                st.info("Parallel tasks: " + ", ".join(task_ids))
+            for task_id in task_ids:
+                task = task_by_id.get(task_id)
+                if task is None:
+                    st.warning(
+                        "Authoritative execution semantics reference a missing "
+                        f"canonical task: {task_id}"
+                    )
+                    continue
+                _render_task_details(task, reference_lookup)
+
+
+def _render_task_details(
+    task: Mapping[str, Any],
+    reference_lookup: Mapping[str, str],
+) -> None:
+    task_id = str(task.get("task_id", "unknown"))
+    title = str(task.get("title", "Untitled task"))
+    with st.expander(f"{task_id} — {title}"):
+        st.markdown("**Canonical identity**")
+        st.text(f"Task ID: {task_id}")
+        st.text(f"Lineage ID: {task.get('lineage_id', 'unknown')}")
+        st.text(f"Planner source key: {task.get('source_key', 'unknown')}")
+
+        st.markdown("**Task Agent responsibility**")
+        st.text(f"Title: {title}")
+        st.text(str(task.get("description", "")))
+        st.text(f"Task type: {task.get('task_type', 'unknown')}")
+        st.text(
+            "Materialization policy: "
+            f"{task.get('materialization_policy', 'unknown')}"
+        )
+        st.text(
+            "Depends on: "
+            + _joined_or_entry(_string_sequence(task.get("depends_on", ())))
+        )
+        st.text(
+            "Expected outputs: "
+            + _joined_or_none(_string_sequence(task.get("expected_outputs", ())))
+        )
+        st.text(
+            "Deliverable roles: "
+            + _joined_or_none(_string_sequence(task.get("deliverable_roles", ())))
+        )
+
+        st.markdown("**Approved-spec traceability**")
+        _render_reference_group(
+            "Requirements",
+            _string_sequence(task.get("requirement_refs", ())),
+            reference_lookup,
+        )
+        _render_reference_group(
+            "Acceptance criteria",
+            _string_sequence(task.get("acceptance_criteria_refs", ())),
+            reference_lookup,
+        )
+        _render_reference_group(
+            "Risks",
+            _string_sequence(task.get("risk_refs", ())),
+            reference_lookup,
+        )
+        _render_reference_group(
+            "Ambiguities",
+            _string_sequence(task.get("ambiguity_refs", ())),
+            reference_lookup,
+        )
+
+
+def _render_reference_group(
+    label: str,
+    reference_ids: Sequence[str],
+    reference_lookup: Mapping[str, str],
+) -> None:
+    st.text(f"{label}:")
+    if not reference_ids:
+        st.text("  None")
+        return
+    for reference_id in reference_ids:
+        reference_text = reference_lookup.get(reference_id)
+        if reference_text is None:
+            st.warning(
+                f"{reference_id} — approved requirement-spec text was not found."
+            )
+        else:
+            st.text(f"  {reference_id} — {reference_text}")
+
+
+def _approved_spec_reference_lookup(spec: Mapping[str, Any]) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for field_name in (
+        "functional_requirements",
+        "nonfunctional_requirements",
+        "constraints",
+        "acceptance_criteria",
+        "risks",
+        "ambiguities",
+    ):
+        for item in _mapping_sequence(spec.get(field_name, ())):
+            item_id = item.get("item_id")
+            text = item.get("text")
+            if isinstance(item_id, str) and isinstance(text, str):
+                lookup[item_id] = text
+    return lookup
+
+
+def _render_task_graph_history(snapshot: GovernedRunSnapshot) -> None:
+    graph_history = _mapping_sequence(
+        snapshot.workflow_state.get("task_graph_history", ())
+    )
+    review_history = _mapping_sequence(
+        snapshot.workflow_state.get("task_graph_review_history", ())
+    )
+    with st.expander(
+        f"TaskGraph governance history ({len(graph_history)} generated graphs)"
+    ):
+        for record in graph_history:
+            graph = _mapping(record.get("task_graph"))
+            st.text(
+                f"Graph generation {record.get('sequence', '?')}: revision "
+                f"{record.get('revision_number', '?')}, attempt "
+                f"{record.get('attempt_number', '?')}"
+            )
+            st.text(
+                f"Graph ID: {graph.get('graph_id', 'unknown')} · "
+                f"version {graph.get('version', 'unknown')}"
+            )
+            st.text(
+                f"Prompt: {record.get('prompt_version', 'unknown')} · "
+                f"Model: {record.get('model_name', 'unknown')}"
+            )
+            reviewer_feedback = record.get("reviewer_feedback")
+            if isinstance(reviewer_feedback, str) and reviewer_feedback:
+                st.text(f"Human feedback used: {reviewer_feedback}")
+        for event in review_history:
+            st.text(
+                f"Human decision {event.get('sequence', '?')}: "
+                f"{event.get('decision', 'unknown')} on revision "
+                f"{event.get('revision_number', '?')}"
+            )
+            feedback = event.get("feedback")
+            if isinstance(feedback, str) and feedback:
+                st.text(f"Decision feedback: {feedback}")
+
+
+def _render_task_graph_decision_form(
+    runtime: StreamlitRunRuntime,
+    snapshot: GovernedRunSnapshot,
+    gate: HumanGovernanceGate,
+) -> None:
+    allowed_decisions = gate.allowed_decisions
+    if not allowed_decisions:
+        st.error("The authoritative TaskGraph gate exposes no available decisions.")
+        return
+
+    labels = {
+        "APPROVE": "Approve TaskGraph and execute",
+        "REQUEST_CHANGES": "Request TaskGraph changes",
+        "REJECT": "Reject TaskGraph and safely stop",
+    }
+    st.subheader("TaskGraph human decision")
+    with st.form(f"task_graph_decision_{gate.gate_token}"):
+        decision = st.radio(
+            "TaskGraph decision",
+            allowed_decisions,
+            format_func=lambda value: labels[value],
+            key=f"task_graph_decision_choice_{gate.gate_token}",
+        )
+        feedback = st.text_area(
+            "TaskGraph review feedback",
+            key=f"task_graph_decision_feedback_{gate.gate_token}",
+            help=(
+                "Required for Request TaskGraph changes. Meaningful whitespace and "
+                "line breaks are passed to the governed workflow unchanged."
+            ),
+        )
+        submitted = st.form_submit_button(
+            "Submit TaskGraph Decision",
+            type="primary",
+            use_container_width=True,
+        )
+
+    if not submitted:
+        return
+    if decision == "REQUEST_CHANGES" and not feedback.strip():
+        st.error("Please provide feedback before requesting TaskGraph changes.")
+        return
+
+    response: ApprovalResponse = {
+        "decision": cast(ApprovalDecision, decision),
+        "feedback": feedback,
+    }
+    operation_id = uuid4().hex
+    try:
+        scheduled = runtime.schedule_resume(
+            operation_id,
+            snapshot.run_id,
+            response,
+            gate_token=gate.gate_token,
+        )
+    except GovernedRunLifecycleError as error:
+        st.error(str(error))
+        return
+    if not scheduled:
+        st.info("A decision for this TaskGraph gate is already being processed.")
+        return
+
+    st.session_state[_OPERATION_ID_KEY] = operation_id
+    st.session_state[_UI_PHASE_KEY] = (
+        "task_graph_execution"
+        if decision == "APPROVE"
+        else "task_graph_revision"
+        if decision == "REQUEST_CHANGES"
+        else "executing"
+    )
+    st.rerun()
 
 
 def _render_run_context(
@@ -468,6 +791,20 @@ def _mapping_sequence(value: object) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return ()
     return tuple(item for item in value if isinstance(item, Mapping))
+
+
+def _nested_string_sequences(value: object) -> tuple[tuple[str, ...], ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return ()
+    return tuple(_string_sequence(item) for item in value)
+
+
+def _joined_or_none(values: Sequence[str]) -> str:
+    return ", ".join(values) or "None"
+
+
+def _joined_or_entry(values: Sequence[str]) -> str:
+    return ", ".join(values) or "ENTRY"
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ import pytest
 
 from agentic_sdlc.application import (
     GovernedRunApplicationStatus,
+    GovernedRunLifecycleError,
     GovernedRunRequest,
     GovernedRunSnapshot,
     HumanGovernanceGate,
@@ -24,7 +25,11 @@ from agentic_sdlc.requirement_submission import (
     resolve_inline_requirement,
 )
 from agentic_sdlc.run_artifacts import LiveRunArtifactBundle
-from agentic_sdlc.state import ApprovalResponse, demo_input
+from agentic_sdlc.state import (
+    ApprovalResponse,
+    TASK_GRAPH_REJECTED_REASON,
+    demo_input,
+)
 from agentic_sdlc.streamlit_runtime import (
     StreamlitOperationKind,
     StreamlitRunRuntime,
@@ -187,6 +192,304 @@ def _snapshot(
     )
 
 
+def _task_graph_snapshot(
+    tmp_path: Path,
+    *,
+    gate_token: str = "run-streamlit:human-gate:2",
+    allowed_decisions: tuple[str, ...] = (
+        "APPROVE",
+        "REQUEST_CHANGES",
+        "REJECT",
+    ),
+    revision: int = 0,
+    title_suffix: str = "",
+    prior_feedback: str | None = None,
+) -> GovernedRunSnapshot:
+    spec = {
+        "spec_id": "SPEC-DEMO-V001",
+        "lineage_id": "spec-lineage",
+        "version": 1,
+        "supersedes_spec_id": None,
+        "source_analysis_revision": 2,
+        "created_at": "2026-08-12T12:00:00+00:00",
+        "content_hash": "a" * 64,
+        "normalized_problem_statement": "Build a URL shortener.",
+        "requirement_type": "greenfield",
+        "assumptions": [],
+        "functional_requirements": [
+            {"item_id": "FR-001", "lineage_id": "fr-1", "text": "Accept a URL."},
+            {
+                "item_id": "FR-002",
+                "lineage_id": "fr-2",
+                "text": "Redirect a short code.",
+            },
+        ],
+        "nonfunctional_requirements": [
+            {
+                "item_id": "NFR-001",
+                "lineage_id": "nfr-1",
+                "text": "Short-code lookup is reliable.",
+            }
+        ],
+        "constraints": [
+            {
+                "item_id": "CON-001",
+                "lineage_id": "con-1",
+                "text": "Use the governed workspace.",
+            }
+        ],
+        "acceptance_criteria": [
+            {
+                "item_id": "AC-001",
+                "lineage_id": "ac-1",
+                "text": "A valid URL receives a short code.",
+            },
+            {
+                "item_id": "AC-002",
+                "lineage_id": "ac-2",
+                "text": "A known code redirects correctly.",
+            },
+        ],
+        "risks": [
+            {
+                "item_id": "RISK-001",
+                "lineage_id": "risk-1",
+                "text": "Code collisions can misdirect users.",
+            }
+        ],
+        "ambiguities": [
+            {
+                "item_id": "AMB-001",
+                "lineage_id": "amb-1",
+                "text": "Expiration behavior is unspecified.",
+            }
+        ],
+    }
+    graph = _task_graph_data(revision=revision, title_suffix=title_suffix)
+    semantics = {
+        "topological_order": ["TASK-001", "TASK-002", "TASK-003", "TASK-004"],
+        "execution_layers": [
+            ["TASK-001"],
+            ["TASK-002", "TASK-003"],
+            ["TASK-004"],
+        ],
+        "entry_ready_tasks": ["TASK-001"],
+        "exit_predecessor_tasks": ["TASK-004"],
+        "synchronization_points": ["TASK-004"],
+    }
+    payload = {
+        "stage": "task_graph_review",
+        "checkpoint": "task_graph",
+        "message": "Engineering task graph requires human review.",
+        "approved_requirement_spec": spec,
+        "project_delivery_policy": {"mode": "RUNNABLE_PROJECT"},
+        "candidate_task_graph": graph,
+        "graph_semantics": semantics,
+        "revision_number": revision,
+        "allowed_decisions": list(allowed_decisions),
+    }
+    history = []
+    review_history = []
+    if revision > 0:
+        history.append(
+            {
+                "sequence": 1,
+                "revision_number": 0,
+                "attempt_number": 1,
+                "prompt_version": "task-planning-v1.3",
+                "model_name": "fake-task-planner",
+                "reviewer_feedback": "",
+                "task_graph": _task_graph_data(revision=0),
+            }
+        )
+        review_history.append(
+            {
+                "sequence": 1,
+                "checkpoint": "task_graph",
+                "decision": "REQUEST_CHANGES",
+                "feedback": prior_feedback or "Revise the graph.",
+                "revision_number": 0,
+            }
+        )
+    history.append(
+        {
+            "sequence": len(history) + 1,
+            "revision_number": revision,
+            "attempt_number": 1,
+            "prompt_version": "task-planning-v1.3",
+            "model_name": "fake-task-planner",
+            "reviewer_feedback": prior_feedback or "" if revision > 0 else "",
+            "task_graph": graph,
+        }
+    )
+    return GovernedRunSnapshot(
+        run_id="run-streamlit",
+        application_status=GovernedRunApplicationStatus.AWAITING_HUMAN,
+        workflow_status="awaiting_approval",
+        human_gate=HumanGovernanceGate(
+            gate_token=gate_token,
+            stage="task_graph_review",
+            checkpoint="task_graph",
+            allowed_decisions=allowed_decisions,  # type: ignore[arg-type]
+            payload=payload,
+        ),
+        workflow_state={
+            "workflow_status": "awaiting_approval",
+            "approved_requirement_spec": spec,
+            "candidate_task_graph": graph,
+            "task_graph_semantics": semantics,
+            "task_graph_revision_count": revision,
+            "task_graph_history": history,
+            "task_graph_review_history": review_history,
+        },
+        artifact_bundle=LiveRunArtifactBundle.under_repository(
+            tmp_path,
+            "run-streamlit",
+        ),
+        workflow_diagram_generated=False,
+        manifest_path=None,
+        export_result=None,
+        application_error=None,
+        warnings=(),
+    )
+
+
+def _task_graph_data(
+    *,
+    revision: int,
+    title_suffix: str = "",
+) -> dict[str, Any]:
+    def task(
+        task_id: str,
+        source_key: str,
+        title: str,
+        *,
+        description: str,
+        task_type: str,
+        materialization_policy: str,
+        depends_on: list[str],
+        requirement_refs: list[str],
+        acceptance_refs: list[str],
+        risk_refs: list[str] | None = None,
+        ambiguity_refs: list[str] | None = None,
+        expected_outputs: list[str],
+        deliverable_roles: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "task_id": task_id,
+            "lineage_id": f"lineage-{task_id}",
+            "source_key": source_key,
+            "title": f"{title}{title_suffix}",
+            "description": description,
+            "task_type": task_type,
+            "materialization_policy": materialization_policy,
+            "depends_on": depends_on,
+            "requirement_refs": requirement_refs,
+            "acceptance_criteria_refs": acceptance_refs,
+            "risk_refs": risk_refs or [],
+            "ambiguity_refs": ambiguity_refs or [],
+            "expected_outputs": expected_outputs,
+            "deliverable_roles": deliverable_roles or [],
+        }
+
+    return {
+        "graph_id": f"GRAPH-DEMO-V{revision + 1:03d}",
+        "lineage_id": "graph-lineage",
+        "version": revision + 1,
+        "requirement_spec_id": "SPEC-DEMO-V001",
+        "requirement_spec_version": 1,
+        "supersedes_graph_id": "GRAPH-DEMO-V001" if revision > 0 else None,
+        "created_at": "2026-08-12T12:00:00+00:00",
+        "content_hash": str(revision + 1) * 64,
+        "delivery_policy": {"mode": "RUNNABLE_PROJECT"},
+        "tasks": [
+            task(
+                "TASK-001",
+                "define_contract",
+                "Define API contract",
+                description="Define shortening and redirect behavior.",
+                task_type="DESIGN",
+                materialization_policy="FORBIDDEN",
+                depends_on=[],
+                requirement_refs=["FR-001"],
+                acceptance_refs=["AC-001"],
+                expected_outputs=["docs/api-contract.md"],
+            ),
+            task(
+                "TASK-002",
+                "build_service",
+                "Implement shortener",
+                description="Build the governed URL-shortening service.",
+                task_type="IMPLEMENTATION",
+                materialization_policy="REQUIRED",
+                depends_on=["TASK-001"],
+                requirement_refs=["FR-002", "NFR-001"],
+                acceptance_refs=["AC-002"],
+                risk_refs=["RISK-001"],
+                expected_outputs=["src/url_shortener/app.py"],
+                deliverable_roles=["RUNNABLE_ENTRYPOINT"],
+            ),
+            task(
+                "TASK-003",
+                "build_tests",
+                "Build validation suite",
+                description="Test contract behavior and ambiguity boundaries.",
+                task_type="TEST",
+                materialization_policy="REQUIRED",
+                depends_on=["TASK-001"],
+                requirement_refs=["CON-001"],
+                acceptance_refs=["AC-001", "AC-002"],
+                ambiguity_refs=["AMB-001"],
+                expected_outputs=["tests/test_service.py"],
+                deliverable_roles=["AUTOMATED_TESTS"],
+            ),
+            task(
+                "TASK-004",
+                "publish_guide",
+                "Publish run guide",
+                description="Document how to run the validated service.",
+                task_type="DOCUMENTATION",
+                materialization_policy="REQUIRED",
+                depends_on=["TASK-002", "TASK-003"],
+                requirement_refs=["FR-001"],
+                acceptance_refs=[],
+                expected_outputs=["README.md"],
+                deliverable_roles=["RUN_INSTRUCTIONS"],
+            ),
+        ],
+    }
+
+
+def _advance_runtime_to_task_graph(
+    runtime: StreamlitRunRuntime,
+    executor: QueuedExecutor,
+    *,
+    operation_prefix: str,
+) -> GovernedRunSnapshot:
+    assert runtime.schedule_start(
+        f"{operation_prefix}-start",
+        GovernedRunRequest(command="demo", workflow_input=demo_input()),
+    )
+    executor.run_next()
+    requirement_gate = runtime.poll().snapshot
+    assert requirement_gate is not None
+    assert requirement_gate.human_gate is not None
+    assert requirement_gate.human_gate.stage == "requirement_analysis_review"
+
+    assert runtime.schedule_resume(
+        f"{operation_prefix}-requirements-approve",
+        requirement_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=requirement_gate.human_gate.gate_token,
+    )
+    executor.run_next()
+    task_graph_gate = runtime.poll().snapshot
+    assert task_graph_gate is not None
+    assert task_graph_gate.human_gate is not None
+    assert task_graph_gate.human_gate.stage == "task_graph_review"
+    return task_graph_gate
+
+
 def test_inline_request_uses_submission_evidence_and_deterministic_name() -> None:
     original = "\ufeff  Build a scheduler.\r\n\r\n- Run jobs.  \r\n"
     submission = resolve_inline_requirement(original)
@@ -333,6 +636,129 @@ def test_reject_reaches_real_governed_safe_stop_through_runtime(
     assert stopped.workflow_state["safe_stop_reason"] == (
         "Requirement analysis rejected by human."
     )
+
+
+def test_task_graph_approve_runs_real_governed_lifecycle_to_terminal(
+    tmp_path: Path,
+) -> None:
+    service, _, task_executor = _service(
+        tmp_path,
+        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        planner=FakeTaskPlanningClient([_proposal()]),
+        run_suffix="streamlit-task-graph-approve",
+    )
+    executor = QueuedExecutor()
+    runtime = StreamlitRunRuntime(service, executor=executor)
+    graph_gate = _advance_runtime_to_task_graph(
+        runtime,
+        executor,
+        operation_prefix="approve",
+    )
+    gate_token = graph_gate.human_gate.gate_token
+
+    assert runtime.schedule_resume(
+        "approve-task-graph",
+        graph_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=gate_token,
+    )
+    assert runtime.poll().in_flight
+    executor.run_next()
+    terminal = runtime.poll().snapshot
+
+    assert terminal is not None
+    assert terminal.application_status is GovernedRunApplicationStatus.SUCCEEDED
+    assert terminal.workflow_status == "success"
+    assert terminal.human_gate is None
+    assert terminal.workflow_state["approved_task_graph"] == (
+        terminal.workflow_state["candidate_task_graph"]
+    )
+    assert len(task_executor.calls) == 5
+    assert executor.jobs == deque()
+
+
+def test_task_graph_revision_uses_new_token_and_rejects_stale_prior_token(
+    tmp_path: Path,
+) -> None:
+    feedback = "  Add explicit validation before documentation.\nKeep this line.  "
+    service, _, _ = _service(
+        tmp_path,
+        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        planner=FakeTaskPlanningClient([_proposal("v1"), _proposal("v2")]),
+        run_suffix="streamlit-task-graph-revision",
+    )
+    executor = QueuedExecutor()
+    runtime = StreamlitRunRuntime(service, executor=executor)
+    first_graph = _advance_runtime_to_task_graph(
+        runtime,
+        executor,
+        operation_prefix="revision",
+    )
+    old_token = first_graph.human_gate.gate_token
+
+    assert runtime.schedule_resume(
+        "request-task-graph-changes",
+        first_graph.run_id,
+        {"decision": "REQUEST_CHANGES", "feedback": feedback},
+        gate_token=old_token,
+    )
+    executor.run_next()
+    revised = runtime.poll().snapshot
+
+    assert revised is not None
+    assert revised.human_gate is not None
+    assert revised.human_gate.stage == "task_graph_review"
+    assert revised.human_gate.gate_token != old_token
+    assert revised.workflow_state["task_graph_revision_count"] == 1
+    assert len(revised.workflow_state["task_graph_history"]) == 2
+    assert revised.workflow_state["task_graph_history"][1][
+        "reviewer_feedback"
+    ] == feedback.strip()
+    assert revised.workflow_state["task_graph_review_history"][0][
+        "feedback"
+    ] == feedback.strip()
+
+    with pytest.raises(GovernedRunLifecycleError, match="no longer current"):
+        runtime.schedule_resume(
+            "stale-task-graph-approval",
+            revised.run_id,
+            {"decision": "APPROVE", "feedback": ""},
+            gate_token=old_token,
+        )
+
+
+def test_task_graph_reject_uses_real_governed_safe_stop(
+    tmp_path: Path,
+) -> None:
+    service, _, task_executor = _service(
+        tmp_path,
+        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        planner=FakeTaskPlanningClient([_proposal()]),
+        run_suffix="streamlit-task-graph-reject",
+    )
+    executor = QueuedExecutor()
+    runtime = StreamlitRunRuntime(service, executor=executor)
+    graph_gate = _advance_runtime_to_task_graph(
+        runtime,
+        executor,
+        operation_prefix="reject",
+    )
+
+    assert runtime.schedule_resume(
+        "reject-task-graph",
+        graph_gate.run_id,
+        {"decision": "REJECT", "feedback": ""},
+        gate_token=graph_gate.human_gate.gate_token,
+    )
+    executor.run_next()
+    stopped = runtime.poll().snapshot
+
+    assert stopped is not None
+    assert stopped.application_status is GovernedRunApplicationStatus.SAFE_STOPPED
+    assert stopped.workflow_status == "safe_stopped"
+    assert stopped.human_gate is None
+    assert stopped.workflow_state["safe_stop_reason"] == TASK_GRAPH_REJECTED_REASON
+    assert task_executor.calls == []
 
 
 def test_background_runtime_has_no_streamlit_api_imports_or_calls() -> None:
