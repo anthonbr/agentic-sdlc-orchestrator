@@ -12,6 +12,7 @@ dependencies = [
     "langgraph>=1.2.10,<2",
     "openai>=2,<3",
     "pydantic>=2.12,<3",
+    "streamlit>=1.61,<2",
 ]
 
 [project.optional-dependencies]

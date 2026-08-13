@@ -865,15 +865,33 @@ cp .env.example .env
 ```
 
 Set a real `OPENAI_API_KEY` in the ignored local `.env`. `OPENAI_MODEL` defaults
-to `gpt-5.6-sol`. The project does not load `.env` itself, so export it before an
-interactive CLI run:
+to `gpt-5.6-sol`. The project does not load `.env` itself, so export it before
+either an interactive CLI run or the Streamlit GUI:
 
 ```bash
 set -a
 source .env
 set +a
+```
+
+CLI:
+
+```bash
 .venv/bin/python -m agentic_sdlc demo
 ```
+
+Streamlit GUI:
+
+```bash
+.venv/bin/streamlit run src/agentic_sdlc/streamlit_app.py
+```
+
+The current V0.12 GUI accepts an inline natural-language requirement and an
+optional project name. It visually presents the authoritative Requirement
+Analysis and supports APPROVE, REQUEST_CHANGES, and REJECT when the current human
+gate allows them. After Requirement Analysis approval, it stops at TaskGraph
+review and displays that gate read-only; interactive TaskGraph review belongs to
+a later GUI slice.
 
 An optional project name selects the durable destination folder:
 
