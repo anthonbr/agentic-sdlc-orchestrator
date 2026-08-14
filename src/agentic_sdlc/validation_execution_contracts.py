@@ -36,7 +36,7 @@ from agentic_sdlc.workspace_integration_contracts import (
 
 
 PYTHON_COMPILE_POLICY_VERSION = "python-compile-v1"
-PYTHON_PYTEST_POLICY_VERSION = "python-pytest-docker-v1"
+PYTHON_PYTEST_POLICY_VERSION = "python-pytest-docker-v2"
 PYTHON_PYTEST_IMAGE = "python:3.12-slim"
 PUBLIC_PYPI_INDEX_URL = "https://pypi.org/simple"
 DEFAULT_VALIDATION_TIMEOUT_SECONDS = 30.0
@@ -384,6 +384,7 @@ def python_pytest_validation_policy() -> GovernedValidationPolicy:
         "-m",
         "pip",
         "install",
+        "--user",
         "--disable-pip-version-check",
         "--no-input",
         "--no-cache-dir",

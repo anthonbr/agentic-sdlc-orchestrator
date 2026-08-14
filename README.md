@@ -477,12 +477,15 @@ into `/work`; no authoritative repository, host home, `.git`, `.env`, credential
 SSH agent, or Docker socket is mounted. Standard-library `tomllib` reads only
 `[project].dependencies` from the staged `pyproject.toml`. Basic deterministic
 policy rejects URL, VCS, local-path, editable, and installer-option forms. The
-application runs fixed argv equivalent to `python -m pip install
+application runs fixed argv equivalent to `python -m pip install --user
 --disable-pip-version-check --no-input --no-cache-dir --only-binary=:all:
 --index-url https://pypi.org/simple pytest <validated dependencies>`, then
 `python -m pytest -q tests` with plugin autoload disabled and the application-owned
 `PYTHONPATH=/work/src`. The project itself is not installed, so
-generated build hooks do not run.
+generated build hooks do not run. Docker archive copy preserves the restrictive
+governed postimage ownership and modes, and the disposable container runs as that
+same application-owned numeric user/group. Validation can therefore read and
+write its copy without weakening authoritative workspace permissions.
 
 Provisioning and pytest produce separate immutable evidence bound to the same run,
 graph, task, request, attempt, requirement, policy, manifest, staged snapshot,

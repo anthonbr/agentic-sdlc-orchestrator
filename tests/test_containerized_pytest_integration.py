@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
 
 from pytest import mark
@@ -12,7 +13,12 @@ from agentic_sdlc.validation_execution_contracts import (
     ValidationExecutionOutcome,
     python_pytest_validation_policy,
 )
+from agentic_sdlc.workspace_mutation import (
+    WorkspaceMutationStatus,
+    apply_workspace_change_set,
+)
 from tests.test_containerized_pytest_validation import _request, _workspace
+from tests.test_workspace_mutation import _artifact, _change_set
 
 
 pytestmark = mark.skipif(
@@ -101,3 +107,51 @@ def test_real_docker_governed_third_party_dependency_is_provisioned(
     assert provisioning.passed is True
     assert report.execution_evidence is not None
     assert report.execution_evidence.passed is True
+
+
+def test_real_docker_reads_restrictive_governed_workspace_without_chmod(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path, {})
+    artifacts = (
+        _artifact("pytest.ini", "[pytest]\npythonpath = src\n", index=1),
+        _artifact("src/demo.py", "def answer(): return 42\n", index=2),
+        _artifact(
+            "tests/test_demo.py",
+            "from demo import answer\n\ndef test_answer(): assert answer() == 42\n",
+            index=3,
+        ),
+    )
+    _, change_set, validation = _change_set(workspace, *artifacts)
+    mutation = apply_workspace_change_set(workspace, change_set, validation)
+    assert mutation.status is WorkspaceMutationStatus.APPLIED
+    governed_modes = {
+        relative: stat.S_IMODE((workspace.root / relative).stat().st_mode)
+        for relative in (
+            "pytest.ini",
+            "src",
+            "src/demo.py",
+            "tests",
+            "tests/test_demo.py",
+        )
+    }
+    assert governed_modes == {
+        "pytest.ini": 0o600,
+        "src": 0o700,
+        "src/demo.py": 0o600,
+        "tests": 0o700,
+        "tests/test_demo.py": 0o600,
+    }
+
+    report = DockerPytestValidationExecutor().execute(
+        _request(workspace), python_pytest_validation_policy(), workspace
+    )
+
+    assert report.provisioning_evidence[0].passed is True
+    assert report.execution_evidence is not None
+    assert report.execution_evidence.passed is True
+    assert "1 passed" in report.execution_evidence.retained_stdout
+    assert {
+        relative: stat.S_IMODE((workspace.root / relative).stat().st_mode)
+        for relative in governed_modes
+    } == governed_modes

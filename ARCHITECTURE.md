@@ -241,7 +241,10 @@ copy, pip, pytest, timeout, network-disconnect attempt, and cleanup argv with
 `shell=False`. The backend copies the exact staged postimage into `/work` without a
 host bind mount, reads normalized PEP 621 dependencies from that staged snapshot,
 installs only pytest plus those accepted requirements, and runs all `tests/` with
-plugin autoload disabled. Provisioning and test evidence are distinct and linked;
+plugin autoload disabled. Archive copy preserves application ownership and
+restrictive modes while the container runs under the matching application-owned
+numeric user/group; the authoritative workspace is never chmodded for validation.
+Provisioning and test evidence are distinct and linked;
 both must correlate and pass, and container removal must be proven, before the
 existing live-mutation loop can run. Same-wave peer candidates remain absent.
 
