@@ -6,10 +6,14 @@ import hashlib
 import json
 import sys
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from agentic_sdlc.project_delivery import (
+    ProjectDeliveryMode,
+    ProjectDeliveryPolicy,
+)
 from agentic_sdlc.task_execution_contracts import TaskExecutionRequest
 from agentic_sdlc.task_graph import (
     TaskGraph,
@@ -44,6 +48,7 @@ DEFAULT_PYTEST_TIMEOUT_SECONDS = 120.0
 DEFAULT_PROVISIONING_TIMEOUT_SECONDS = 120.0
 DEFAULT_VALIDATION_OUTPUT_LIMIT_BYTES = 16 * 1024
 DEFAULT_VALIDATION_TERMINATION_GRACE_SECONDS = 2.0
+FINAL_WORKSPACE_VALIDATION_TASK_ID = "TASK-000"
 
 
 class ValidationExecutionEnvironmentKind(StrEnum):
@@ -493,6 +498,112 @@ def build_validation_execution_request(
         source_snapshot_id=source_snapshot_id,
         staged_workspace_id=staged_workspace_id,
         staged_snapshot_id=staged_snapshot_id,
+        dependency_manifest=dependency_manifest,
+    )
+
+
+def final_workspace_validation_requirements(
+    delivery_policy: ProjectDeliveryPolicy,
+    authoritative_snapshot: WorkspaceSnapshot,
+) -> tuple[TaskValidationRequirement, ...]:
+    """Derive application-required Python validation from final project content."""
+
+    if delivery_policy.mode is not ProjectDeliveryMode.RUNNABLE_PROJECT:
+        return ()
+    paths = tuple(PurePosixPath(item.path) for item in authoritative_snapshot.files)
+    profiles: list[ValidationExecutionProfile] = []
+    if any(path.suffix == ".py" for path in paths):
+        profiles.append(ValidationExecutionProfile.PYTHON_COMPILE)
+    if any(
+        len(path.parts) > 1
+        and path.parts[0] == "tests"
+        and path.suffix == ".py"
+        for path in paths
+    ):
+        profiles.append(ValidationExecutionProfile.PYTHON_PYTEST)
+    return tuple(
+        TaskValidationRequirement(
+            requirement_id=(
+                f"{FINAL_WORKSPACE_VALIDATION_TASK_ID}-VALIDATION-{index:03d}"
+            ),
+            profile=profile,
+        )
+        for index, profile in enumerate(profiles, start=1)
+    )
+
+
+def final_workspace_validation_staged_workspace_id(
+    *,
+    run_id: str,
+    graph: TaskGraph,
+    authoritative_snapshot: WorkspaceSnapshot,
+) -> str:
+    """Return the stable disposable-workspace identity for one final snapshot."""
+
+    payload = {
+        "run_id": run_id,
+        "graph_id": graph.graph_id,
+        "graph_version": graph.version,
+        "source_workspace_id": authoritative_snapshot.workspace_id,
+        "source_snapshot_id": authoritative_snapshot.snapshot_id,
+    }
+    return "FINAL-VALIDATION-WORKSPACE-" + _content_hash(payload)[:20].upper()
+
+
+def build_final_workspace_validation_request(
+    *,
+    run_id: str,
+    graph: TaskGraph,
+    delivery_policy: ProjectDeliveryPolicy,
+    authoritative_snapshot: WorkspaceSnapshot,
+    staged_snapshot: WorkspaceSnapshot,
+    requirement: TaskValidationRequirement,
+    dependency_manifest: PythonDependencyManifest | None = None,
+) -> ValidationExecutionRequest:
+    """Bind deterministic application validation to the exact final snapshot."""
+
+    requirements = final_workspace_validation_requirements(
+        delivery_policy, authoritative_snapshot
+    )
+    if requirement not in requirements:
+        raise ValidationExecutionContractError(
+            "Final validation requirement is not authorized by delivery policy."
+        )
+    staged_workspace_id = final_workspace_validation_staged_workspace_id(
+        run_id=run_id,
+        graph=graph,
+        authoritative_snapshot=authoritative_snapshot,
+    )
+    expected_staged_snapshot = build_workspace_snapshot(
+        staged_workspace_id, authoritative_snapshot.files
+    )
+    if staged_snapshot != expected_staged_snapshot:
+        raise ValidationExecutionContractError(
+            "Final validation staging does not match the authoritative snapshot."
+        )
+    binding = {
+        "run_id": run_id,
+        "graph_id": graph.graph_id,
+        "graph_version": graph.version,
+        "source_workspace_id": authoritative_snapshot.workspace_id,
+        "source_snapshot_id": authoritative_snapshot.snapshot_id,
+        "staged_workspace_id": staged_workspace_id,
+        "staged_snapshot_id": staged_snapshot.snapshot_id,
+    }
+    digest = _content_hash(binding)[:20].upper()
+    return ValidationExecutionRequest(
+        run_id=run_id,
+        graph_id=graph.graph_id,
+        graph_version=graph.version,
+        task_id=FINAL_WORKSPACE_VALIDATION_TASK_ID,
+        request_id=f"FINAL-VALIDATION-REQUEST-{digest}",
+        attempt_id=f"FINAL-VALIDATION-ATTEMPT-{digest}",
+        attempt_number=1,
+        requirement=requirement,
+        source_workspace_id=authoritative_snapshot.workspace_id,
+        source_snapshot_id=authoritative_snapshot.snapshot_id,
+        staged_workspace_id=staged_workspace_id,
+        staged_snapshot_id=staged_snapshot.snapshot_id,
         dependency_manifest=dependency_manifest,
     )
 
@@ -1045,6 +1156,119 @@ def required_validation_execution_status(
         dependency_provisioning_verified_count=(
             dependency_provisioning_verified_count
         ),
+    )
+
+
+def final_workspace_validation_execution_status(
+    delivery_policy: ProjectDeliveryPolicy,
+    *,
+    run_id: str | None,
+    graph: TaskGraph | None,
+    authoritative_snapshot: WorkspaceSnapshot | None,
+    evidence: tuple[TaskValidationExecutionEvidence, ...] = (),
+    provisioning_evidence: tuple[TaskValidationProvisioningEvidence, ...] = (),
+) -> RequiredValidationExecutionStatus:
+    """Verify application-required evidence for the exact publishable snapshot."""
+
+    if authoritative_snapshot is None:
+        requirements: tuple[TaskValidationRequirement, ...] = ()
+    else:
+        requirements = final_workspace_validation_requirements(
+            delivery_policy, authoritative_snapshot
+        )
+    if not requirements:
+        return RequiredValidationExecutionStatus(
+            required=False,
+            required_count=0,
+            verified_count=0,
+            verified=False,
+        )
+    if (
+        run_id is None
+        or graph is None
+        or authoritative_snapshot is None
+        or not workspace_snapshot_identity_is_valid(authoritative_snapshot)
+    ):
+        return RequiredValidationExecutionStatus(
+            required=True,
+            required_count=len(requirements),
+            verified_count=0,
+            verified=False,
+        )
+
+    staged_workspace_id = final_workspace_validation_staged_workspace_id(
+        run_id=run_id,
+        graph=graph,
+        authoritative_snapshot=authoritative_snapshot,
+    )
+    staged_snapshot = build_workspace_snapshot(
+        staged_workspace_id, authoritative_snapshot.files
+    )
+    verified_count = 0
+    compile_count = 0
+    pytest_count = 0
+    provisioning_count = 0
+    for requirement in requirements:
+        matching_evidence = tuple(
+            item
+            for item in evidence
+            if item.task_id == FINAL_WORKSPACE_VALIDATION_TASK_ID
+            and item.validation_requirement_id == requirement.requirement_id
+            and item.profile is requirement.profile
+        )
+        if len(matching_evidence) != 1:
+            continue
+        item = matching_evidence[0]
+        matching_provisioning = tuple(
+            candidate
+            for candidate in provisioning_evidence
+            if candidate.evidence_id in item.provisioning_evidence_ids
+        )
+        dependency_manifest: PythonDependencyManifest | None = None
+        if requirement.profile is ValidationExecutionProfile.PYTHON_PYTEST:
+            if len(matching_provisioning) != 1:
+                continue
+            provision = matching_provisioning[0]
+            dependency_manifest = PythonDependencyManifest(
+                manifest_id=provision.dependency_manifest_id,
+                staged_workspace_id=provision.staged_workspace_id,
+                staged_snapshot_id=provision.staged_snapshot_id,
+                source_path="pyproject.toml",
+                source_present=provision.dependency_manifest_source_present,
+                source_sha256=provision.dependency_manifest_source_sha256,
+                normalized_dependencies=provision.normalized_dependencies,
+            )
+        try:
+            request = build_final_workspace_validation_request(
+                run_id=run_id,
+                graph=graph,
+                delivery_policy=delivery_policy,
+                authoritative_snapshot=authoritative_snapshot,
+                staged_snapshot=staged_snapshot,
+                requirement=requirement,
+                dependency_manifest=dependency_manifest,
+            )
+            policy = resolve_governed_validation_policy(requirement.profile)
+        except ValidationExecutionContractError:
+            continue
+        if validation_execution_evidence_errors(
+            request, policy, item, matching_provisioning
+        ) or not item.passed:
+            continue
+        verified_count += 1
+        if requirement.profile is ValidationExecutionProfile.PYTHON_COMPILE:
+            compile_count += 1
+        else:
+            pytest_count += 1
+            provisioning_count += 1
+    return RequiredValidationExecutionStatus(
+        required=True,
+        required_count=len(requirements),
+        verified_count=verified_count,
+        verified=verified_count == len(requirements),
+        python_compile_verified_count=compile_count,
+        python_pytest_verified_count=pytest_count,
+        dependency_provisioning_verified_count=provisioning_count,
     )
 
 

@@ -28,6 +28,7 @@ from tests.test_workflow import (
     _proposal,
     _proposal_without_ambiguity,
 )
+from tests.final_validation_fakes import ScriptedFinalValidationExecutor
 
 
 def _service(
@@ -52,6 +53,7 @@ def _service(
             analyst,
             planner,
             executor,
+            validation_executor=ScriptedFinalValidationExecutor(),
             workspace_runtime=workspace_runtime,
             task_execution_progress_reporter=task_execution_progress_reporter,
         )

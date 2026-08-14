@@ -87,6 +87,7 @@ from agentic_sdlc.workspace_integration_contracts import (
 )
 from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
 from tests.demo_url_shortener_project import deterministic_demo_result
+from tests.final_validation_fakes import ScriptedFinalValidationExecutor
 
 
 class RecordingTaskExecutor:
@@ -263,11 +264,17 @@ def _start_demo(
     analyst: FakeRequirementAnalysisClient | None = None,
     planner: FakeTaskPlanningClient | None = None,
     executor: RecordingTaskExecutor | None = None,
+    final_validation_executor: ScriptedFinalValidationExecutor | None = None,
 ) -> tuple[Any, str, WorkflowState, FakeRequirementAnalysisClient, FakeTaskPlanningClient]:
     active_analyst = analyst or FakeRequirementAnalysisClient([_analysis()])
     active_planner = planner or FakeTaskPlanningClient([_proposal()])
     workflow = build_workflow(
-        active_analyst, active_planner, executor or RecordingTaskExecutor()
+        active_analyst,
+        active_planner,
+        executor or RecordingTaskExecutor(),
+        validation_executor=(
+            final_validation_executor or ScriptedFinalValidationExecutor()
+        ),
     )
     thread_id = uuid4().hex
     state = run_workflow(
@@ -1019,10 +1026,14 @@ def test_task_graph_approval_runs_the_authoritative_task_graph_to_completion() -
         "tests/test_service.py",
         "README.md",
     }
-    assert readiness.runtime_execution_verified is False
-    assert readiness.runtime_validation_required is False
-    assert readiness.runtime_validation_required_count == 0
-    assert readiness.runtime_validation_verified_count == 0
+    assert readiness.runtime_execution_verified is True
+    assert readiness.runtime_validation_required is True
+    assert readiness.runtime_validation_required_count == 2
+    assert readiness.runtime_validation_verified_count == 2
+    assert readiness.final_workspace_validation_required is True
+    assert readiness.final_workspace_validation_required_count == 2
+    assert readiness.final_workspace_validation_verified_count == 2
+    assert readiness.final_workspace_validation_verified is True
     assert result["task_graph_review_history"] == [
         {
             "sequence": 1,
@@ -1429,6 +1440,7 @@ def test_cli_preserves_multiline_requirement_feedback_and_reaches_graph_review(
             analyst,
             planner,
             RecordingTaskExecutor(),
+            validation_executor=ScriptedFinalValidationExecutor(),
             workspace_runtime=workspace_runtime,
             task_execution_progress_reporter=task_execution_progress_reporter,
         )
@@ -1501,6 +1513,7 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
             analyst,
             planner,
             RecordingTaskExecutor(),
+            validation_executor=ScriptedFinalValidationExecutor(),
             workspace_runtime=workspace_runtime,
             task_execution_progress_reporter=task_execution_progress_reporter,
         )
@@ -1723,6 +1736,7 @@ def test_cli_run_custom_requirement_completes_governed_pipeline(
             analyst,
             planner,
             executor,
+            validation_executor=ScriptedFinalValidationExecutor(),
             workspace_runtime=workspace_runtime,
             task_execution_progress_reporter=task_execution_progress_reporter,
         )
@@ -1835,6 +1849,7 @@ def test_diagram_failure_does_not_fail_demo(
             analyst,
             planner,
             RecordingTaskExecutor(),
+            validation_executor=ScriptedFinalValidationExecutor(),
             workspace_runtime=workspace_runtime,
             task_execution_progress_reporter=task_execution_progress_reporter,
         )
@@ -1899,6 +1914,7 @@ def test_cli_explicit_project_name_uses_the_injected_live_runtime(
             analyst,
             planner,
             RecordingTaskExecutor(),
+            validation_executor=ScriptedFinalValidationExecutor(),
             workspace_runtime=workspace_runtime,
             task_execution_progress_reporter=task_execution_progress_reporter,
         )
@@ -1955,6 +1971,7 @@ def test_failed_runnable_readiness_prevents_durable_export(
             analyst,
             planner,
             RecordingTaskExecutor(),
+            validation_executor=ScriptedFinalValidationExecutor(),
             workspace_runtime=workspace_runtime,
             task_execution_progress_reporter=task_execution_progress_reporter,
         )
@@ -2016,6 +2033,7 @@ def test_cli_rejected_run_does_not_create_a_durable_project(
             analyst,
             planner,
             RecordingTaskExecutor(),
+            validation_executor=ScriptedFinalValidationExecutor(),
             workspace_runtime=workspace_runtime,
             task_execution_progress_reporter=task_execution_progress_reporter,
         )
@@ -2065,6 +2083,7 @@ def test_cli_failed_analysis_safe_stop_does_not_create_a_durable_project(
             analyst,
             planner,
             RecordingTaskExecutor(),
+            validation_executor=ScriptedFinalValidationExecutor(),
             workspace_runtime=workspace_runtime,
             task_execution_progress_reporter=task_execution_progress_reporter,
         )
@@ -2105,6 +2124,7 @@ def test_cli_explicit_destination_collision_fails_without_overwrite(
             analyst,
             planner,
             RecordingTaskExecutor(),
+            validation_executor=ScriptedFinalValidationExecutor(),
             workspace_runtime=workspace_runtime,
             task_execution_progress_reporter=task_execution_progress_reporter,
         )

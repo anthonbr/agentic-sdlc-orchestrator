@@ -443,6 +443,15 @@ human review, and approval authority; validation is never inferred from words in
 a title, description, acceptance criterion, expected output, or task type. The
 closed profiles are `PYTHON_COMPILE` and `PYTHON_PYTEST`.
 
+Task-level requirements reject a candidate before it mutates live authority, but
+they are not the publication-completeness policy. For `RUNNABLE_PROJECT`, the
+application independently derives final-workspace requirements from the exact
+authoritative snapshot: Python files require `PYTHON_COMPILE`, and Python files
+under `tests/` additionally require `PYTHON_PYTEST`. The planner cannot waive
+these final checks by returning an empty `required_validations` list. Exact PASS
+evidence for the final snapshot is required before readiness, exit success, and
+publication; evidence for an earlier snapshot becomes stale after any mutation.
+
 The Task Agent still returns only semantic results, artifacts, and proposed
 materialization. It cannot choose an executable, command string, argv, shell,
 working directory, environment, package manager, dependency, or script. After
@@ -504,6 +513,11 @@ and default Docker isolation plus small memory/PID limits. Task Agents still nev
 choose Docker, pip, pytest, image, package-index, environment, or shell commands.
 Benchmark profiles and production-grade image/dependency provenance remain future
 work.
+
+Docker must be installed and running for application-required `PYTHON_PYTEST`
+validation (Docker Desktop on macOS/Windows or Docker Engine on Linux). The
+workflow fails closed if Docker is unavailable and never falls back to host
+pytest execution.
 
 ### Target-workspace desired-state contracts
 
@@ -1027,8 +1041,12 @@ classified non-retryable, records a clear failure, and safely stops.
 For `RUNNABLE_PROJECT`, the exit gate additionally requires final project-readiness
 evidence linking the approved roles to successful final attempts, canonical typed
 artifacts, passed materialization/change-set evidence, applied workspace mutations,
-and matching paths/content hashes in the authoritative final snapshot. Only after
-that gate passes does the CLI publish a composite package into
+and matching paths/content hashes in the authoritative final snapshot. It then
+executes the application-required Python profiles against a disposable clone of
+that exact final snapshot. Successful publication therefore requires final compile
+evidence and, when Python tests exist, linked provisioning plus Docker pytest PASS
+evidence even when the approved TaskGraph requested no task-level validation. Only
+after that gate passes does the CLI publish a composite package into
 `projects/<project-name>/`. The isolated temporary workspace remains the sole task
 execution environment. The exporter revalidates that live capability and the
 same-run successful SDLC bundle, then builds the application files and reserved

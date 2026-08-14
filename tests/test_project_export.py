@@ -10,7 +10,10 @@ from pathlib import Path
 from pytest import MonkeyPatch, mark, raises
 
 import agentic_sdlc.project_export as export_module
-from agentic_sdlc.project_delivery import ProjectDeliveryMode
+from agentic_sdlc.project_delivery import (
+    ProjectDeliveryMode,
+    RUNNABLE_PROJECT_DELIVERY_POLICY,
+)
 from agentic_sdlc.project_export import (
     ProjectExportContractError,
     ProjectExportIssueCode,
@@ -21,6 +24,7 @@ from agentic_sdlc.project_export import (
     normalize_project_name,
     project_export_request_from_state,
 )
+from agentic_sdlc.project_readiness import ProjectReadinessValidation
 from agentic_sdlc.run_artifacts import (
     LiveRunArtifactBundle,
     SDLCArtifactFileRecord,
@@ -988,6 +992,15 @@ def test_state_request_selects_exact_authoritative_snapshot(tmp_path: Path) -> N
         "project_delivery_policy": {"mode": "RUNNABLE_PROJECT"},
         "workflow_status": "success",
         "exit_gate_passed": True,
+        "project_readiness_validation": ProjectReadinessValidation(
+            readiness_validation_id="READINESS-EXPORT-BINDING",
+            policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+            passed=True,
+            required_roles=RUNNABLE_PROJECT_DELIVERY_POLICY.required_roles,
+            role_evidence=(),
+            issues=(),
+            final_workspace_snapshot_id=request.authoritative_snapshot.snapshot_id,
+        ),
     }
 
     rebuilt = project_export_request_from_state(
@@ -1003,6 +1016,42 @@ def test_state_request_selects_exact_authoritative_snapshot(tmp_path: Path) -> N
     assert rebuilt.artifact_bundle is request.artifact_bundle
     assert rebuilt.workflow_project_name == "State Project"
     assert rebuilt.project_delivery_policy is ProjectDeliveryMode.RUNNABLE_PROJECT
+
+
+def test_state_request_rejects_stale_final_validation_readiness(
+    tmp_path: Path,
+) -> None:
+    request = _verified_request(tmp_path)
+    state: WorkflowState = {
+        "run_id": request.run_id,
+        "project_name": "State Project",
+        "governed_workspace_session": request.session,
+        "workspace_snapshots": [request.authoritative_snapshot],
+        "project_delivery_policy": {"mode": "RUNNABLE_PROJECT"},
+        "workflow_status": "success",
+        "exit_gate_passed": True,
+        "project_readiness_validation": ProjectReadinessValidation(
+            readiness_validation_id="READINESS-STALE-FINAL-VALIDATION",
+            policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+            passed=True,
+            required_roles=RUNNABLE_PROJECT_DELIVERY_POLICY.required_roles,
+            role_evidence=(),
+            issues=(),
+            final_workspace_validation_required=True,
+            final_workspace_validation_required_count=2,
+            final_workspace_validation_verified_count=2,
+            final_workspace_validation_verified=True,
+            final_workspace_snapshot_id="WORKSPACE-SNAPSHOT-STALE",
+        ),
+    }
+
+    with raises(ProjectExportContractError, match="different workspace snapshot"):
+        project_export_request_from_state(
+            state,
+            workspace=request.workspace,
+            artifact_bundle=request.artifact_bundle,
+            export_root=tmp_path / "durable",
+        )
 
 
 def test_state_request_rejects_missing_project_delivery_policy(

@@ -28,6 +28,7 @@ from agentic_sdlc.validation_execution_contracts import (
     RequiredValidationExecutionStatus,
     TaskValidationExecutionEvidence,
     TaskValidationProvisioningEvidence,
+    final_workspace_validation_execution_status,
     required_validation_execution_status,
 )
 from agentic_sdlc.workspace_contracts import (
@@ -104,6 +105,11 @@ class ProjectReadinessValidation(BaseModel):
     python_compile_verified_count: int = Field(default=0, ge=0)
     python_pytest_verified_count: int = Field(default=0, ge=0)
     dependency_provisioning_verified_count: int = Field(default=0, ge=0)
+    final_workspace_validation_required: bool = False
+    final_workspace_validation_required_count: int = Field(default=0, ge=0)
+    final_workspace_validation_verified_count: int = Field(default=0, ge=0)
+    final_workspace_validation_verified: bool = False
+    final_workspace_snapshot_id: str | None = None
 
 
 def validate_project_readiness(
@@ -132,17 +138,23 @@ def validate_project_readiness(
     validation_provisioning_evidence: tuple[
         TaskValidationProvisioningEvidence, ...
     ] = (),
+    final_validation_execution_evidence: tuple[
+        TaskValidationExecutionEvidence, ...
+    ] = (),
+    final_validation_provisioning_evidence: tuple[
+        TaskValidationProvisioningEvidence, ...
+    ] = (),
     task_attempt_exit_decisions: tuple[TaskAttemptExitDecision, ...] = (),
 ) -> ProjectReadinessValidation:
     """Prove structural delivery readiness from retained authoritative evidence.
 
-    This validator never runs commands. It verifies retained execution evidence
-    only when the approved TaskGraph explicitly required governed validation.
+    This validator never runs commands. It verifies retained task-level evidence
+    and application-required evidence for the authoritative final snapshot.
     """
 
     issues: list[ProjectReadinessIssue] = []
     evidence: list[ProjectReadinessRoleEvidence] = []
-    runtime_status = required_validation_execution_status(
+    task_runtime_status = required_validation_execution_status(
         graph,
         execution,
         run_id=run_id,
@@ -153,7 +165,18 @@ def validate_project_readiness(
         change_sets=change_sets,
         exit_decisions=task_attempt_exit_decisions,
     )
-    if runtime_status.required and not runtime_status.verified:
+    final_runtime_status = final_workspace_validation_execution_status(
+        policy,
+        run_id=run_id,
+        graph=graph,
+        authoritative_snapshot=authoritative_snapshot,
+        evidence=final_validation_execution_evidence,
+        provisioning_evidence=final_validation_provisioning_evidence,
+    )
+    runtime_status = _combined_runtime_status(
+        task_runtime_status, final_runtime_status
+    )
+    if task_runtime_status.required and not task_runtime_status.verified:
         issues.append(
             ProjectReadinessIssue(
                 code=ProjectReadinessIssueCode.RUNTIME_VALIDATION,
@@ -161,6 +184,17 @@ def validate_project_readiness(
                 detail=(
                     "Approved required validation lacks exact successful "
                     "final-attempt execution evidence."
+                ),
+            )
+        )
+    if final_runtime_status.required and not final_runtime_status.verified:
+        issues.append(
+            ProjectReadinessIssue(
+                code=ProjectReadinessIssueCode.RUNTIME_VALIDATION,
+                role=None,
+                detail=(
+                    "Application-required validation lacks exact successful "
+                    "evidence for the authoritative final workspace snapshot."
                 ),
             )
         )
@@ -177,7 +211,14 @@ def validate_project_readiness(
         )
 
     if policy.mode is ProjectDeliveryMode.ENGINEERING_ARTIFACTS:
-        return _validation(policy, evidence, issues, runtime_status)
+        return _validation(
+            policy,
+            evidence,
+            issues,
+            runtime_status,
+            final_runtime_status=final_runtime_status,
+            final_snapshot=authoritative_snapshot,
+        )
 
     if graph is None:
         issues.append(
@@ -187,7 +228,14 @@ def validate_project_readiness(
                 detail="Runnable-project readiness requires an approved TaskGraph.",
             )
         )
-        return _validation(policy, evidence, issues, runtime_status)
+        return _validation(
+            policy,
+            evidence,
+            issues,
+            runtime_status,
+            final_runtime_status=final_runtime_status,
+            final_snapshot=authoritative_snapshot,
+        )
     if authoritative_snapshot is None:
         issues.append(
             ProjectReadinessIssue(
@@ -219,7 +267,14 @@ def validate_project_readiness(
             )
         )
     if execution is None or authoritative_snapshot is None:
-        return _validation(policy, evidence, issues, runtime_status)
+        return _validation(
+            policy,
+            evidence,
+            issues,
+            runtime_status,
+            final_runtime_status=final_runtime_status,
+            final_snapshot=authoritative_snapshot,
+        )
 
     for role in policy.required_roles:
         role_tasks = tuple(
@@ -270,7 +325,14 @@ def validate_project_readiness(
                     ),
                 )
             )
-    return _validation(policy, evidence, issues, runtime_status)
+    return _validation(
+        policy,
+        evidence,
+        issues,
+        runtime_status,
+        final_runtime_status=final_runtime_status,
+        final_snapshot=authoritative_snapshot,
+    )
 
 
 def _evidence_for_task_role(
@@ -449,6 +511,9 @@ def _validation(
     evidence: list[ProjectReadinessRoleEvidence],
     issues: list[ProjectReadinessIssue],
     runtime_status: RequiredValidationExecutionStatus,
+    *,
+    final_runtime_status: RequiredValidationExecutionStatus,
+    final_snapshot: WorkspaceSnapshot | None,
 ) -> ProjectReadinessValidation:
     ordered_evidence = tuple(
         sorted(
@@ -486,6 +551,17 @@ def _validation(
         "dependency_provisioning_verified_count": (
             runtime_status.dependency_provisioning_verified_count
         ),
+        "final_workspace_validation_required": final_runtime_status.required,
+        "final_workspace_validation_required_count": (
+            final_runtime_status.required_count
+        ),
+        "final_workspace_validation_verified_count": (
+            final_runtime_status.verified_count
+        ),
+        "final_workspace_validation_verified": final_runtime_status.verified,
+        "final_workspace_snapshot_id": (
+            final_snapshot.snapshot_id if final_snapshot is not None else None
+        ),
     }
     canonical = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -508,5 +584,45 @@ def _validation(
         python_pytest_verified_count=runtime_status.python_pytest_verified_count,
         dependency_provisioning_verified_count=(
             runtime_status.dependency_provisioning_verified_count
+        ),
+        final_workspace_validation_required=final_runtime_status.required,
+        final_workspace_validation_required_count=(
+            final_runtime_status.required_count
+        ),
+        final_workspace_validation_verified_count=(
+            final_runtime_status.verified_count
+        ),
+        final_workspace_validation_verified=final_runtime_status.verified,
+        final_workspace_snapshot_id=(
+            final_snapshot.snapshot_id if final_snapshot is not None else None
+        ),
+    )
+
+
+def _combined_runtime_status(
+    task_status: RequiredValidationExecutionStatus,
+    final_status: RequiredValidationExecutionStatus,
+) -> RequiredValidationExecutionStatus:
+    required = task_status.required or final_status.required
+    return RequiredValidationExecutionStatus(
+        required=required,
+        required_count=(task_status.required_count + final_status.required_count),
+        verified_count=(task_status.verified_count + final_status.verified_count),
+        verified=(
+            required
+            and (not task_status.required or task_status.verified)
+            and (not final_status.required or final_status.verified)
+        ),
+        python_compile_verified_count=(
+            task_status.python_compile_verified_count
+            + final_status.python_compile_verified_count
+        ),
+        python_pytest_verified_count=(
+            task_status.python_pytest_verified_count
+            + final_status.python_pytest_verified_count
+        ),
+        dependency_provisioning_verified_count=(
+            task_status.dependency_provisioning_verified_count
+            + final_status.dependency_provisioning_verified_count
         ),
     )

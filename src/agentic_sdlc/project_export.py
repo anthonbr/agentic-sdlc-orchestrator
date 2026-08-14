@@ -21,6 +21,7 @@ from agentic_sdlc.project_delivery import (
     ProjectDeliveryMode,
     project_delivery_policy_from_value,
 )
+from agentic_sdlc.project_readiness import ProjectReadinessValidation
 from agentic_sdlc.run_artifacts import (
     RUNS_DIRECTORY_NAME,
     SDLC_ARTIFACT_DIRECTORY_NAME,
@@ -244,6 +245,33 @@ def project_export_request_from_state(
         raise ProjectExportContractError(
             "Completed workflow must retain exactly one authoritative snapshot."
         )
+    if delivery_mode is ProjectDeliveryMode.RUNNABLE_PROJECT:
+        readiness_value = state.get("project_readiness_validation")
+        try:
+            readiness = (
+                readiness_value
+                if isinstance(readiness_value, ProjectReadinessValidation)
+                else ProjectReadinessValidation.model_validate(readiness_value)
+            )
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise ProjectExportContractError(
+                "Runnable-project publication requires valid readiness evidence."
+            ) from exc
+        if not readiness.passed:
+            raise ProjectExportContractError(
+                "Runnable-project publication requires passed readiness evidence."
+            )
+        if readiness.final_workspace_snapshot_id != authoritative[0].snapshot_id:
+            raise ProjectExportContractError(
+                "Final validation readiness belongs to a different workspace snapshot."
+            )
+        if (
+            readiness.final_workspace_validation_required
+            and not readiness.final_workspace_validation_verified
+        ):
+            raise ProjectExportContractError(
+                "Runnable-project publication requires verified final validation."
+            )
     return ProjectExportRequest(
         run_id=run_id,
         workspace=workspace,
