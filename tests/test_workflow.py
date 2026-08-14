@@ -72,9 +72,11 @@ from agentic_sdlc.task_execution_progress import (
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
+    ProposedTaskValidationRequirement,
     TaskGraph,
     TaskMaterializationPolicy,
     TaskType,
+    ValidationExecutionProfile,
 )
 from agentic_sdlc.workspace_contracts import (
     WorkspaceFileState,
@@ -538,7 +540,30 @@ def test_cli_task_graph_review_displays_delivery_policy_and_roles(
     monkeypatch: MonkeyPatch,
     capsys: CaptureFixture[str],
 ) -> None:
-    workflow, thread_id, _, _, _ = _start_demo()
+    proposal = _proposal()
+    proposal = proposal.model_copy(
+        update={
+            "tasks": [
+                task.model_copy(
+                    update={
+                        "required_validations": [
+                            ProposedTaskValidationRequirement(
+                                profile=(
+                                    ValidationExecutionProfile.PYTHON_COMPILE
+                                )
+                            )
+                        ]
+                    }
+                )
+                if task.key == "verify_service"
+                else task
+                for task in proposal.tasks
+            ]
+        }
+    )
+    workflow, thread_id, _, _, _ = _start_demo(
+        planner=FakeTaskPlanningClient([proposal])
+    )
     paused = _approve_requirements(workflow, thread_id)
     monkeypatch.setattr("builtins.input", lambda _prompt="": "r")
 
@@ -552,6 +577,7 @@ def test_cli_task_graph_review_displays_delivery_policy_and_roles(
     assert "Delivery roles: RUNNABLE_ENTRYPOINT" in output
     assert "Delivery roles: AUTOMATED_TESTS" in output
     assert "Delivery roles: RUN_INSTRUCTIONS" in output
+    assert "Required validations: PYTHON_COMPILE" in output
 
 
 def test_requirement_changes_preserve_feedback_and_lineage() -> None:
@@ -786,10 +812,12 @@ def test_openai_task_planner_uses_approved_spec_and_schema_without_network() -> 
 
 def test_task_planning_prompt_reserves_authoritative_metadata() -> None:
     prompt = " ".join(TASK_PLANNING_SYSTEM_PROMPT.casefold().split())
-    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.3"
+    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.4"
     assert "cover every fr, nfr, con, and ac item" in prompt
     assert "deterministic application validation is authoritative" in prompt
     assert "do not assign task-### ids" in prompt
+    assert "python_compile" in prompt
+    assert "never propose executable paths" in prompt
     assert "do not silently choose an implementation outcome" in prompt
     assert "do not derive this policy mechanically from task type" in prompt
     assert "no_change may eventually satisfy required" in prompt
@@ -992,6 +1020,9 @@ def test_task_graph_approval_runs_the_authoritative_task_graph_to_completion() -
         "README.md",
     }
     assert readiness.runtime_execution_verified is False
+    assert readiness.runtime_validation_required is False
+    assert readiness.runtime_validation_required_count == 0
+    assert readiness.runtime_validation_verified_count == 0
     assert result["task_graph_review_history"] == [
         {
             "sequence": 1,

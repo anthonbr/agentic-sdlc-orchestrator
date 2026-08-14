@@ -42,6 +42,32 @@ class TaskMaterializationPolicy(StrEnum):
     REQUIRED = "REQUIRED"
 
 
+class ValidationExecutionProfile(StrEnum):
+    """Closed application-owned validation profiles available to TaskGraphs."""
+
+    PYTHON_COMPILE = "PYTHON_COMPILE"
+
+
+class ProposedTaskValidationRequirement(BaseModel):
+    """Planner-proposed profile selection without command authority."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    profile: ValidationExecutionProfile
+
+
+class TaskValidationRequirement(BaseModel):
+    """Canonical required validation reviewed as part of an approved task."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    requirement_id: str = Field(
+        min_length=1,
+        pattern=r"^TASK-[0-9]{3}-VALIDATION-[0-9]{3}$",
+    )
+    profile: ValidationExecutionProfile
+
+
 class ProposedTask(BaseModel):
     """Semantic task proposed by the LLM using temporary keys."""
 
@@ -59,6 +85,9 @@ class ProposedTask(BaseModel):
     ambiguity_refs: list[str]
     expected_outputs: list[str]
     deliverable_roles: list[ProjectDeliverableRole] = Field(default_factory=list)
+    required_validations: list[ProposedTaskValidationRequirement] = Field(
+        default_factory=list
+    )
 
     @field_validator(
         "depends_on",
@@ -74,6 +103,17 @@ class ProposedTask(BaseModel):
         if any(not value for value in stripped):
             raise ValueError("collection items must be non-empty text")
         return stripped
+
+    @field_validator("required_validations")
+    @classmethod
+    def reject_duplicate_validation_profiles(
+        cls,
+        values: list[ProposedTaskValidationRequirement],
+    ) -> list[ProposedTaskValidationRequirement]:
+        profiles = [value.profile for value in values]
+        if len(profiles) != len(set(profiles)):
+            raise ValueError("required validation profiles must be unique")
+        return values
 
 
 class ProposedTaskGraph(BaseModel):
@@ -103,6 +143,7 @@ class Task(BaseModel):
     ambiguity_refs: tuple[str, ...]
     expected_outputs: tuple[str, ...]
     deliverable_roles: tuple[ProjectDeliverableRole, ...] = ()
+    required_validations: tuple[TaskValidationRequirement, ...] = ()
 
 
 class TaskGraph(BaseModel):
@@ -168,7 +209,7 @@ def normalize_and_validate_task_graph(
 
     tasks = tuple(
         Task(
-            task_id=key_to_id[proposed.key],
+            task_id=(task_id := key_to_id[proposed.key]),
             lineage_id=str(
                 uuid5(
                     LINEAGE_NAMESPACE,
@@ -188,6 +229,21 @@ def normalize_and_validate_task_graph(
             expected_outputs=tuple(proposed.expected_outputs),
             deliverable_roles=tuple(
                 sorted(set(proposed.deliverable_roles), key=lambda role: role.value)
+            ),
+            required_validations=tuple(
+                TaskValidationRequirement(
+                    requirement_id=(
+                        f"{task_id}-VALIDATION-{index:03d}"
+                    ),
+                    profile=requirement.profile,
+                )
+                for index, requirement in enumerate(
+                    sorted(
+                        proposed.required_validations,
+                        key=lambda item: item.profile.value,
+                    ),
+                    start=1,
+                )
             ),
         )
         for proposed in proposal.tasks
@@ -228,6 +284,22 @@ def derive_task_graph_semantics(tasks: tuple[Task, ...]) -> TaskGraphSemantics:
     indegree: dict[str, int] = {}
     synchronization_points: list[str] = []
     for task in tasks:
+        expected_requirement_ids = tuple(
+            f"{task.task_id}-VALIDATION-{index:03d}"
+            for index in range(1, len(task.required_validations) + 1)
+        )
+        observed_requirement_ids = tuple(
+            item.requirement_id for item in task.required_validations
+        )
+        if observed_requirement_ids != expected_requirement_ids:
+            raise TaskGraphValidationError(
+                f"{task.task_id} contains non-canonical required validation IDs."
+            )
+        profiles = tuple(item.profile for item in task.required_validations)
+        if len(profiles) != len(set(profiles)):
+            raise TaskGraphValidationError(
+                f"{task.task_id} contains duplicate required validation profiles."
+            )
         if len(task.depends_on) != len(set(task.depends_on)):
             raise TaskGraphValidationError(
                 f"{task.task_id} contains duplicate dependencies."

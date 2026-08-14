@@ -59,11 +59,13 @@ from agentic_sdlc.task_execution_progress import (
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
+    ProposedTaskValidationRequirement,
     TaskGraph,
     TaskMaterializationPolicy,
     TaskType,
     normalize_and_validate_task_graph,
 )
+from agentic_sdlc.validation_execution import GovernedValidationExecutor
 from agentic_sdlc.nodes import (
     _has_complete_final_execution_evidence,
     execute_task_graph_step,
@@ -524,6 +526,7 @@ def _task(
     materialization_policy: TaskMaterializationPolicy = (
         TaskMaterializationPolicy.FORBIDDEN
     ),
+    required_validations: list[ProposedTaskValidationRequirement] | None = None,
 ) -> ProposedTask:
     return ProposedTask(
         key=key,
@@ -537,6 +540,7 @@ def _task(
         risk_refs=["RISK-001"],
         ambiguity_refs=["AMB-001"],
         expected_outputs=[f"{key}-output"],
+        required_validations=required_validations or [],
     )
 
 
@@ -643,11 +647,13 @@ def _run_approved(
     thread_id: str | None = None,
     progress_reporter: TaskExecutionProgressReporter | None = None,
     progress_waiter: TaskExecutionWaiter | None = None,
+    validation_executor: GovernedValidationExecutor | None = None,
 ) -> WorkflowState:
     workflow = build_workflow(
         FakeRequirementAnalysisClient([_analysis()]),
         FakeTaskPlanningClient([proposal]),
         executor,
+        validation_executor=validation_executor,
         workspace_runtime=workspace_runtime,
         task_execution_progress_reporter=progress_reporter,
         task_execution_progress_waiter=progress_waiter,

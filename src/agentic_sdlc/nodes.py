@@ -121,7 +121,24 @@ from agentic_sdlc.task_execution_progress import (
     TaskExecutionWaveMode,
     TaskExecutionWaveStarted,
     TaskExecutorCompleted,
+    TaskValidationExecutionCompleted,
+    TaskValidationExecutionStarted,
     emit_task_execution_progress,
+)
+from agentic_sdlc.validation_execution import (
+    GovernedValidationExecutor,
+    PythonCompileValidationExecutor,
+    ValidationExecutionInfrastructureCode,
+    ValidationExecutionInfrastructureError,
+    disposable_staged_validation_workspace,
+)
+from agentic_sdlc.validation_execution_contracts import (
+    TaskValidationExecutionEvidence,
+    ValidationExecutionContractError,
+    build_validation_execution_request,
+    resolve_governed_validation_policy,
+    validation_execution_evidence_errors,
+    validation_retry_feedback,
 )
 from agentic_sdlc.workspace_contracts import (
     ArtifactMaterializationIntent,
@@ -727,6 +744,9 @@ class _WaveAttemptRecord:
     change_set: WorkspaceChangeSet | None = None
     change_set_validation: WorkspaceChangeSetValidationResult | None = None
     mutation_result: WorkspaceMutationResult | None = None
+    validation_execution_evidence: tuple[
+        TaskValidationExecutionEvidence, ...
+    ] = ()
     conflict_evidence_id: str | None = None
     failure: TaskExecutionFailure | None = None
     recovery_decision: TaskExecutionRecoveryDecision | None = None
@@ -741,6 +761,7 @@ def execute_task_graph_step(
     executor: TaskExecutor,
     workspace_runtime: GovernedWorkspaceRuntime,
     repository_context_path_provider: RepositoryContextPathProvider,
+    validation_executor: GovernedValidationExecutor | None = None,
     progress_reporter: TaskExecutionProgressReporter | None = None,
     progress_waiter: TaskExecutionWaiter | None = None,
     heartbeat_interval_seconds: float = DEFAULT_TASK_EXECUTION_HEARTBEAT_SECONDS,
@@ -755,6 +776,7 @@ def execute_task_graph_step(
     active_progress_waiter = (
         progress_waiter or ConcurrentFutureTaskExecutionWaiter()
     )
+    active_validation_executor = validation_executor
 
     spec = _spec_from_state(state)
     graph = _task_graph_from_data(state["approved_task_graph"])
@@ -1149,6 +1171,153 @@ def execute_task_graph_step(
             if record.recovery_decision.action is TaskExecutionRecoveryAction.RETRY:
                 conflict_retry_ids.append(record.task_id)
 
+    # Required validation runs against an independently staged candidate postimage
+    # before any member of this wave mutates the live authoritative workspace.
+    # Same-wave peers therefore cannot influence one another's validation input.
+    for record in records if hard_stop_reason is None else ():
+        if not record.eligible or record.request is None:
+            continue
+        requirements = record.request.task.required_validations
+        if not requirements:
+            continue
+        if active_validation_executor is None:
+            active_validation_executor = PythonCompileValidationExecutor()
+        if (
+            record.validation is None
+            or record.materialization_validation is None
+        ):
+            raise TaskExecutionError(
+                "Eligible required validation lacks deterministic task evidence."
+            )
+        retained_evidence: list[TaskValidationExecutionEvidence] = []
+        for requirement in requirements:
+            staged_workspace_id = (
+                "VALIDATION-WORKSPACE-"
+                f"{record.request.attempt_id}-{requirement.requirement_id}"
+            )
+            try:
+                with disposable_staged_validation_workspace(
+                    source_workspace=workspace,
+                    source_snapshot=authoritative_snapshot,
+                    task_validation=record.validation,
+                    artifacts=record.artifacts,
+                    materialization_validation=record.materialization_validation,
+                    authoritative_change_set=record.change_set,
+                    staged_workspace_id=staged_workspace_id,
+                ) as staged:
+                    validation_request = build_validation_execution_request(
+                        run_id=state["run_id"],
+                        graph_id=graph.graph_id,
+                        graph_version=graph.version,
+                        task_request=record.request,
+                        requirement=requirement,
+                        source_workspace_id=workspace.workspace_id,
+                        source_snapshot_id=authoritative_snapshot.snapshot_id,
+                        staged_workspace_id=staged.workspace.workspace_id,
+                        staged_snapshot_id=staged.snapshot.snapshot_id,
+                    )
+                    policy = resolve_governed_validation_policy(
+                        requirement.profile
+                    )
+                    emit_task_execution_progress(
+                        active_progress_reporter,
+                        TaskValidationExecutionStarted(
+                            wave_number=wave_number,
+                            attempt=progress_attempts[record.task_id],
+                            validation_requirement_id=(
+                                requirement.requirement_id
+                            ),
+                            profile=requirement.profile,
+                        ),
+                    )
+                    evidence = active_validation_executor.execute(
+                        validation_request,
+                        policy,
+                        staged.workspace,
+                    )
+                    if not isinstance(
+                        evidence, TaskValidationExecutionEvidence
+                    ):
+                        raise ValidationExecutionContractError(
+                            "Validation executor returned no immutable evidence."
+                        )
+                evidence_errors = validation_execution_evidence_errors(
+                    validation_request,
+                    policy,
+                    evidence,
+                )
+                if evidence_errors:
+                    raise ValidationExecutionContractError(
+                        "Validation execution evidence mismatch: "
+                        + ", ".join(evidence_errors)
+                        + "."
+                    )
+            except (
+                ValidationExecutionInfrastructureError,
+                ValidationExecutionContractError,
+            ) as error:
+                record.failure, record.recovery_decision = (
+                    _classify_non_validation_failure(
+                        task_id=record.task_id,
+                        attempt_number=record.attempt_number,
+                        phase=TaskExecutionFailurePhase.VALIDATION_EXECUTION,
+                        failure_kind=(
+                            TaskExecutionRecoveryFailureKind.VALIDATION_EXECUTION
+                        ),
+                        retryable=False,
+                        error=error,
+                        request=record.request,
+                    )
+                )
+                record.eligible = False
+                break
+            except Exception:
+                error = ValidationExecutionInfrastructureError(
+                    ValidationExecutionInfrastructureCode.BACKEND_UNAVAILABLE,
+                    "Governed validation backend violated its execution contract.",
+                )
+                record.failure, record.recovery_decision = (
+                    _classify_non_validation_failure(
+                        task_id=record.task_id,
+                        attempt_number=record.attempt_number,
+                        phase=TaskExecutionFailurePhase.VALIDATION_EXECUTION,
+                        failure_kind=(
+                            TaskExecutionRecoveryFailureKind.VALIDATION_EXECUTION
+                        ),
+                        retryable=False,
+                        error=error,
+                        request=record.request,
+                    )
+                )
+                record.eligible = False
+                break
+            retained_evidence.append(evidence)
+            emit_task_execution_progress(
+                active_progress_reporter,
+                TaskValidationExecutionCompleted(
+                    wave_number=wave_number,
+                    attempt=progress_attempts[record.task_id],
+                    validation_requirement_id=requirement.requirement_id,
+                    profile=requirement.profile,
+                    outcome=evidence.outcome,
+                ),
+            )
+            if not evidence.passed:
+                record.recovery_decision = decide_task_execution_recovery(
+                    task_id=record.task_id,
+                    attempt_number=record.attempt_number,
+                    request_id=record.request.request_id,
+                    attempt_id=record.request.attempt_id,
+                    failure_kind=(
+                        TaskExecutionRecoveryFailureKind.VALIDATION_EXECUTION
+                    ),
+                    retryable=True,
+                    feedback=validation_retry_feedback(evidence),
+                )
+                record.eligible = False
+                break
+        record.validation_execution_evidence = tuple(retained_evidence)
+
     new_snapshots: list[WorkspaceSnapshot] = []
     for record in records if hard_stop_reason is None else ():
         if not record.eligible:
@@ -1275,6 +1444,11 @@ def execute_task_graph_step(
             record.recovery_decision
             for record in records
             if record.recovery_decision is not None
+        ],
+        "task_validation_execution_evidence": [
+            evidence
+            for record in records
+            for evidence in record.validation_execution_evidence
         ],
         "artifact_materialization_intents": [
             intent for record in records for intent in record.intents
@@ -1519,6 +1693,10 @@ def _record_evidence_ids(record: _WaveAttemptRecord) -> tuple[str, ...]:
             record.change_set.change_set_id if record.change_set else None,
             record.conflict_evidence_id,
             record.mutation_result.mutation_id if record.mutation_result else None,
+            *(
+                evidence.evidence_id
+                for evidence in record.validation_execution_evidence
+            ),
         )
         if value
     }
@@ -1905,6 +2083,10 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
         "complete workspace execution evidence": bool(
             _has_complete_final_workspace_evidence(state)
         ),
+        "complete required validation execution evidence": bool(
+            not readiness.runtime_validation_required
+            or readiness.runtime_execution_verified
+        ),
         "complete project readiness evidence": readiness.passed,
     }
     missing = [label for label, passed in validations.items() if not passed]
@@ -1950,6 +2132,7 @@ def _project_readiness_from_state(
             authoritative_snapshot = None
     return validate_project_readiness(
         policy,
+        run_id=state.get("run_id"),
         graph=graph,
         execution=execution,
         requests=tuple(state.get("task_execution_requests", [])),
@@ -1966,6 +2149,16 @@ def _project_readiness_from_state(
         ),
         mutations=tuple(state.get("workspace_mutation_results", [])),
         authoritative_snapshot=authoritative_snapshot,
+        workspace_bound_requests=tuple(
+            state.get("workspace_bound_task_execution_requests", [])
+        ),
+        workspace_snapshots=tuple(state.get("workspace_snapshots", [])),
+        validation_execution_evidence=tuple(
+            state.get("task_validation_execution_evidence", [])
+        ),
+        task_attempt_exit_decisions=tuple(
+            state.get("task_attempt_exit_decisions", [])
+        ),
     )
 
 

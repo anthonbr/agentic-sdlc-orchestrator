@@ -12,7 +12,11 @@ from agentic_sdlc.task_execution_progress import (
     TaskExecutionWaveMode,
     TaskExecutionWaveStarted,
     TaskExecutorCompleted,
+    TaskValidationExecutionCompleted,
+    TaskValidationExecutionStarted,
 )
+from agentic_sdlc.task_graph import ValidationExecutionProfile
+from agentic_sdlc.validation_execution_contracts import ValidationExecutionOutcome
 
 
 def _attempt(
@@ -48,6 +52,23 @@ def test_console_reporter_renders_singleton_execution_lifecycle() -> None:
     )
     reporter.report(TaskExecutorCompleted(wave_number=3, attempt=attempt))
     reporter.report(
+        TaskValidationExecutionStarted(
+            wave_number=3,
+            attempt=attempt,
+            validation_requirement_id="TASK-002-VALIDATION-001",
+            profile=ValidationExecutionProfile.PYTHON_COMPILE,
+        )
+    )
+    reporter.report(
+        TaskValidationExecutionCompleted(
+            wave_number=3,
+            attempt=attempt,
+            validation_requirement_id="TASK-002-VALIDATION-001",
+            profile=ValidationExecutionProfile.PYTHON_COMPILE,
+            outcome=ValidationExecutionOutcome.PASSED,
+        )
+    )
+    reporter.report(
         TaskExecutionAttemptSettled(
             wave_number=3,
             attempt=attempt,
@@ -65,6 +86,11 @@ def test_console_reporter_renders_singleton_execution_lifecycle() -> None:
         "[wave 3] TASK-002 attempt 2 executor completed; validating result..."
         in output
     )
+    assert (
+        "[wave 3] TASK-002 attempt 2 executing required PYTHON_COMPILE "
+        "validation..." in output
+    )
+    assert "[wave 3] TASK-002 attempt 2 PYTHON_COMPILE passed." in output
     assert (
         "[wave 3] TASK-002 attempt 2 scheduled retry after validation" in output
     )

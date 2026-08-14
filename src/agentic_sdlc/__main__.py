@@ -282,6 +282,16 @@ def _prompt_for_task_graph_decision(
                 + (", ".join(task["deliverable_roles"]) or "None")
             )
             print(
+                "    Required validations: "
+                + (
+                    ", ".join(
+                        item["profile"]
+                        for item in task.get("required_validations", [])
+                    )
+                    or "None"
+                )
+            )
+            print(
                 "    Depends on: "
                 + (", ".join(task["depends_on"]) or "ENTRY")
             )

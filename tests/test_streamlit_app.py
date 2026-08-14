@@ -408,7 +408,10 @@ def test_requirement_approve_reaches_interactive_task_graph_without_auto_decisio
 def test_task_graph_review_renders_authoritative_visual_metadata_and_details(
     tmp_path: Path,
 ) -> None:
-    snapshot = _task_graph_snapshot(tmp_path)
+    snapshot = _task_graph_snapshot(
+        tmp_path,
+        required_validation_task_id="TASK-003",
+    )
     runtime = FakeUIRuntime(snapshot)
 
     app = _app_for(runtime)
@@ -460,8 +463,9 @@ def test_task_graph_review_renders_authoritative_visual_metadata_and_details(
     assert "AMB-001 — Expiration behavior is unspecified." in text_values
     assert "Expected outputs: src/url_shortener/app.py" in text_values
     assert "Deliverable roles: RUNNABLE_ENTRYPOINT" in text_values
+    assert "Required validations: PYTHON_COMPILE" in text_values
     assert "Graph generation 1: revision 0, attempt 1" in text_values
-    assert "Prompt: task-planning-v1.3 · Model: fake-task-planner" in text_values
+    assert "Prompt: task-planning-v1.4 · Model: fake-task-planner" in text_values
 
 
 def test_task_graph_decisions_come_only_from_authoritative_allowed_decisions(

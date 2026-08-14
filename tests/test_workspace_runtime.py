@@ -17,6 +17,7 @@ from agentic_sdlc.workspace_runtime import (
     WorkspaceRuntimeError,
     WorkspaceRuntimeIssueCode,
     create_isolated_workspace,
+    discard_isolated_workspace,
     snapshot_directory_tree,
     snapshot_isolated_workspace,
 )
@@ -50,6 +51,146 @@ def test_capability_is_immutable(tmp_path: Path) -> None:
 
     with raises(FrozenInstanceError):
         workspace.workspace_id = "OTHER"  # type: ignore[misc]
+
+
+def test_factory_owned_workspace_cleanup_is_descriptor_relative(tmp_path: Path) -> None:
+    workspace = create_isolated_workspace(
+        "WORKSPACE-DISCARD", parent_directory=tmp_path
+    )
+    root = workspace.root
+    (root / "nested/deeper").mkdir(parents=True)
+    (root / "nested/deeper/value.txt").write_text("owned\n", encoding="utf-8")
+
+    discard_isolated_workspace(workspace)
+
+    assert not root.exists()
+
+
+def test_workspace_cleanup_rejects_replacement_directory_and_preserves_it(
+    tmp_path: Path,
+) -> None:
+    workspace = create_isolated_workspace(
+        "WORKSPACE-REPLACED", parent_directory=tmp_path
+    )
+    root = workspace.root
+    original = tmp_path / "preserved-original"
+    root.rename(original)
+    root.mkdir()
+    marker = root / "replacement.txt"
+    marker.write_text("do not delete\n", encoding="utf-8")
+
+    with raises(WorkspaceRuntimeError) as caught:
+        discard_isolated_workspace(workspace)
+
+    assert caught.value.code is WorkspaceRuntimeIssueCode.INVALID_CAPABILITY
+    assert marker.read_text(encoding="utf-8") == "do not delete\n"
+    assert original.is_dir()
+
+
+def test_workspace_cleanup_rejects_symlink_root_and_preserves_target(
+    tmp_path: Path,
+) -> None:
+    workspace = create_isolated_workspace(
+        "WORKSPACE-SYMLINK", parent_directory=tmp_path
+    )
+    root = workspace.root
+    original = tmp_path / "preserved-symlink-original"
+    target = tmp_path / "symlink-target"
+    root.rename(original)
+    target.mkdir()
+    marker = target / "target.txt"
+    marker.write_text("do not follow\n", encoding="utf-8")
+    root.symlink_to(target, target_is_directory=True)
+
+    with raises(WorkspaceRuntimeError) as caught:
+        discard_isolated_workspace(workspace)
+
+    assert caught.value.code is WorkspaceRuntimeIssueCode.INVALID_CAPABILITY
+    assert root.is_symlink()
+    assert marker.read_text(encoding="utf-8") == "do not follow\n"
+
+
+def test_workspace_prefix_lookalike_does_not_grant_cleanup_authority(
+    tmp_path: Path,
+) -> None:
+    lookalike = tmp_path / "agentic-sdlc-workspace-lookalike"
+    lookalike.mkdir()
+    marker = lookalike / "unowned.txt"
+    marker.write_text("unowned\n", encoding="utf-8")
+
+    with raises(WorkspaceRuntimeError) as caught:
+        discard_isolated_workspace(lookalike)  # type: ignore[arg-type]
+
+    assert caught.value.code is WorkspaceRuntimeIssueCode.INVALID_CAPABILITY
+    assert marker.read_text(encoding="utf-8") == "unowned\n"
+
+
+def test_workspace_cleanup_rejects_forged_capability(tmp_path: Path) -> None:
+    lookalike = tmp_path / "agentic-sdlc-workspace-forged"
+    lookalike.mkdir()
+    marker = lookalike / "unowned.txt"
+    marker.write_text("unowned\n", encoding="utf-8")
+    metadata = lookalike.stat()
+    forged = object.__new__(IsolatedWorkspace)
+    object.__setattr__(forged, "workspace_id", "FORGED")
+    object.__setattr__(forged, "root", lookalike)
+    object.__setattr__(forged, "_root_device", metadata.st_dev)
+    object.__setattr__(forged, "_root_inode", metadata.st_ino)
+    object.__setattr__(forged, "_authority", object())
+
+    with raises(WorkspaceRuntimeError) as caught:
+        discard_isolated_workspace(forged)
+
+    assert caught.value.code is WorkspaceRuntimeIssueCode.INVALID_CAPABILITY
+    assert marker.read_text(encoding="utf-8") == "unowned\n"
+
+
+def test_workspace_cleanup_rejects_root_identity_change_during_removal(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    workspace = create_isolated_workspace(
+        "WORKSPACE-RACE", parent_directory=tmp_path
+    )
+    root = workspace.root
+    (root / "owned.txt").write_text("owned\n", encoding="utf-8")
+    original = tmp_path / "preserved-race-original"
+    real_remove = runtime_module._remove_empty_owned_directory_at
+
+    def replace_before_remove(
+        parent_descriptor: int,
+        name: str,
+        *,
+        expected_identity: tuple[int, int],
+        relative_path: str,
+    ) -> None:
+        if relative_path == "<workspace-root>":
+            root.rename(original)
+            root.mkdir()
+            (root / "replacement.txt").write_text(
+                "do not delete\n", encoding="utf-8"
+            )
+        real_remove(
+            parent_descriptor,
+            name,
+            expected_identity=expected_identity,
+            relative_path=relative_path,
+        )
+
+    monkeypatch.setattr(
+        runtime_module,
+        "_remove_empty_owned_directory_at",
+        replace_before_remove,
+    )
+
+    with raises(WorkspaceRuntimeError) as caught:
+        discard_isolated_workspace(workspace)
+
+    assert caught.value.code is WorkspaceRuntimeIssueCode.INVALID_CAPABILITY
+    assert (root / "replacement.txt").read_text(encoding="utf-8") == (
+        "do not delete\n"
+    )
+    assert original.is_dir()
 
 
 def test_empty_workspace_snapshot_is_deterministic(tmp_path: Path) -> None:

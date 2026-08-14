@@ -31,6 +31,7 @@ class WorkspaceRuntimeIssueCode(StrEnum):
     PATH_CONTAINMENT = "PATH_CONTAINMENT"
     SYMLINK_DETECTED = "SYMLINK_DETECTED"
     UNSUPPORTED_FILE_TYPE = "UNSUPPORTED_FILE_TYPE"
+    WORKSPACE_DESTRUCTION = "WORKSPACE_DESTRUCTION"
 
 
 class WorkspaceRuntimeError(RuntimeError):
@@ -164,6 +165,69 @@ def create_isolated_workspace(
         _root_device=root_stat.st_dev,
         _root_inode=root_stat.st_ino,
     )
+
+
+def discard_isolated_workspace(workspace: IsolatedWorkspace) -> None:
+    """Destroy exactly one factory-owned workspace without following entries.
+
+    The capability's device/inode binding, rather than its path spelling, grants
+    this destructive authority.  Traversal and removal stay relative to opened
+    directory descriptors so a substituted path cannot redirect cleanup.
+    """
+
+    root = _validated_workspace_root(workspace)
+    expected_root_identity = workspace._root_device, workspace._root_inode
+    parent, expected_parent_identity = _validated_directory_root(root.parent)
+    parent_descriptor = _open_directory_descriptor(
+        parent,
+        expected_identity=expected_parent_identity,
+        relative_path="<workspace-parent>",
+    )
+    root_descriptor: int | None = None
+    try:
+        root_descriptor = _open_directory_at(
+            parent_descriptor,
+            root.name,
+            expected_identity=expected_root_identity,
+            relative_path="<workspace-root>",
+        )
+        _clear_owned_directory(
+            root_descriptor,
+            expected_identity=expected_root_identity,
+            relative_path="",
+        )
+        _require_descriptor_identity(
+            root_descriptor,
+            expected_root_identity,
+            relative_path="<workspace-root>",
+        )
+        _remove_empty_owned_directory_at(
+            parent_descriptor,
+            root.name,
+            expected_identity=expected_root_identity,
+            relative_path="<workspace-root>",
+        )
+        _require_descriptor_identity(
+            parent_descriptor,
+            expected_parent_identity,
+            relative_path="<workspace-parent>",
+        )
+    finally:
+        close_error: OSError | None = None
+        if root_descriptor is not None:
+            try:
+                os.close(root_descriptor)
+            except OSError as exc:
+                close_error = exc
+        try:
+            os.close(parent_descriptor)
+        except OSError as exc:
+            close_error = close_error or exc
+        if close_error is not None:
+            raise WorkspaceRuntimeError(
+                WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+                "Owned workspace cleanup descriptor could not be closed.",
+            ) from close_error
 
 
 def snapshot_isolated_workspace(workspace: IsolatedWorkspace) -> WorkspaceSnapshot:
@@ -359,6 +423,319 @@ def _validated_directory_root(root: Path) -> tuple[Path, tuple[int, int]]:
             "Snapshot root resolved to a different filesystem entry.",
         )
     return resolved, _identity(resolved_stat)
+
+
+def _open_directory_descriptor(
+    path: Path,
+    *,
+    expected_identity: tuple[int, int],
+    relative_path: str,
+) -> int:
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+            "Owned workspace directory could not be opened without following links.",
+            path=relative_path,
+        ) from exc
+    try:
+        _require_descriptor_identity(
+            descriptor,
+            expected_identity,
+            relative_path=relative_path,
+        )
+    except WorkspaceRuntimeError:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
+def _open_directory_at(
+    parent_descriptor: int,
+    name: str,
+    *,
+    expected_identity: tuple[int, int],
+    relative_path: str,
+) -> int:
+    _validate_descriptor_child_name(name, relative_path)
+    _require_directory_entry_identity(
+        parent_descriptor,
+        name,
+        expected_identity,
+        relative_path=relative_path,
+    )
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    try:
+        descriptor = os.open(name, flags, dir_fd=parent_descriptor)
+    except OSError as exc:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+            "Owned workspace directory entry could not be opened safely.",
+            path=relative_path,
+        ) from exc
+    try:
+        _require_descriptor_identity(
+            descriptor,
+            expected_identity,
+            relative_path=relative_path,
+        )
+        _require_directory_entry_identity(
+            parent_descriptor,
+            name,
+            expected_identity,
+            relative_path=relative_path,
+        )
+    except WorkspaceRuntimeError:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
+def _clear_owned_directory(
+    descriptor: int,
+    *,
+    expected_identity: tuple[int, int],
+    relative_path: str,
+) -> None:
+    _require_descriptor_identity(
+        descriptor,
+        expected_identity,
+        relative_path=relative_path or "<workspace-root>",
+    )
+    try:
+        names = tuple(sorted(os.listdir(descriptor)))
+    except OSError as exc:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+            "Owned workspace directory could not be enumerated.",
+            path=relative_path or None,
+        ) from exc
+    for name in names:
+        child_path = f"{relative_path}/{name}" if relative_path else name
+        _validate_descriptor_child_name(name, child_path)
+        try:
+            entry_stat = os.stat(
+                name,
+                dir_fd=descriptor,
+                follow_symlinks=False,
+            )
+        except OSError as exc:
+            raise WorkspaceRuntimeError(
+                WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+                "Owned workspace entry became unavailable during cleanup.",
+                path=child_path,
+            ) from exc
+        if stat.S_ISLNK(entry_stat.st_mode):
+            raise WorkspaceRuntimeError(
+                WorkspaceRuntimeIssueCode.SYMLINK_DETECTED,
+                "Refusing to follow or remove a symlink during workspace cleanup.",
+                path=child_path,
+            )
+        entry_identity = _identity(entry_stat)
+        if stat.S_ISDIR(entry_stat.st_mode):
+            child_descriptor = _open_directory_at(
+                descriptor,
+                name,
+                expected_identity=entry_identity,
+                relative_path=child_path,
+            )
+            try:
+                _clear_owned_directory(
+                    child_descriptor,
+                    expected_identity=entry_identity,
+                    relative_path=child_path,
+                )
+                _require_descriptor_identity(
+                    child_descriptor,
+                    entry_identity,
+                    relative_path=child_path,
+                )
+                _remove_empty_owned_directory_at(
+                    descriptor,
+                    name,
+                    expected_identity=entry_identity,
+                    relative_path=child_path,
+                )
+            finally:
+                try:
+                    os.close(child_descriptor)
+                except OSError as exc:
+                    raise WorkspaceRuntimeError(
+                        WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+                        "Owned workspace child descriptor could not be closed.",
+                        path=child_path,
+                    ) from exc
+            continue
+        if not stat.S_ISREG(entry_stat.st_mode):
+            raise WorkspaceRuntimeError(
+                WorkspaceRuntimeIssueCode.UNSUPPORTED_FILE_TYPE,
+                "Refusing to remove a special entry during workspace cleanup.",
+                path=child_path,
+            )
+        _require_entry_identity(
+            descriptor,
+            name,
+            entry_identity,
+            relative_path=child_path,
+            require_directory=False,
+        )
+        try:
+            os.unlink(name, dir_fd=descriptor)
+        except OSError as exc:
+            raise WorkspaceRuntimeError(
+                WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+                "Owned workspace regular file could not be removed.",
+                path=child_path,
+            ) from exc
+        _require_entry_absent(descriptor, name, relative_path=child_path)
+    _require_descriptor_identity(
+        descriptor,
+        expected_identity,
+        relative_path=relative_path or "<workspace-root>",
+    )
+
+
+def _remove_empty_owned_directory_at(
+    parent_descriptor: int,
+    name: str,
+    *,
+    expected_identity: tuple[int, int],
+    relative_path: str,
+) -> None:
+    _require_directory_entry_identity(
+        parent_descriptor,
+        name,
+        expected_identity,
+        relative_path=relative_path,
+    )
+    try:
+        os.rmdir(name, dir_fd=parent_descriptor)
+    except OSError as exc:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+            "Owned workspace directory could not be removed.",
+            path=relative_path,
+        ) from exc
+    _require_entry_absent(parent_descriptor, name, relative_path=relative_path)
+
+
+def _require_directory_entry_identity(
+    parent_descriptor: int,
+    name: str,
+    expected_identity: tuple[int, int],
+    *,
+    relative_path: str,
+) -> None:
+    _require_entry_identity(
+        parent_descriptor,
+        name,
+        expected_identity,
+        relative_path=relative_path,
+        require_directory=True,
+    )
+
+
+def _require_entry_identity(
+    parent_descriptor: int,
+    name: str,
+    expected_identity: tuple[int, int],
+    *,
+    relative_path: str,
+    require_directory: bool,
+) -> None:
+    try:
+        entry_stat = os.stat(
+            name,
+            dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+    except OSError as exc:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+            "Owned workspace entry identity is unavailable.",
+            path=relative_path,
+        ) from exc
+    expected_type = stat.S_ISDIR if require_directory else stat.S_ISREG
+    if (
+        stat.S_ISLNK(entry_stat.st_mode)
+        or not expected_type(entry_stat.st_mode)
+        or _identity(entry_stat) != expected_identity
+    ):
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.INVALID_CAPABILITY,
+            "Owned workspace entry identity changed before cleanup.",
+            path=relative_path,
+        )
+
+
+def _require_descriptor_identity(
+    descriptor: int,
+    expected_identity: tuple[int, int],
+    *,
+    relative_path: str,
+) -> None:
+    try:
+        descriptor_stat = os.fstat(descriptor)
+    except OSError as exc:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+            "Owned workspace descriptor identity is unavailable.",
+            path=relative_path,
+        ) from exc
+    if (
+        not stat.S_ISDIR(descriptor_stat.st_mode)
+        or _identity(descriptor_stat) != expected_identity
+    ):
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.INVALID_CAPABILITY,
+            "Owned workspace descriptor identity changed during cleanup.",
+            path=relative_path,
+        )
+
+
+def _require_entry_absent(
+    parent_descriptor: int,
+    name: str,
+    *,
+    relative_path: str,
+) -> None:
+    try:
+        os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+            "Owned workspace removal could not be verified.",
+            path=relative_path,
+        ) from exc
+    raise WorkspaceRuntimeError(
+        WorkspaceRuntimeIssueCode.WORKSPACE_DESTRUCTION,
+        "A filesystem entry remains after owned workspace cleanup.",
+        path=relative_path,
+    )
+
+
+def _validate_descriptor_child_name(name: str, relative_path: str) -> None:
+    separators = {os.sep}
+    if os.altsep:
+        separators.add(os.altsep)
+    if (
+        not name
+        or name in {".", ".."}
+        or any(separator in name for separator in separators)
+    ):
+        raise WorkspaceRuntimeError(
+            WorkspaceRuntimeIssueCode.PATH_CONTAINMENT,
+            "Workspace cleanup encountered an invalid directory entry name.",
+            path=relative_path,
+        )
 
 
 def _inspect_workspace_target(

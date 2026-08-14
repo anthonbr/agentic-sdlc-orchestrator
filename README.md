@@ -166,9 +166,10 @@ receive the existing deterministic run-derived suffix, while an occupied
 explicitly requested destination fails rather than being overwritten.
 
 Runnable-project readiness proves required launch, test, and documentation
-surfaces are present. The orchestrator still does not autonomously execute
-generated code, install packages, perform Git promotion, run CI/CD, or deploy the
-project.
+surfaces are present. An approved task may additionally require the fixed
+`PYTHON_COMPILE` profile described below. That profile compiles Python source for
+syntax/bytecode validity; it does not execute the generated application or its
+tests, install packages, perform Git promotion, run CI/CD, or deploy the project.
 
 ## Evaluator guide
 
@@ -200,7 +201,7 @@ The orchestrator materializes runnable application code and tests in an isolated
 workspace, but deliberately does not execute generated code as part of its exit
 gate or autonomously perform Git promotion, CI/CD promotion, or deployment.
 
-`V0.1` through `V0.11` below are engineering milestone labels for the incremental
+`V0.1` through `V0.13` below are engineering milestone labels for the incremental
 assessment implementation; they are distinct from the Python package version in
 `pyproject.toml` and do not imply semantic compatibility with it.
 
@@ -244,13 +245,23 @@ assessment implementation; they are distinct from the Python package version in
   sources, immutable original/normalized submission lineage, deterministic input
   identity and project naming, and convergence with the built-in demo before the
   existing governed workflow.
+- **V0.12 — governed local Streamlit GUI:** shared application lifecycle,
+  Requirement Analysis and TaskGraph governance, native visual TaskGraph review,
+  and live structured Task Agent execution progress without moving authority into
+  browser session state.
+- **V0.13 Slice 1 — governed validation execution and evidence:** structured,
+  human-reviewed required-validation authority; the fixed `PYTHON_COMPILE`
+  profile; disposable candidate-postimage execution; immutable bounded evidence;
+  success gating; and integration with the existing Task Agent retry limit.
 
 The V0.5 execution slices execute approved engineering tasks as bounded semantic
 LLM calls and may transactionally materialize validated executable URL-shortener
 application code and tests only beneath one factory-created disposable workspace.
 They do **not** mutate the orchestrator checkout or an authoritative repository,
-run generated code or commands, perform Git operations, use fallback models,
-promote through CI/CD, or deploy.
+execute generated application entry points, tests, scripts, or arbitrary
+commands, perform Git operations, use fallback models, promote through CI/CD, or
+deploy. V0.13 Slice 1 adds only the separately governed fixed command profile
+described below.
 
 ## Two distinct graphs
 
@@ -416,6 +427,49 @@ semantic data unless a separate validated materialization intent proposes it as
 desired repository state; artifact type and logical name confer no filesystem
 authority.
 
+### Governed fixed-profile validation execution
+
+An approved canonical task may contain structured `required_validations`. This
+field participates in deterministic TaskGraph normalization, content identity,
+human review, and approval authority; validation is never inferred from words in
+a title, description, acceptance criterion, expected output, or task type. Slice 1
+supports exactly one closed application-owned profile: `PYTHON_COMPILE`.
+
+The Task Agent still returns only semantic results, artifacts, and proposed
+materialization. It cannot choose an executable, command string, argv, shell,
+working directory, environment, package manager, dependency, or script. After
+semantic, artifact, materialization, change-set, and same-wave conflict validation,
+the application constructs a disposable postimage from the exact authoritative
+pre-wave snapshot plus only that task's validated proposed change set. Required
+validation runs there before any task in the wave applies its candidate change to
+the live authoritative workspace. Same-wave peer candidates are therefore absent.
+
+`PYTHON_COMPILE` resolves only to the trusted orchestrator interpreter with fixed
+argv equivalent to `sys.executable -I -B -m compileall -q .`, `shell=False`, a
+30-second application-owned timeout, a minimal explicit environment, disposable
+home/temp directories, and 16 KiB retained raw prefixes per stream. Full byte
+counts and SHA-256 hashes remain in immutable evidence; retained hostile output is
+control-character escaped, remains bounded, and is marked when truncated.
+Compilation-created bytecode
+or other filesystem effects are discarded with the staged workspace. Only the
+already validated Task Agent `WorkspaceChangeSet` can become authoritative after
+exact matching PASS evidence.
+
+A non-zero compile result or reliably terminated timeout uses the existing
+bounded Task Agent repair loop, with prior output labeled as untrusted validation
+diagnostics. Backend, policy, staging, termination, cleanup, or evidence-integrity
+failures fail closed and are not offered to the LLM as repair work. Project
+readiness distinguishes validation not required from required-and-verified; a
+verified `PYTHON_COMPILE` requirement never claims that pytest, the application,
+or a benchmark ran.
+
+This local fixed profile is intentionally not a hostile-process sandbox. Future
+profiles that execute generated code require a stronger replaceable backend. The
+planned progression is governed disposable dependency provisioning from approved
+metadata, a strongly isolated `PYTHON_PYTEST` profile, and separately governed
+benchmark profiles. Package installation remains application-controlled under
+explicit source/network policy; it is never a Task Agent command.
+
 ### Target-workspace desired-state contracts
 
 The orchestrator control plane is conceptually separate from the target engineering
@@ -450,7 +504,8 @@ while any overlap containing `CREATE` or `MODIFY` fails closed, even for identic
 desired contents or mutation plus `NO_CHANGE`. No AI merge or completion-order
 selection occurs. After a parallel join, the governed scheduler uses this analysis
 before invoking the separate bounded runtime below. DELETE, copying, Git operations,
-shell execution, and generated-code execution remain absent.
+arbitrary shell execution, and generated-code execution remain absent from Task
+Agent authority.
 
 ### Isolated transactional workspace mutation
 
@@ -886,7 +941,7 @@ Streamlit GUI:
 .venv/bin/streamlit run src/agentic_sdlc/streamlit_app.py
 ```
 
-The current V0.12 GUI accepts an inline natural-language requirement and an
+The current local GUI accepts an inline natural-language requirement and an
 optional project name. It visually presents the authoritative Requirement
 Analysis and canonical TaskGraph, and supports governed APPROVE, REQUEST_CHANGES,
 and REJECT when the current human gate allows them. After TaskGraph approval, the
@@ -1035,10 +1090,12 @@ copy of the retained live bundle under the reserved project-local
 not moved or deleted.
 
 Runnable-project readiness proves that the required project surfaces and reviewer
-instructions are materially present; it is not runtime execution evidence. The
-orchestrator never executes the materialized source or tests. Reviewers and
-development tooling may validate the exported copy manually, outside workflow
-authority:
+instructions are materially present. When approved required validations exist, it
+also proves exact matching final-attempt PASS evidence; when none exist it records
+validation as not required rather than verified. `PYTHON_COMPILE` remains syntax
+and bytecode compilation only—the orchestrator does not import or execute the
+materialized application or tests. Reviewers and development tooling may validate
+the exported copy manually, outside workflow authority:
 
 ```bash
 cd artifacts/demo-run/generated-project
