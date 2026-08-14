@@ -325,7 +325,7 @@ def test_required_validation_becomes_canonical_and_participates_in_identity() ->
 def test_unsupported_and_duplicate_required_validation_profiles_fail_closed() -> None:
     with raises(ValidationError, match="profile"):
         ProposedTaskValidationRequirement.model_validate_json(
-            '{"profile":"PYTHON_PYTEST"}'
+            '{"profile":"PYTHON_SHELL"}'
         )
 
     requirement = ProposedTaskValidationRequirement(
@@ -336,6 +336,45 @@ def test_unsupported_and_duplicate_required_validation_profiles_fail_closed() ->
             "duplicate",
             required_validations=[requirement, requirement],
         )
+
+
+def test_python_pytest_becomes_human_reviewed_canonical_graph_authority() -> None:
+    graph, _ = normalize_and_validate_task_graph(
+        _proposal(
+            _task(
+                "test_behavior",
+                required_validations=[
+                    ProposedTaskValidationRequirement(
+                        profile=ValidationExecutionProfile.PYTHON_PYTEST
+                    )
+                ],
+            )
+        ),
+        _spec(),
+        version=1,
+        created_at=FIXED_TIME,
+    )
+    compile_graph, _ = normalize_and_validate_task_graph(
+        _proposal(
+            _task(
+                "test_behavior",
+                required_validations=[
+                    ProposedTaskValidationRequirement(
+                        profile=ValidationExecutionProfile.PYTHON_COMPILE
+                    )
+                ],
+            )
+        ),
+        _spec(),
+        version=1,
+        created_at=FIXED_TIME,
+    )
+
+    requirement = graph.tasks[0].required_validations[0]
+    assert requirement.profile is ValidationExecutionProfile.PYTHON_PYTEST
+    assert requirement.requirement_id == "TASK-001-VALIDATION-001"
+    assert graph.content_hash != compile_graph.content_hash
+    assert TaskGraph.model_validate_json(graph.model_dump_json()) == graph
 
 
 def test_task_without_required_validation_remains_backward_compatible() -> None:

@@ -166,10 +166,11 @@ receive the existing deterministic run-derived suffix, while an occupied
 explicitly requested destination fails rather than being overwritten.
 
 Runnable-project readiness proves required launch, test, and documentation
-surfaces are present. An approved task may additionally require the fixed
-`PYTHON_COMPILE` profile described below. That profile compiles Python source for
-syntax/bytecode validity; it does not execute the generated application or its
-tests, install packages, perform Git promotion, run CI/CD, or deploy the project.
+surfaces are present. An approved task may additionally require `PYTHON_COMPILE`
+or the Docker-backed `PYTHON_PYTEST` prototype described below. Compilation proves
+syntax/bytecode validity only. Pytest validation provisions governed dependencies
+and executes generated tests inside a disposable container; neither profile grants
+Git promotion, CI/CD, deployment, or arbitrary-command authority.
 
 ## Evaluator guide
 
@@ -253,15 +254,19 @@ assessment implementation; they are distinct from the Python package version in
   human-reviewed required-validation authority; the fixed `PYTHON_COMPILE`
   profile; disposable candidate-postimage execution; immutable bounded evidence;
   success gating; and integration with the existing Task Agent retry limit.
+- **V0.14 — containerized pytest validation prototype:** structured
+  `PYTHON_PYTEST` authority, governed public dependency installation from the
+  staged `pyproject.toml`, Docker-backed generated-test execution, separate
+  provisioning/test evidence, cleanup verification, and pre-mutation PASS gating.
 
 The V0.5 execution slices execute approved engineering tasks as bounded semantic
 LLM calls and may transactionally materialize validated executable URL-shortener
 application code and tests only beneath one factory-created disposable workspace.
 They do **not** mutate the orchestrator checkout or an authoritative repository,
-execute generated application entry points, tests, scripts, or arbitrary
+execute generated application entry points, scripts, benchmarks, or arbitrary
 commands, perform Git operations, use fallback models, promote through CI/CD, or
-deploy. V0.13 Slice 1 adds only the separately governed fixed command profile
-described below.
+deploy. Generated tests execute only when a human-approved `PYTHON_PYTEST`
+requirement activates the separately governed Docker profile described below.
 
 ## Two distinct graphs
 
@@ -432,8 +437,8 @@ authority.
 An approved canonical task may contain structured `required_validations`. This
 field participates in deterministic TaskGraph normalization, content identity,
 human review, and approval authority; validation is never inferred from words in
-a title, description, acceptance criterion, expected output, or task type. Slice 1
-supports exactly one closed application-owned profile: `PYTHON_COMPILE`.
+a title, description, acceptance criterion, expected output, or task type. The
+closed profiles are `PYTHON_COMPILE` and `PYTHON_PYTEST`.
 
 The Task Agent still returns only semantic results, artifacts, and proposed
 materialization. It cannot choose an executable, command string, argv, shell,
@@ -463,12 +468,36 @@ readiness distinguishes validation not required from required-and-verified; a
 verified `PYTHON_COMPILE` requirement never claims that pytest, the application,
 or a benchmark ran.
 
-This local fixed profile is intentionally not a hostile-process sandbox. Future
-profiles that execute generated code require a stronger replaceable backend. The
-planned progression is governed disposable dependency provisioning from approved
-metadata, a strongly isolated `PYTHON_PYTEST` profile, and separately governed
-benchmark profiles. Package installation remains application-controlled under
-explicit source/network policy; it is never a Task Agent command.
+`PYTHON_PYTEST` uses one disposable Docker container per attempt and the fixed
+application-owned image `python:3.12-slim`. The exact staged postimage is copied
+into `/work`; no authoritative repository, host home, `.git`, `.env`, credential,
+SSH agent, or Docker socket is mounted. Standard-library `tomllib` reads only
+`[project].dependencies` from the staged `pyproject.toml`. Basic deterministic
+policy rejects URL, VCS, local-path, editable, and installer-option forms. The
+application runs fixed argv equivalent to `python -m pip install
+--disable-pip-version-check --no-input --no-cache-dir --only-binary=:all:
+--index-url https://pypi.org/simple pytest <validated dependencies>`, then
+`python -m pytest -q tests` with plugin autoload disabled and the application-owned
+`PYTHONPATH=/work/src`. The project itself is not installed, so
+generated build hooks do not run.
+
+Provisioning and pytest produce separate immutable evidence bound to the same run,
+graph, task, request, attempt, requirement, policy, manifest, staged snapshot,
+image, and container. A normal non-zero pip/pytest result or reliably cleaned-up
+timeout uses the existing bounded Task Agent repair loop. Docker, image, copy,
+command-start, cleanup, or evidence-integrity failures fail closed. Container
+removal must be proven before PASS can reach live mutation. Bridge-network
+disconnection is attempted before pytest and recorded in evidence, but V0.14 does
+not require it; evidence and documentation therefore do not claim outbound network
+denial when Docker cannot disconnect it.
+
+This is an assessment prototype, not a production hostile-code or package-supply-
+chain sandbox. It uses a mutable fixed image tag, public PyPI without a generated
+lockfile or dependency hashes, no private indexes, no package allowlist/cache,
+and default Docker isolation plus small memory/PID limits. Task Agents still never
+choose Docker, pip, pytest, image, package-index, environment, or shell commands.
+Benchmark profiles and production-grade image/dependency provenance remain future
+work.
 
 ### Target-workspace desired-state contracts
 
@@ -1093,9 +1122,11 @@ Runnable-project readiness proves that the required project surfaces and reviewe
 instructions are materially present. When approved required validations exist, it
 also proves exact matching final-attempt PASS evidence; when none exist it records
 validation as not required rather than verified. `PYTHON_COMPILE` remains syntax
-and bytecode compilation only—the orchestrator does not import or execute the
-materialized application or tests. Reviewers and development tooling may validate
-the exported copy manually, outside workflow authority:
+and bytecode compilation only. `PYTHON_PYTEST` separately records dependency
+provisioning and actual generated-test PASS evidence without claiming benchmark,
+deployment, production-readiness, or general application-correctness proof.
+Reviewers and development tooling may still validate the exported copy manually,
+outside workflow authority:
 
 ```bash
 cd artifacts/demo-run/generated-project

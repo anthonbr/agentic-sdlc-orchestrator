@@ -25,6 +25,7 @@ from agentic_sdlc.task_execution_contracts import (
 )
 from agentic_sdlc.task_graph import ValidationExecutionProfile
 from agentic_sdlc.validation_execution_contracts import (
+    GovernedValidationExecutionReport,
     GovernedValidationPolicy,
     TaskValidationExecutionEvidence,
     ValidationExecutionOutcome,
@@ -89,7 +90,7 @@ class GovernedValidationExecutor(Protocol):
         request: ValidationExecutionRequest,
         policy: GovernedValidationPolicy,
         workspace: IsolatedWorkspace,
-    ) -> TaskValidationExecutionEvidence:
+    ) -> TaskValidationExecutionEvidence | GovernedValidationExecutionReport:
         """Execute one application-resolved policy against a staged postimage."""
 
 

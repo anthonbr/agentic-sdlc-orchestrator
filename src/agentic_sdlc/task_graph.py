@@ -46,6 +46,7 @@ class ValidationExecutionProfile(StrEnum):
     """Closed application-owned validation profiles available to TaskGraphs."""
 
     PYTHON_COMPILE = "PYTHON_COMPILE"
+    PYTHON_PYTEST = "PYTHON_PYTEST"
 
 
 class ProposedTaskValidationRequirement(BaseModel):

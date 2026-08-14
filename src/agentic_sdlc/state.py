@@ -25,6 +25,7 @@ from agentic_sdlc.task_execution_contracts import (
     TaskExecutionValidationResult,
 )
 from agentic_sdlc.validation_execution_contracts import (
+    TaskValidationProvisioningEvidence,
     TaskValidationExecutionEvidence,
 )
 from agentic_sdlc.workspace_contracts import (
@@ -156,7 +157,7 @@ TaskTypeData = Literal[
     "DESIGN", "IMPLEMENTATION", "TEST", "DOCUMENTATION", "VALIDATION", "RELEASE"
 ]
 TaskMaterializationPolicyData = Literal["FORBIDDEN", "ALLOWED", "REQUIRED"]
-ValidationExecutionProfileData = Literal["PYTHON_COMPILE"]
+ValidationExecutionProfileData = Literal["PYTHON_COMPILE", "PYTHON_PYTEST"]
 ProjectDeliveryModeData = Literal["ENGINEERING_ARTIFACTS", "RUNNABLE_PROJECT"]
 ProjectDeliverableRoleData = Literal[
     "RUNNABLE_ENTRYPOINT", "AUTOMATED_TESTS", "RUN_INSTRUCTIONS"
@@ -312,6 +313,9 @@ class WorkflowState(TypedDict, total=False):
     ]
     task_validation_execution_evidence: Annotated[
         list[TaskValidationExecutionEvidence], operator.add
+    ]
+    task_validation_provisioning_evidence: Annotated[
+        list[TaskValidationProvisioningEvidence], operator.add
     ]
     task_execution_waves: Annotated[list[TaskExecutionWave], operator.add]
     governed_workspace_session: GovernedWorkspaceSession

@@ -89,6 +89,27 @@ class TaskValidationExecutionStarted:
 
 
 @dataclass(frozen=True)
+class TaskValidationProvisioningStarted:
+    """Application-owned dependency provisioning is about to execute."""
+
+    wave_number: int
+    attempt: TaskExecutionProgressAttempt
+    validation_requirement_id: str
+    profile: ValidationExecutionProfile
+
+
+@dataclass(frozen=True)
+class TaskValidationProvisioningCompleted:
+    """Dependency provisioning returned immutable bounded evidence."""
+
+    wave_number: int
+    attempt: TaskExecutionProgressAttempt
+    validation_requirement_id: str
+    profile: ValidationExecutionProfile
+    outcome: ValidationExecutionOutcome
+
+
+@dataclass(frozen=True)
 class TaskValidationExecutionCompleted:
     """Governed validation returned trusted bounded execution evidence."""
 
@@ -116,6 +137,8 @@ TaskExecutionProgressEvent: TypeAlias = (
     | TaskExecutionHeartbeat
     | TaskExecutorCompleted
     | TaskValidationExecutionStarted
+    | TaskValidationProvisioningStarted
+    | TaskValidationProvisioningCompleted
     | TaskValidationExecutionCompleted
     | TaskExecutionAttemptSettled
 )
@@ -224,6 +247,22 @@ class ConsoleTaskExecutionProgressReporter:
                 f"[wave {event.wave_number}] {attempt.task_id} attempt "
                 f"{attempt.attempt_number} executing required "
                 f"{event.profile.value} validation..."
+            )
+            return
+        if isinstance(event, TaskValidationProvisioningStarted):
+            attempt = event.attempt
+            self._write(
+                f"[wave {event.wave_number}] {attempt.task_id} attempt "
+                f"{attempt.attempt_number} provisioning dependencies for "
+                f"{event.profile.value}..."
+            )
+            return
+        if isinstance(event, TaskValidationProvisioningCompleted):
+            attempt = event.attempt
+            self._write(
+                f"[wave {event.wave_number}] {attempt.task_id} attempt "
+                f"{attempt.attempt_number} dependency provisioning "
+                f"{event.outcome.value.lower()}."
             )
             return
         if isinstance(event, TaskValidationExecutionCompleted):
