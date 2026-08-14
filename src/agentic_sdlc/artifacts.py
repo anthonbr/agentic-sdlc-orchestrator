@@ -445,6 +445,10 @@ def _execution_evidence(state: WorkflowState) -> dict[str, object]:
             item.model_dump(mode="json")
             for item in state.get("task_validation_execution_evidence", [])
         ],
+        "validation_provisioning": [
+            item.model_dump(mode="json")
+            for item in state.get("task_validation_provisioning_evidence", [])
+        ],
     }
 
 
@@ -524,6 +528,9 @@ def _summary_markdown(
     )
     readiness = state.get("project_readiness_validation")
     validation_evidence = state.get("task_validation_execution_evidence", [])
+    provisioning_evidence = state.get(
+        "task_validation_provisioning_evidence", []
+    )
     required_validation_count = sum(
         len(task.get("required_validations", []))
         for task in state.get("approved_task_graph", {}).get("tasks", [])
@@ -537,6 +544,20 @@ def _summary_markdown(
     passed_validation_count = sum(
         item.passed and item.evidence_id in successful_exit_evidence_ids
         for item in validation_evidence
+    )
+    successful_pytest_evidence = tuple(
+        item
+        for item in validation_evidence
+        if item.profile.value == "PYTHON_PYTEST"
+        and item.passed
+        and item.evidence_id in successful_exit_evidence_ids
+    )
+    successful_compile_evidence = tuple(
+        item
+        for item in validation_evidence
+        if item.profile.value == "PYTHON_COMPILE"
+        and item.passed
+        and item.evidence_id in successful_exit_evidence_ids
     )
     mutations = state.get("workspace_mutation_results", [])
     materialized_changes = tuple(
@@ -606,9 +627,15 @@ def _summary_markdown(
         f"- Governed required validations: {passed_validation_count} passed / "
         f"{required_validation_count} required",
         "- PYTHON_COMPILE validation executed: "
-        + ("yes" if validation_evidence else "no"),
-        "- Generated code/tests executed: no",
-        "- Generated tests executed: no",
+        + ("yes" if successful_compile_evidence else "no"),
+        "- PYTHON_PYTEST validation executed: "
+        + ("yes" if successful_pytest_evidence else "no"),
+        "- Dependencies provisioned for validation: "
+        + ("yes" if provisioning_evidence else "no"),
+        "- Generated code/tests executed: "
+        + ("yes" if successful_pytest_evidence else "no"),
+        "- Generated tests executed: "
+        + ("yes" if successful_pytest_evidence else "no"),
         "- Generated application executed: no",
         "- Benchmarks executed: no",
         "- Project readiness: "

@@ -36,7 +36,12 @@ from agentic_sdlc.workspace_integration_contracts import (
 
 
 PYTHON_COMPILE_POLICY_VERSION = "python-compile-v1"
+PYTHON_PYTEST_POLICY_VERSION = "python-pytest-docker-v1"
+PYTHON_PYTEST_IMAGE = "python:3.12-slim"
+PUBLIC_PYPI_INDEX_URL = "https://pypi.org/simple"
 DEFAULT_VALIDATION_TIMEOUT_SECONDS = 30.0
+DEFAULT_PYTEST_TIMEOUT_SECONDS = 120.0
+DEFAULT_PROVISIONING_TIMEOUT_SECONDS = 120.0
 DEFAULT_VALIDATION_OUTPUT_LIMIT_BYTES = 16 * 1024
 DEFAULT_VALIDATION_TERMINATION_GRACE_SECONDS = 2.0
 
@@ -45,12 +50,14 @@ class ValidationExecutionEnvironmentKind(StrEnum):
     """Application-owned execution-environment families."""
 
     LOCAL_DISPOSABLE = "LOCAL_DISPOSABLE"
+    DOCKER_DISPOSABLE = "DOCKER_DISPOSABLE"
 
 
 class ValidationDependencyProvisioning(StrEnum):
     """Whether an execution environment contains governed dependencies."""
 
     NONE = "NONE"
+    PIP = "PIP"
 
 
 class ValidationExecutionOutcome(StrEnum):
@@ -70,6 +77,8 @@ class GovernedValidationPolicy(BaseModel):
     policy_version: str = Field(min_length=1)
     profile: ValidationExecutionProfile
     argv: tuple[str, ...] = Field(min_length=1)
+    provisioning_argv_prefix: tuple[str, ...] = ()
+    provisioning_timeout_seconds: float | None = Field(default=None, gt=0)
     timeout_seconds: float = Field(gt=0)
     stdout_limit_bytes: int = Field(gt=0)
     stderr_limit_bytes: int = Field(gt=0)
@@ -79,6 +88,30 @@ class GovernedValidationPolicy(BaseModel):
     environment_kind: ValidationExecutionEnvironmentKind
     dependency_provisioning: ValidationDependencyProvisioning
     network_access_allowed: bool
+    container_image_reference: str | None = None
+
+
+class PythonDependencyManifest(BaseModel):
+    """Normalized governed dependency input from one exact staged postimage."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    manifest_id: str = Field(min_length=1)
+    staged_workspace_id: str = Field(min_length=1)
+    staged_snapshot_id: str = Field(min_length=1)
+    source_path: str = "pyproject.toml"
+    source_present: bool
+    source_sha256: str
+    normalized_dependencies: tuple[str, ...]
+
+    @field_validator("source_sha256")
+    @classmethod
+    def _validate_source_sha256(cls, value: str) -> str:
+        if len(value) != 64 or any(
+            character not in "0123456789abcdef" for character in value
+        ):
+            raise ValueError("Dependency manifest hashes must be lowercase SHA-256.")
+        return value
 
 
 class ValidationExecutionRequest(BaseModel):
@@ -98,6 +131,89 @@ class ValidationExecutionRequest(BaseModel):
     source_snapshot_id: str = Field(min_length=1)
     staged_workspace_id: str = Field(min_length=1)
     staged_snapshot_id: str = Field(min_length=1)
+    dependency_manifest: PythonDependencyManifest | None = None
+
+
+class TaskValidationProvisioningEvidence(BaseModel):
+    """Immutable evidence for application-owned disposable pip provisioning."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    evidence_id: str = Field(min_length=1)
+    run_id: str
+    graph_id: str
+    graph_version: int = Field(ge=1)
+    task_id: str
+    request_id: str
+    attempt_id: str
+    attempt_number: int = Field(ge=1)
+    validation_requirement_id: str
+    profile: ValidationExecutionProfile
+    policy_id: str
+    policy_version: str
+    source_workspace_id: str
+    source_snapshot_id: str
+    staged_workspace_id: str
+    staged_snapshot_id: str
+    dependency_manifest_id: str
+    dependency_manifest_source_present: bool
+    dependency_manifest_source_sha256: str
+    normalized_dependencies: tuple[str, ...]
+    container_image_reference: str
+    container_image_id: str
+    container_id: str
+    image_pulled: bool
+    argv: tuple[str, ...] = Field(min_length=1)
+    package_index_url: str
+    network_access_allowed: bool
+    started_at: str
+    ended_at: str
+    duration_seconds: float = Field(ge=0)
+    outcome: ValidationExecutionOutcome
+    exit_code: int | None
+    timed_out: bool
+    stdout_total_bytes: int = Field(ge=0)
+    stderr_total_bytes: int = Field(ge=0)
+    retained_stdout: str
+    retained_stderr: str
+    stdout_sha256: str
+    stderr_sha256: str
+    stdout_truncated: bool
+    stderr_truncated: bool
+    container_cleanup_succeeded: bool
+    passed: bool
+
+    @field_validator(
+        "dependency_manifest_source_sha256", "stdout_sha256", "stderr_sha256"
+    )
+    @classmethod
+    def _validate_hashes(cls, value: str) -> str:
+        if len(value) != 64 or any(
+            character not in "0123456789abcdef" for character in value
+        ):
+            raise ValueError("Provisioning hashes must be lowercase SHA-256.")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_outcome_flags(self) -> TaskValidationProvisioningEvidence:
+        expected_timed_out = self.outcome is ValidationExecutionOutcome.TIMED_OUT
+        expected_passed = (
+            self.outcome is ValidationExecutionOutcome.PASSED
+            and self.exit_code == 0
+            and not expected_timed_out
+            and self.container_cleanup_succeeded
+        )
+        if self.outcome is ValidationExecutionOutcome.PASSED and self.exit_code != 0:
+            raise ValueError("Passed provisioning evidence requires exit code zero.")
+        if self.outcome is ValidationExecutionOutcome.FAILED and (
+            self.exit_code is None or self.exit_code == 0
+        ):
+            raise ValueError("Failed provisioning evidence requires non-zero exit code.")
+        if self.timed_out != expected_timed_out:
+            raise ValueError("Provisioning timeout flag does not match outcome.")
+        if self.passed != expected_passed:
+            raise ValueError("Provisioning pass judgment does not match outcome.")
+        return self
 
 
 class TaskValidationExecutionEvidence(BaseModel):
@@ -142,6 +258,11 @@ class TaskValidationExecutionEvidence(BaseModel):
     stderr_sha256: str
     stdout_truncated: bool
     stderr_truncated: bool
+    container_image_reference: str | None = None
+    container_image_id: str | None = None
+    container_id: str | None = None
+    external_network_disconnected: bool | None = None
+    container_cleanup_succeeded: bool | None = None
     passed: bool
 
     @field_validator("stdout_sha256", "stderr_sha256")
@@ -174,6 +295,15 @@ class TaskValidationExecutionEvidence(BaseModel):
         return self
 
 
+class GovernedValidationExecutionReport(BaseModel):
+    """One backend result without creating a second persisted evidence system."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    provisioning_evidence: tuple[TaskValidationProvisioningEvidence, ...] = ()
+    execution_evidence: TaskValidationExecutionEvidence | None = None
+
+
 class RequiredValidationExecutionStatus(BaseModel):
     """Deterministic final-state judgment without collapsing NOT_REQUIRED."""
 
@@ -183,6 +313,9 @@ class RequiredValidationExecutionStatus(BaseModel):
     required_count: int = Field(ge=0)
     verified_count: int = Field(ge=0)
     verified: bool
+    python_compile_verified_count: int = Field(default=0, ge=0)
+    python_pytest_verified_count: int = Field(default=0, ge=0)
+    dependency_provisioning_verified_count: int = Field(default=0, ge=0)
 
 
 class ValidationExecutionContractError(ValueError):
@@ -208,6 +341,8 @@ def python_compile_validation_policy(
         "policy_version": PYTHON_COMPILE_POLICY_VERSION,
         "profile": ValidationExecutionProfile.PYTHON_COMPILE.value,
         "argv": argv,
+        "provisioning_argv_prefix": (),
+        "provisioning_timeout_seconds": None,
         "timeout_seconds": DEFAULT_VALIDATION_TIMEOUT_SECONDS,
         "stdout_limit_bytes": DEFAULT_VALIDATION_OUTPUT_LIMIT_BYTES,
         "stderr_limit_bytes": DEFAULT_VALIDATION_OUTPUT_LIMIT_BYTES,
@@ -217,6 +352,7 @@ def python_compile_validation_policy(
         "environment_kind": ValidationExecutionEnvironmentKind.LOCAL_DISPOSABLE.value,
         "dependency_provisioning": ValidationDependencyProvisioning.NONE.value,
         "network_access_allowed": False,
+        "container_image_reference": None,
     }
     digest = _content_hash(payload)[:16].upper()
     return GovernedValidationPolicy(
@@ -224,6 +360,8 @@ def python_compile_validation_policy(
         policy_version=PYTHON_COMPILE_POLICY_VERSION,
         profile=ValidationExecutionProfile.PYTHON_COMPILE,
         argv=argv,
+        provisioning_argv_prefix=(),
+        provisioning_timeout_seconds=None,
         timeout_seconds=DEFAULT_VALIDATION_TIMEOUT_SECONDS,
         stdout_limit_bytes=DEFAULT_VALIDATION_OUTPUT_LIMIT_BYTES,
         stderr_limit_bytes=DEFAULT_VALIDATION_OUTPUT_LIMIT_BYTES,
@@ -233,6 +371,70 @@ def python_compile_validation_policy(
         environment_kind=ValidationExecutionEnvironmentKind.LOCAL_DISPOSABLE,
         dependency_provisioning=ValidationDependencyProvisioning.NONE,
         network_access_allowed=False,
+        container_image_reference=None,
+    )
+
+
+def python_pytest_validation_policy() -> GovernedValidationPolicy:
+    """Resolve Docker pytest to fixed application-owned execution authority."""
+
+    argv = ("python", "-m", "pytest", "-q", "tests")
+    provisioning_argv_prefix = (
+        "python",
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        "--no-input",
+        "--no-cache-dir",
+        "--only-binary=:all:",
+        "--index-url",
+        PUBLIC_PYPI_INDEX_URL,
+        "pytest",
+    )
+    payload = {
+        "policy_version": PYTHON_PYTEST_POLICY_VERSION,
+        "profile": ValidationExecutionProfile.PYTHON_PYTEST.value,
+        "argv": argv,
+        "provisioning_argv_prefix": provisioning_argv_prefix,
+        "provisioning_timeout_seconds": DEFAULT_PROVISIONING_TIMEOUT_SECONDS,
+        "timeout_seconds": DEFAULT_PYTEST_TIMEOUT_SECONDS,
+        "stdout_limit_bytes": DEFAULT_VALIDATION_OUTPUT_LIMIT_BYTES,
+        "stderr_limit_bytes": DEFAULT_VALIDATION_OUTPUT_LIMIT_BYTES,
+        "termination_grace_seconds": DEFAULT_VALIDATION_TERMINATION_GRACE_SECONDS,
+        "working_directory": "/work",
+        "environment_variable_names": (
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+            "PYTHONPATH",
+        ),
+        "environment_kind": ValidationExecutionEnvironmentKind.DOCKER_DISPOSABLE.value,
+        "dependency_provisioning": ValidationDependencyProvisioning.PIP.value,
+        # V0.14 attempts best-effort bridge disconnection, but the policy remains
+        # truthful when a Docker installation cannot provide that optional step.
+        "network_access_allowed": True,
+        "container_image_reference": PYTHON_PYTEST_IMAGE,
+    }
+    digest = _content_hash(payload)[:16].upper()
+    return GovernedValidationPolicy(
+        policy_id=f"VALIDATION-POLICY-{digest}",
+        policy_version=PYTHON_PYTEST_POLICY_VERSION,
+        profile=ValidationExecutionProfile.PYTHON_PYTEST,
+        argv=argv,
+        provisioning_argv_prefix=provisioning_argv_prefix,
+        provisioning_timeout_seconds=DEFAULT_PROVISIONING_TIMEOUT_SECONDS,
+        timeout_seconds=DEFAULT_PYTEST_TIMEOUT_SECONDS,
+        stdout_limit_bytes=DEFAULT_VALIDATION_OUTPUT_LIMIT_BYTES,
+        stderr_limit_bytes=DEFAULT_VALIDATION_OUTPUT_LIMIT_BYTES,
+        termination_grace_seconds=DEFAULT_VALIDATION_TERMINATION_GRACE_SECONDS,
+        working_directory="/work",
+        environment_variable_names=(
+            "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+            "PYTHONPATH",
+        ),
+        environment_kind=ValidationExecutionEnvironmentKind.DOCKER_DISPOSABLE,
+        dependency_provisioning=ValidationDependencyProvisioning.PIP,
+        network_access_allowed=True,
+        container_image_reference=PYTHON_PYTEST_IMAGE,
     )
 
 
@@ -243,6 +445,8 @@ def resolve_governed_validation_policy(
 
     if profile is ValidationExecutionProfile.PYTHON_COMPILE:
         return python_compile_validation_policy()
+    if profile is ValidationExecutionProfile.PYTHON_PYTEST:
+        return python_pytest_validation_policy()
     raise ValidationExecutionContractError(
         f"Unsupported governed validation profile: {profile!r}."
     )
@@ -259,6 +463,7 @@ def build_validation_execution_request(
     source_snapshot_id: str,
     staged_workspace_id: str,
     staged_snapshot_id: str,
+    dependency_manifest: PythonDependencyManifest | None = None,
 ) -> ValidationExecutionRequest:
     """Bind approved validation authority to one exact staged attempt postimage."""
 
@@ -287,6 +492,7 @@ def build_validation_execution_request(
         source_snapshot_id=source_snapshot_id,
         staged_workspace_id=staged_workspace_id,
         staged_snapshot_id=staged_snapshot_id,
+        dependency_manifest=dependency_manifest,
     )
 
 
@@ -307,6 +513,12 @@ def build_validation_execution_evidence(
     stderr_sha256: str,
     stdout_truncated: bool,
     stderr_truncated: bool,
+    provisioning_evidence_ids: tuple[str, ...] = (),
+    container_image_reference: str | None = None,
+    container_image_id: str | None = None,
+    container_id: str | None = None,
+    external_network_disconnected: bool | None = None,
+    container_cleanup_succeeded: bool | None = None,
 ) -> TaskValidationExecutionEvidence:
     """Create content-bound immutable evidence from trusted backend observations."""
 
@@ -335,7 +547,7 @@ def build_validation_execution_evidence(
         "environment_kind": policy.environment_kind,
         "dependency_provisioning": policy.dependency_provisioning,
         "network_access_allowed": policy.network_access_allowed,
-        "provisioning_evidence_ids": (),
+        "provisioning_evidence_ids": provisioning_evidence_ids,
         "argv": policy.argv,
         "working_directory": policy.working_directory,
         "environment_variable_names": policy.environment_variable_names,
@@ -353,6 +565,11 @@ def build_validation_execution_evidence(
         "stderr_sha256": stderr_sha256,
         "stdout_truncated": stdout_truncated,
         "stderr_truncated": stderr_truncated,
+        "container_image_reference": container_image_reference,
+        "container_image_id": container_image_id,
+        "container_id": container_id,
+        "external_network_disconnected": external_network_disconnected,
+        "container_cleanup_succeeded": container_cleanup_succeeded,
         "passed": passed,
     }
     return TaskValidationExecutionEvidence(
@@ -371,10 +588,176 @@ def validation_execution_evidence_identity_is_valid(
     return evidence.evidence_id == expected
 
 
+def dependency_manifest_identity_is_valid(manifest: PythonDependencyManifest) -> bool:
+    """Return whether normalized dependency authority retains its content identity."""
+
+    payload = manifest.model_dump(mode="json", exclude={"manifest_id"})
+    expected = "DEPENDENCY-MANIFEST-" + _content_hash(payload)[:20].upper()
+    return manifest.manifest_id == expected
+
+
+def build_validation_provisioning_evidence(
+    request: ValidationExecutionRequest,
+    policy: GovernedValidationPolicy,
+    *,
+    container_image_id: str,
+    container_id: str,
+    image_pulled: bool,
+    argv: tuple[str, ...],
+    started_at: str,
+    ended_at: str,
+    duration_seconds: float,
+    outcome: ValidationExecutionOutcome,
+    exit_code: int | None,
+    stdout_total_bytes: int,
+    stderr_total_bytes: int,
+    retained_stdout: str,
+    retained_stderr: str,
+    stdout_sha256: str,
+    stderr_sha256: str,
+    stdout_truncated: bool,
+    stderr_truncated: bool,
+    container_cleanup_succeeded: bool,
+) -> TaskValidationProvisioningEvidence:
+    """Create immutable pip-provisioning evidence for one exact staged attempt."""
+
+    manifest = request.dependency_manifest
+    if manifest is None or policy.container_image_reference is None:
+        raise ValidationExecutionContractError(
+            "Containerized provisioning requires governed manifest and image authority."
+        )
+    timed_out = outcome is ValidationExecutionOutcome.TIMED_OUT
+    passed = (
+        outcome is ValidationExecutionOutcome.PASSED
+        and exit_code == 0
+        and not timed_out
+        and container_cleanup_succeeded
+    )
+    values = {
+        "run_id": request.run_id,
+        "graph_id": request.graph_id,
+        "graph_version": request.graph_version,
+        "task_id": request.task_id,
+        "request_id": request.request_id,
+        "attempt_id": request.attempt_id,
+        "attempt_number": request.attempt_number,
+        "validation_requirement_id": request.requirement.requirement_id,
+        "profile": request.requirement.profile,
+        "policy_id": policy.policy_id,
+        "policy_version": policy.policy_version,
+        "source_workspace_id": request.source_workspace_id,
+        "source_snapshot_id": request.source_snapshot_id,
+        "staged_workspace_id": request.staged_workspace_id,
+        "staged_snapshot_id": request.staged_snapshot_id,
+        "dependency_manifest_id": manifest.manifest_id,
+        "dependency_manifest_source_present": manifest.source_present,
+        "dependency_manifest_source_sha256": manifest.source_sha256,
+        "normalized_dependencies": manifest.normalized_dependencies,
+        "container_image_reference": policy.container_image_reference,
+        "container_image_id": container_image_id,
+        "container_id": container_id,
+        "image_pulled": image_pulled,
+        "argv": argv,
+        "package_index_url": PUBLIC_PYPI_INDEX_URL,
+        "network_access_allowed": True,
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "duration_seconds": duration_seconds,
+        "outcome": outcome,
+        "exit_code": exit_code,
+        "timed_out": timed_out,
+        "stdout_total_bytes": stdout_total_bytes,
+        "stderr_total_bytes": stderr_total_bytes,
+        "retained_stdout": retained_stdout,
+        "retained_stderr": retained_stderr,
+        "stdout_sha256": stdout_sha256,
+        "stderr_sha256": stderr_sha256,
+        "stdout_truncated": stdout_truncated,
+        "stderr_truncated": stderr_truncated,
+        "container_cleanup_succeeded": container_cleanup_succeeded,
+        "passed": passed,
+    }
+    return TaskValidationProvisioningEvidence(
+        evidence_id="PROVISIONING-EVIDENCE-" + _content_hash(values)[:20].upper(),
+        **values,
+    )
+
+
+def validation_provisioning_evidence_identity_is_valid(
+    evidence: TaskValidationProvisioningEvidence,
+) -> bool:
+    """Return whether provisioning evidence ID still binds every field."""
+
+    payload = evidence.model_dump(mode="json", exclude={"evidence_id"})
+    expected = "PROVISIONING-EVIDENCE-" + _content_hash(payload)[:20].upper()
+    return evidence.evidence_id == expected
+
+
+def validation_provisioning_evidence_errors(
+    request: ValidationExecutionRequest,
+    policy: GovernedValidationPolicy,
+    evidence: TaskValidationProvisioningEvidence,
+) -> tuple[str, ...]:
+    """Return provisioning lineage, policy, and identity mismatches."""
+
+    manifest = request.dependency_manifest
+    if manifest is None:
+        return ("dependency_manifest",)
+    expected_argv = (*policy.provisioning_argv_prefix, *manifest.normalized_dependencies)
+    expected = {
+        "run_id": request.run_id,
+        "graph_id": request.graph_id,
+        "graph_version": request.graph_version,
+        "task_id": request.task_id,
+        "request_id": request.request_id,
+        "attempt_id": request.attempt_id,
+        "attempt_number": request.attempt_number,
+        "validation_requirement_id": request.requirement.requirement_id,
+        "profile": request.requirement.profile,
+        "policy_id": policy.policy_id,
+        "policy_version": policy.policy_version,
+        "source_workspace_id": request.source_workspace_id,
+        "source_snapshot_id": request.source_snapshot_id,
+        "staged_workspace_id": request.staged_workspace_id,
+        "staged_snapshot_id": request.staged_snapshot_id,
+        "dependency_manifest_id": manifest.manifest_id,
+        "dependency_manifest_source_present": manifest.source_present,
+        "dependency_manifest_source_sha256": manifest.source_sha256,
+        "normalized_dependencies": manifest.normalized_dependencies,
+        "container_image_reference": policy.container_image_reference,
+        "argv": expected_argv,
+        "package_index_url": PUBLIC_PYPI_INDEX_URL,
+        "network_access_allowed": True,
+    }
+    mismatches = [
+        name for name, value in expected.items() if getattr(evidence, name) != value
+    ]
+    if policy.profile is not request.requirement.profile:
+        mismatches.append("policy.profile")
+    if not dependency_manifest_identity_is_valid(manifest):
+        mismatches.append("dependency_manifest.manifest_id")
+    if not validation_provisioning_evidence_identity_is_valid(evidence):
+        mismatches.append("evidence_id")
+    if not evidence.container_image_id or not evidence.container_id:
+        mismatches.append("container_identity")
+    if not evidence.container_cleanup_succeeded:
+        mismatches.append("container_cleanup_succeeded")
+    if evidence.stdout_truncated != (
+        evidence.stdout_total_bytes > policy.stdout_limit_bytes
+    ):
+        mismatches.append("stdout_truncated")
+    if evidence.stderr_truncated != (
+        evidence.stderr_total_bytes > policy.stderr_limit_bytes
+    ):
+        mismatches.append("stderr_truncated")
+    return tuple(sorted(set(mismatches)))
+
+
 def validation_execution_evidence_errors(
     request: ValidationExecutionRequest,
     policy: GovernedValidationPolicy,
     evidence: TaskValidationExecutionEvidence,
+    provisioning_evidence: tuple[TaskValidationProvisioningEvidence, ...] = (),
 ) -> tuple[str, ...]:
     """Return exact correlation/integrity mismatches for fail-closed settlement."""
 
@@ -406,8 +789,40 @@ def validation_execution_evidence_errors(
     ]
     if policy.profile is not request.requirement.profile:
         mismatches.append("policy.profile")
-    if evidence.provisioning_evidence_ids:
-        mismatches.append("provisioning_evidence_ids")
+    if request.requirement.profile is ValidationExecutionProfile.PYTHON_COMPILE:
+        if evidence.provisioning_evidence_ids:
+            mismatches.append("provisioning_evidence_ids")
+        if any(
+            value is not None
+            for value in (
+                evidence.container_image_reference,
+                evidence.container_image_id,
+                evidence.container_id,
+                evidence.external_network_disconnected,
+                evidence.container_cleanup_succeeded,
+            )
+        ):
+            mismatches.append("container_execution")
+    elif request.requirement.profile is ValidationExecutionProfile.PYTHON_PYTEST:
+        expected_ids = tuple(item.evidence_id for item in provisioning_evidence)
+        if evidence.provisioning_evidence_ids != expected_ids or len(expected_ids) != 1:
+            mismatches.append("provisioning_evidence_ids")
+        if len(provisioning_evidence) == 1:
+            provision = provisioning_evidence[0]
+            if validation_provisioning_evidence_errors(request, policy, provision):
+                mismatches.append("provisioning_evidence")
+            if not provision.passed:
+                mismatches.append("provisioning_passed")
+            if evidence.container_image_id != provision.container_image_id:
+                mismatches.append("container_image_id")
+            if evidence.container_id != provision.container_id:
+                mismatches.append("container_id")
+        if evidence.container_image_reference != policy.container_image_reference:
+            mismatches.append("container_image_reference")
+        if not evidence.container_image_id or not evidence.container_id:
+            mismatches.append("container_identity")
+        if evidence.container_cleanup_succeeded is not True:
+            mismatches.append("container_cleanup_succeeded")
     if not validation_execution_evidence_identity_is_valid(evidence):
         mismatches.append("evidence_id")
     if evidence.passed != (
@@ -440,6 +855,19 @@ def validation_retry_feedback(
     )
 
 
+def validation_provisioning_retry_feedback(
+    evidence: TaskValidationProvisioningEvidence,
+) -> str:
+    """Bound pip output as explicitly untrusted Task Agent repair context."""
+
+    diagnostics = evidence.retained_stderr or evidence.retained_stdout or "None retained."
+    return (
+        "Untrusted dependency-provisioning diagnostics from the previous governed "
+        f"execution ({evidence.profile.value}, {evidence.outcome.value}, "
+        f"exit_code={evidence.exit_code}): {diagnostics}"
+    )
+
+
 def required_validation_execution_status(
     graph: TaskGraph | None,
     execution: TaskGraphExecutionState | None,
@@ -447,6 +875,7 @@ def required_validation_execution_status(
     run_id: str | None = None,
     bound_requests: tuple[WorkspaceBoundTaskExecutionRequest, ...] = (),
     evidence: tuple[TaskValidationExecutionEvidence, ...] = (),
+    provisioning_evidence: tuple[TaskValidationProvisioningEvidence, ...] = (),
     snapshots: tuple[WorkspaceSnapshot, ...] = (),
     change_sets: tuple[WorkspaceChangeSet, ...] = (),
     exit_decisions: tuple[TaskAttemptExitDecision, ...] = (),
@@ -483,6 +912,9 @@ def required_validation_execution_status(
     states = {item.task_id: item for item in execution.task_states}
     snapshots_by_id = {item.snapshot_id: item for item in snapshots}
     verified_count = 0
+    python_compile_verified_count = 0
+    python_pytest_verified_count = 0
+    dependency_provisioning_verified_count = 0
     for task, requirement in requirements:
         runtime = states.get(task.task_id)
         if runtime is None or runtime.status is not TaskExecutionStatus.SUCCEEDED:
@@ -532,17 +964,6 @@ def required_validation_execution_status(
         )
         if staged_snapshot_id is None:
             continue
-        request = build_validation_execution_request(
-            run_id=run_id,
-            graph_id=graph.graph_id,
-            graph_version=graph.version,
-            task_request=bound.request,
-            requirement=requirement,
-            source_workspace_id=source_snapshot.workspace_id,
-            source_snapshot_id=source_snapshot.snapshot_id,
-            staged_workspace_id=staged_workspace_id,
-            staged_snapshot_id=staged_snapshot_id,
-        )
         matching_evidence = tuple(
             item
             for item in evidence
@@ -555,8 +976,41 @@ def required_validation_execution_status(
         if len(matching_evidence) != 1:
             continue
         item = matching_evidence[0]
-        policy = python_compile_validation_policy()
-        if validation_execution_evidence_errors(request, policy, item):
+        matching_provisioning = tuple(
+            candidate
+            for candidate in provisioning_evidence
+            if candidate.evidence_id in item.provisioning_evidence_ids
+        )
+        dependency_manifest: PythonDependencyManifest | None = None
+        if requirement.profile is ValidationExecutionProfile.PYTHON_PYTEST:
+            if len(matching_provisioning) != 1:
+                continue
+            provision = matching_provisioning[0]
+            dependency_manifest = PythonDependencyManifest(
+                manifest_id=provision.dependency_manifest_id,
+                staged_workspace_id=provision.staged_workspace_id,
+                staged_snapshot_id=provision.staged_snapshot_id,
+                source_path="pyproject.toml",
+                source_present=provision.dependency_manifest_source_present,
+                source_sha256=provision.dependency_manifest_source_sha256,
+                normalized_dependencies=provision.normalized_dependencies,
+            )
+        request = build_validation_execution_request(
+            run_id=run_id,
+            graph_id=graph.graph_id,
+            graph_version=graph.version,
+            task_request=bound.request,
+            requirement=requirement,
+            source_workspace_id=source_snapshot.workspace_id,
+            source_snapshot_id=source_snapshot.snapshot_id,
+            staged_workspace_id=staged_workspace_id,
+            staged_snapshot_id=staged_snapshot_id,
+            dependency_manifest=dependency_manifest,
+        )
+        policy = resolve_governed_validation_policy(requirement.profile)
+        if validation_execution_evidence_errors(
+            request, policy, item, matching_provisioning
+        ):
             continue
         matching_exit = tuple(
             decision
@@ -567,15 +1021,29 @@ def required_validation_execution_status(
             and decision.attempt_id == bound.attempt_id
             and decision.disposition is TaskAttemptExitDisposition.SUCCEED_TASK
             and item.evidence_id in decision.evidence_ids
+            and all(
+                provision.evidence_id in decision.evidence_ids
+                for provision in matching_provisioning
+            )
         )
         if len(matching_exit) != 1 or not item.passed:
             continue
         verified_count += 1
+        if requirement.profile is ValidationExecutionProfile.PYTHON_COMPILE:
+            python_compile_verified_count += 1
+        elif requirement.profile is ValidationExecutionProfile.PYTHON_PYTEST:
+            python_pytest_verified_count += 1
+            dependency_provisioning_verified_count += 1
     return RequiredValidationExecutionStatus(
         required=True,
         required_count=len(requirements),
         verified_count=verified_count,
         verified=verified_count == len(requirements),
+        python_compile_verified_count=python_compile_verified_count,
+        python_pytest_verified_count=python_pytest_verified_count,
+        dependency_provisioning_verified_count=(
+            dependency_provisioning_verified_count
+        ),
     )
 
 

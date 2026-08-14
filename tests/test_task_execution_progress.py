@@ -14,6 +14,8 @@ from agentic_sdlc.task_execution_progress import (
     TaskExecutorCompleted,
     TaskValidationExecutionCompleted,
     TaskValidationExecutionStarted,
+    TaskValidationProvisioningCompleted,
+    TaskValidationProvisioningStarted,
 )
 from agentic_sdlc.task_graph import ValidationExecutionProfile
 from agentic_sdlc.validation_execution_contracts import ValidationExecutionOutcome
@@ -126,3 +128,30 @@ def test_console_reporter_makes_parallel_outstanding_attempts_visible() -> None:
         "[wave 4] 2 Task Agent attempts still running: "
         "TASK-003 attempt 1, TASK-005 attempt 1" in output
     )
+
+
+def test_console_reporter_renders_pytest_provisioning_as_observability() -> None:
+    stream = StringIO()
+    reporter = ConsoleTaskExecutionProgressReporter(stream=stream)
+    attempt = _attempt("TASK-006", 1, "Execute generated tests")
+
+    reporter.report(
+        TaskValidationProvisioningStarted(
+            wave_number=5,
+            attempt=attempt,
+            validation_requirement_id="TASK-006-VALIDATION-001",
+            profile=ValidationExecutionProfile.PYTHON_PYTEST,
+        )
+    )
+    reporter.report(
+        TaskValidationProvisioningCompleted(
+            wave_number=5,
+            attempt=attempt,
+            validation_requirement_id="TASK-006-VALIDATION-001",
+            profile=ValidationExecutionProfile.PYTHON_PYTEST,
+            outcome=ValidationExecutionOutcome.PASSED,
+        )
+    )
+
+    assert "provisioning dependencies for PYTHON_PYTEST" in stream.getvalue()
+    assert "dependency provisioning passed" in stream.getvalue()

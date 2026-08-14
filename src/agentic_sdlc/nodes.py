@@ -64,6 +64,7 @@ from agentic_sdlc.task_graph import (
     TaskGraph,
     TaskGraphValidationError,
     TaskMaterializationPolicy,
+    ValidationExecutionProfile,
     normalize_and_validate_task_graph as normalize_task_graph,
 )
 from agentic_sdlc.task_execution import (
@@ -123,6 +124,8 @@ from agentic_sdlc.task_execution_progress import (
     TaskExecutorCompleted,
     TaskValidationExecutionCompleted,
     TaskValidationExecutionStarted,
+    TaskValidationProvisioningCompleted,
+    TaskValidationProvisioningStarted,
     emit_task_execution_progress,
 )
 from agentic_sdlc.validation_execution import (
@@ -132,12 +135,21 @@ from agentic_sdlc.validation_execution import (
     ValidationExecutionInfrastructureError,
     disposable_staged_validation_workspace,
 )
+from agentic_sdlc.docker_validation import (
+    DockerPytestValidationExecutor,
+    ValidationDependencyManifestError,
+    build_python_dependency_manifest,
+)
 from agentic_sdlc.validation_execution_contracts import (
+    GovernedValidationExecutionReport,
+    TaskValidationProvisioningEvidence,
     TaskValidationExecutionEvidence,
     ValidationExecutionContractError,
     build_validation_execution_request,
     resolve_governed_validation_policy,
     validation_execution_evidence_errors,
+    validation_provisioning_evidence_errors,
+    validation_provisioning_retry_feedback,
     validation_retry_feedback,
 )
 from agentic_sdlc.workspace_contracts import (
@@ -747,6 +759,9 @@ class _WaveAttemptRecord:
     validation_execution_evidence: tuple[
         TaskValidationExecutionEvidence, ...
     ] = ()
+    validation_provisioning_evidence: tuple[
+        TaskValidationProvisioningEvidence, ...
+    ] = ()
     conflict_evidence_id: str | None = None
     failure: TaskExecutionFailure | None = None
     recovery_decision: TaskExecutionRecoveryDecision | None = None
@@ -1180,8 +1195,6 @@ def execute_task_graph_step(
         requirements = record.request.task.required_validations
         if not requirements:
             continue
-        if active_validation_executor is None:
-            active_validation_executor = PythonCompileValidationExecutor()
         if (
             record.validation is None
             or record.materialization_validation is None
@@ -1190,6 +1203,7 @@ def execute_task_graph_step(
                 "Eligible required validation lacks deterministic task evidence."
             )
         retained_evidence: list[TaskValidationExecutionEvidence] = []
+        retained_provisioning: list[TaskValidationProvisioningEvidence] = []
         for requirement in requirements:
             staged_workspace_id = (
                 "VALIDATION-WORKSPACE-"
@@ -1205,6 +1219,15 @@ def execute_task_graph_step(
                     authoritative_change_set=record.change_set,
                     staged_workspace_id=staged_workspace_id,
                 ) as staged:
+                    dependency_manifest = None
+                    if (
+                        requirement.profile
+                        is ValidationExecutionProfile.PYTHON_PYTEST
+                    ):
+                        dependency_manifest = build_python_dependency_manifest(
+                            staged.workspace,
+                            staged_snapshot_id=staged.snapshot.snapshot_id,
+                        )
                     validation_request = build_validation_execution_request(
                         run_id=state["run_id"],
                         graph_id=graph.graph_id,
@@ -1215,6 +1238,7 @@ def execute_task_graph_step(
                         source_snapshot_id=authoritative_snapshot.snapshot_id,
                         staged_workspace_id=staged.workspace.workspace_id,
                         staged_snapshot_id=staged.snapshot.snapshot_id,
+                        dependency_manifest=dependency_manifest,
                     )
                     policy = resolve_governed_validation_policy(
                         requirement.profile
@@ -1230,21 +1254,106 @@ def execute_task_graph_step(
                             profile=requirement.profile,
                         ),
                     )
-                    evidence = active_validation_executor.execute(
+                    if (
+                        requirement.profile
+                        is ValidationExecutionProfile.PYTHON_PYTEST
+                    ):
+                        emit_task_execution_progress(
+                            active_progress_reporter,
+                            TaskValidationProvisioningStarted(
+                                wave_number=wave_number,
+                                attempt=progress_attempts[record.task_id],
+                                validation_requirement_id=(
+                                    requirement.requirement_id
+                                ),
+                                profile=requirement.profile,
+                            ),
+                        )
+                    requirement_executor = active_validation_executor
+                    if requirement_executor is None:
+                        requirement_executor = (
+                            DockerPytestValidationExecutor()
+                            if requirement.profile
+                            is ValidationExecutionProfile.PYTHON_PYTEST
+                            else PythonCompileValidationExecutor()
+                        )
+                    execution_result = requirement_executor.execute(
                         validation_request,
                         policy,
                         staged.workspace,
                     )
-                    if not isinstance(
-                        evidence, TaskValidationExecutionEvidence
+                    if isinstance(
+                        execution_result, TaskValidationExecutionEvidence
                     ):
+                        report = GovernedValidationExecutionReport(
+                            execution_evidence=execution_result
+                        )
+                    elif isinstance(
+                        execution_result, GovernedValidationExecutionReport
+                    ):
+                        report = execution_result
+                    else:
                         raise ValidationExecutionContractError(
                             "Validation executor returned no immutable evidence."
+                        )
+                    provisioning = report.provisioning_evidence
+                    evidence = report.execution_evidence
+                    for provision in provisioning:
+                        provision_errors = validation_provisioning_evidence_errors(
+                            validation_request,
+                            policy,
+                            provision,
+                        )
+                        if provision_errors:
+                            raise ValidationExecutionContractError(
+                                "Validation provisioning evidence mismatch: "
+                                + ", ".join(provision_errors)
+                                + "."
+                            )
+                    if requirement.profile is ValidationExecutionProfile.PYTHON_PYTEST:
+                        if len(provisioning) != 1:
+                            raise ValidationExecutionContractError(
+                                "PYTHON_PYTEST requires exactly one provisioning "
+                                "evidence record."
+                            )
+                        emit_task_execution_progress(
+                            active_progress_reporter,
+                            TaskValidationProvisioningCompleted(
+                                wave_number=wave_number,
+                                attempt=progress_attempts[record.task_id],
+                                validation_requirement_id=(
+                                    requirement.requirement_id
+                                ),
+                                profile=requirement.profile,
+                                outcome=provisioning[0].outcome,
+                            ),
+                        )
+                        retained_provisioning.extend(provisioning)
+                        if not provisioning[0].passed:
+                            record.recovery_decision = decide_task_execution_recovery(
+                                task_id=record.task_id,
+                                attempt_number=record.attempt_number,
+                                request_id=record.request.request_id,
+                                attempt_id=record.request.attempt_id,
+                                failure_kind=(
+                                    TaskExecutionRecoveryFailureKind.VALIDATION_EXECUTION
+                                ),
+                                retryable=True,
+                                feedback=validation_provisioning_retry_feedback(
+                                    provisioning[0]
+                                ),
+                            )
+                            record.eligible = False
+                            break
+                    if evidence is None:
+                        raise ValidationExecutionContractError(
+                            "Successful provisioning returned no pytest evidence."
                         )
                 evidence_errors = validation_execution_evidence_errors(
                     validation_request,
                     policy,
                     evidence,
+                    provisioning,
                 )
                 if evidence_errors:
                     raise ValidationExecutionContractError(
@@ -1252,6 +1361,23 @@ def execute_task_graph_step(
                         + ", ".join(evidence_errors)
                         + "."
                     )
+            except ValidationDependencyManifestError as error:
+                record.recovery_decision = decide_task_execution_recovery(
+                    task_id=record.task_id,
+                    attempt_number=record.attempt_number,
+                    request_id=record.request.request_id,
+                    attempt_id=record.request.attempt_id,
+                    failure_kind=(
+                        TaskExecutionRecoveryFailureKind.VALIDATION_EXECUTION
+                    ),
+                    retryable=True,
+                    feedback=(
+                        "Governed dependency metadata validation failed: "
+                        f"{error}"
+                    ),
+                )
+                record.eligible = False
+                break
             except (
                 ValidationExecutionInfrastructureError,
                 ValidationExecutionContractError,
@@ -1317,6 +1443,7 @@ def execute_task_graph_step(
                 record.eligible = False
                 break
         record.validation_execution_evidence = tuple(retained_evidence)
+        record.validation_provisioning_evidence = tuple(retained_provisioning)
 
     new_snapshots: list[WorkspaceSnapshot] = []
     for record in records if hard_stop_reason is None else ():
@@ -1449,6 +1576,11 @@ def execute_task_graph_step(
             evidence
             for record in records
             for evidence in record.validation_execution_evidence
+        ],
+        "task_validation_provisioning_evidence": [
+            evidence
+            for record in records
+            for evidence in record.validation_provisioning_evidence
         ],
         "artifact_materialization_intents": [
             intent for record in records for intent in record.intents
@@ -1696,6 +1828,10 @@ def _record_evidence_ids(record: _WaveAttemptRecord) -> tuple[str, ...]:
             *(
                 evidence.evidence_id
                 for evidence in record.validation_execution_evidence
+            ),
+            *(
+                evidence.evidence_id
+                for evidence in record.validation_provisioning_evidence
             ),
         )
         if value
@@ -2155,6 +2291,9 @@ def _project_readiness_from_state(
         workspace_snapshots=tuple(state.get("workspace_snapshots", [])),
         validation_execution_evidence=tuple(
             state.get("task_validation_execution_evidence", [])
+        ),
+        validation_provisioning_evidence=tuple(
+            state.get("task_validation_provisioning_evidence", [])
         ),
         task_attempt_exit_decisions=tuple(
             state.get("task_attempt_exit_decisions", [])

@@ -60,14 +60,16 @@ optional. Do not derive this policy mechanically from task type. A verified
 NO_CHANGE may eventually satisfy REQUIRED because the desired file postcondition
 already exists.
 
-The only supported structured required validation profile is PYTHON_COMPILE.
-Use it only when the task must prove that the staged candidate Python files pass
-governed syntax/bytecode compilation before success. PYTHON_COMPILE does not run
-tests, import the generated application, exercise behavior, run benchmarks, or
-prove performance. Do not assign it mechanically to every task. A validation
-profile is application-owned execution authority: never propose executable paths,
-command strings, argv, shell syntax, working directories, environment variables,
-package-manager commands, dependency installation, or scripts.
+The supported structured required validation profiles are PYTHON_COMPILE and
+PYTHON_PYTEST. Use PYTHON_COMPILE only when the task must prove governed
+syntax/bytecode compilation. Use PYTHON_PYTEST only when acceptance criteria
+genuinely require executing generated Python tests, such as unit or API behavior
+verification. PYTHON_PYTEST includes application-governed dependency provisioning
+and fixed Docker-backed pytest execution. Do not assign validation mechanically to
+every task. A validation profile is application-owned execution authority: never
+propose executable paths, image names, Docker/pip/pytest argv, command strings,
+shell syntax, working directories, environment variables, package indexes,
+package-manager commands, or scripts.
 
 Cover every FR, NFR, CON, and AC item with at least one task reference. Risk and
 ambiguity references remain optional, but every reference you do make must exist

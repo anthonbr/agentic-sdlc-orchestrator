@@ -421,7 +421,7 @@ def test_evidence_schema_rejects_unsupported_profile() -> None:
         "attempt_id": "ATTEMPT",
         "attempt_number": 1,
         "validation_requirement_id": "TASK-001-VALIDATION-001",
-        "profile": "PYTHON_PYTEST",
+        "profile": "PYTHON_SHELL",
         "policy_id": "POLICY",
         "policy_version": "version",
         "source_workspace_id": "SOURCE",
@@ -456,7 +456,7 @@ def test_evidence_schema_rejects_unsupported_profile() -> None:
         TaskValidationExecutionEvidence,
     )
 
-    with raises(ValidationError, match="PYTHON_COMPILE"):
+    with raises(ValidationError, match="profile"):
         TaskValidationExecutionEvidence.model_validate_json(
             json.dumps(workspace_data)
         )
@@ -543,6 +543,6 @@ def test_validation_profile_correlation_is_closed_by_schema() -> None:
         TaskValidationRequirement.model_validate(
             {
                 "requirement_id": "TASK-001-VALIDATION-001",
-                "profile": "PYTHON_PYTEST",
+                "profile": "PYTHON_SHELL",
             }
         )

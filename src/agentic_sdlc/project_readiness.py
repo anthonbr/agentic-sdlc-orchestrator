@@ -27,6 +27,7 @@ from agentic_sdlc.task_graph import Task, TaskGraph, TaskMaterializationPolicy
 from agentic_sdlc.validation_execution_contracts import (
     RequiredValidationExecutionStatus,
     TaskValidationExecutionEvidence,
+    TaskValidationProvisioningEvidence,
     required_validation_execution_status,
 )
 from agentic_sdlc.workspace_contracts import (
@@ -100,6 +101,9 @@ class ProjectReadinessValidation(BaseModel):
     runtime_validation_required_count: int = Field(default=0, ge=0)
     runtime_validation_verified_count: int = Field(default=0, ge=0)
     runtime_execution_verified: bool = False
+    python_compile_verified_count: int = Field(default=0, ge=0)
+    python_pytest_verified_count: int = Field(default=0, ge=0)
+    dependency_provisioning_verified_count: int = Field(default=0, ge=0)
 
 
 def validate_project_readiness(
@@ -125,6 +129,9 @@ def validate_project_readiness(
     validation_execution_evidence: tuple[
         TaskValidationExecutionEvidence, ...
     ] = (),
+    validation_provisioning_evidence: tuple[
+        TaskValidationProvisioningEvidence, ...
+    ] = (),
     task_attempt_exit_decisions: tuple[TaskAttemptExitDecision, ...] = (),
 ) -> ProjectReadinessValidation:
     """Prove structural delivery readiness from retained authoritative evidence.
@@ -141,6 +148,7 @@ def validate_project_readiness(
         run_id=run_id,
         bound_requests=workspace_bound_requests,
         evidence=validation_execution_evidence,
+        provisioning_evidence=validation_provisioning_evidence,
         snapshots=workspace_snapshots,
         change_sets=change_sets,
         exit_decisions=task_attempt_exit_decisions,
@@ -473,6 +481,11 @@ def _validation(
         "runtime_validation_required_count": runtime_status.required_count,
         "runtime_validation_verified_count": runtime_status.verified_count,
         "runtime_execution_verified": runtime_status.verified,
+        "python_compile_verified_count": runtime_status.python_compile_verified_count,
+        "python_pytest_verified_count": runtime_status.python_pytest_verified_count,
+        "dependency_provisioning_verified_count": (
+            runtime_status.dependency_provisioning_verified_count
+        ),
     }
     canonical = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -491,4 +504,9 @@ def _validation(
         runtime_validation_required_count=runtime_status.required_count,
         runtime_validation_verified_count=runtime_status.verified_count,
         runtime_execution_verified=runtime_status.verified,
+        python_compile_verified_count=runtime_status.python_compile_verified_count,
+        python_pytest_verified_count=runtime_status.python_pytest_verified_count,
+        dependency_provisioning_verified_count=(
+            runtime_status.dependency_provisioning_verified_count
+        ),
     )
