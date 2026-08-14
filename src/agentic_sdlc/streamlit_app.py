@@ -810,6 +810,12 @@ def _render_task_details(
             "Deliverable roles: "
             + _joined_or_none(_string_sequence(task.get("deliverable_roles", ())))
         )
+        st.text(
+            "Required validations: "
+            + _joined_or_none(
+                _validation_profiles(task.get("required_validations", ()))
+            )
+        )
 
         st.markdown("**Approved-spec traceability**")
         _render_reference_group(
@@ -1014,6 +1020,14 @@ def _mapping_sequence(value: object) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return ()
     return tuple(item for item in value if isinstance(item, Mapping))
+
+
+def _validation_profiles(value: object) -> tuple[str, ...]:
+    return tuple(
+        str(item["profile"])
+        for item in _mapping_sequence(value)
+        if isinstance(item.get("profile"), str) and item["profile"]
+    )
 
 
 def _nested_string_sequences(value: object) -> tuple[tuple[str, ...], ...]:

@@ -231,6 +231,7 @@ def _task_graph_snapshot(
     revision: int = 0,
     title_suffix: str = "",
     prior_feedback: str | None = None,
+    required_validation_task_id: str | None = None,
 ) -> GovernedRunSnapshot:
     spec = {
         "spec_id": "SPEC-DEMO-V001",
@@ -292,7 +293,11 @@ def _task_graph_snapshot(
             }
         ],
     }
-    graph = _task_graph_data(revision=revision, title_suffix=title_suffix)
+    graph = _task_graph_data(
+        revision=revision,
+        title_suffix=title_suffix,
+        required_validation_task_id=required_validation_task_id,
+    )
     semantics = {
         "topological_order": ["TASK-001", "TASK-002", "TASK-003", "TASK-004"],
         "execution_layers": [
@@ -323,10 +328,13 @@ def _task_graph_snapshot(
                 "sequence": 1,
                 "revision_number": 0,
                 "attempt_number": 1,
-                "prompt_version": "task-planning-v1.3",
+                "prompt_version": "task-planning-v1.4",
                 "model_name": "fake-task-planner",
                 "reviewer_feedback": "",
-                "task_graph": _task_graph_data(revision=0),
+                "task_graph": _task_graph_data(
+                    revision=0,
+                    required_validation_task_id=required_validation_task_id,
+                ),
             }
         )
         review_history.append(
@@ -343,7 +351,7 @@ def _task_graph_snapshot(
             "sequence": len(history) + 1,
             "revision_number": revision,
             "attempt_number": 1,
-            "prompt_version": "task-planning-v1.3",
+            "prompt_version": "task-planning-v1.4",
             "model_name": "fake-task-planner",
             "reviewer_feedback": prior_feedback or "" if revision > 0 else "",
             "task_graph": graph,
@@ -385,6 +393,7 @@ def _task_graph_data(
     *,
     revision: int,
     title_suffix: str = "",
+    required_validation_task_id: str | None = None,
 ) -> dict[str, Any]:
     def task(
         task_id: str,
@@ -417,6 +426,16 @@ def _task_graph_data(
             "ambiguity_refs": ambiguity_refs or [],
             "expected_outputs": expected_outputs,
             "deliverable_roles": deliverable_roles or [],
+            "required_validations": (
+                [
+                    {
+                        "requirement_id": f"{task_id}-VALIDATION-001",
+                        "profile": "PYTHON_COMPILE",
+                    }
+                ]
+                if task_id == required_validation_task_id
+                else []
+            ),
         }
 
     return {

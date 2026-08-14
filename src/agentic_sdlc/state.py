@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from agentic_sdlc.project_delivery import RUNNABLE_PROJECT_DELIVERY_POLICY
 from agentic_sdlc.project_readiness import ProjectReadinessValidation
@@ -23,6 +23,9 @@ from agentic_sdlc.task_execution_contracts import (
     TaskExecutionRequest,
     TaskExecutionResult,
     TaskExecutionValidationResult,
+)
+from agentic_sdlc.validation_execution_contracts import (
+    TaskValidationExecutionEvidence,
 )
 from agentic_sdlc.workspace_contracts import (
     ArtifactMaterializationIntent,
@@ -153,6 +156,7 @@ TaskTypeData = Literal[
     "DESIGN", "IMPLEMENTATION", "TEST", "DOCUMENTATION", "VALIDATION", "RELEASE"
 ]
 TaskMaterializationPolicyData = Literal["FORBIDDEN", "ALLOWED", "REQUIRED"]
+ValidationExecutionProfileData = Literal["PYTHON_COMPILE"]
 ProjectDeliveryModeData = Literal["ENGINEERING_ARTIFACTS", "RUNNABLE_PROJECT"]
 ProjectDeliverableRoleData = Literal[
     "RUNNABLE_ENTRYPOINT", "AUTOMATED_TESTS", "RUN_INSTRUCTIONS"
@@ -164,6 +168,13 @@ class ProjectDeliveryPolicyData(TypedDict):
     """JSON-safe application-owned project delivery context."""
 
     mode: ProjectDeliveryModeData
+
+
+class TaskValidationRequirementData(TypedDict):
+    """JSON-safe approved validation authority for one canonical task."""
+
+    requirement_id: str
+    profile: ValidationExecutionProfileData
 
 
 class TaskData(TypedDict):
@@ -183,6 +194,7 @@ class TaskData(TypedDict):
     ambiguity_refs: list[str]
     expected_outputs: list[str]
     deliverable_roles: list[ProjectDeliverableRoleData]
+    required_validations: NotRequired[list[TaskValidationRequirementData]]
 
 
 class TaskGraphData(TypedDict):
@@ -297,6 +309,9 @@ class WorkflowState(TypedDict, total=False):
     task_execution_failures: Annotated[list[TaskExecutionFailure], operator.add]
     task_execution_recovery_decisions: Annotated[
         list[TaskExecutionRecoveryDecision], operator.add
+    ]
+    task_validation_execution_evidence: Annotated[
+        list[TaskValidationExecutionEvidence], operator.add
     ]
     task_execution_waves: Annotated[list[TaskExecutionWave], operator.add]
     governed_workspace_session: GovernedWorkspaceSession

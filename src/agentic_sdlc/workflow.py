@@ -56,6 +56,9 @@ from agentic_sdlc.task_execution_progress import (
     TaskExecutionProgressReporter,
     TaskExecutionWaiter,
 )
+from agentic_sdlc.validation_execution import (
+    GovernedValidationExecutor,
+)
 from agentic_sdlc.workspace_integration import (
     DeterministicRepositoryContextPathProvider,
     GovernedWorkspaceRuntime,
@@ -222,6 +225,7 @@ def build_workflow(
     requirement_analyst: RequirementAnalysisClient | None = None,
     task_planner: TaskPlanningClient | None = None,
     task_executor: TaskExecutor | None = None,
+    validation_executor: GovernedValidationExecutor | None = None,
     workspace_runtime: GovernedWorkspaceRuntime | None = None,
     repository_context_path_provider: RepositoryContextPathProvider | None = None,
     task_execution_progress_reporter: TaskExecutionProgressReporter | None = None,
@@ -296,6 +300,7 @@ def build_workflow(
         partial(
             execute_task_graph_step,
             executor=executor,
+            validation_executor=validation_executor,
             workspace_runtime=active_workspace_runtime,
             repository_context_path_provider=path_provider,
             progress_reporter=progress_reporter,

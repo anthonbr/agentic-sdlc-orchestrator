@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Collection, Protocol, TextIO, TypeAlias
 
+from agentic_sdlc.task_graph import ValidationExecutionProfile
+from agentic_sdlc.validation_execution_contracts import ValidationExecutionOutcome
+
 
 DEFAULT_TASK_EXECUTION_HEARTBEAT_SECONDS = 5.0
 
@@ -76,6 +79,27 @@ class TaskExecutorCompleted:
 
 
 @dataclass(frozen=True)
+class TaskValidationExecutionStarted:
+    """One approved fixed-profile validation is about to execute."""
+
+    wave_number: int
+    attempt: TaskExecutionProgressAttempt
+    validation_requirement_id: str
+    profile: ValidationExecutionProfile
+
+
+@dataclass(frozen=True)
+class TaskValidationExecutionCompleted:
+    """Governed validation returned trusted bounded execution evidence."""
+
+    wave_number: int
+    attempt: TaskExecutionProgressAttempt
+    validation_requirement_id: str
+    profile: ValidationExecutionProfile
+    outcome: ValidationExecutionOutcome
+
+
+@dataclass(frozen=True)
 class TaskExecutionAttemptSettled:
     """Deterministic application settlement for one canonical wave member."""
 
@@ -91,6 +115,8 @@ TaskExecutionProgressEvent: TypeAlias = (
     | TaskExecutionAttemptStarted
     | TaskExecutionHeartbeat
     | TaskExecutorCompleted
+    | TaskValidationExecutionStarted
+    | TaskValidationExecutionCompleted
     | TaskExecutionAttemptSettled
 )
 
@@ -190,6 +216,22 @@ class ConsoleTaskExecutionProgressReporter:
             self._write(
                 f"[wave {event.wave_number}] {attempt.task_id} attempt "
                 f"{attempt.attempt_number} executor completed; validating result..."
+            )
+            return
+        if isinstance(event, TaskValidationExecutionStarted):
+            attempt = event.attempt
+            self._write(
+                f"[wave {event.wave_number}] {attempt.task_id} attempt "
+                f"{attempt.attempt_number} executing required "
+                f"{event.profile.value} validation..."
+            )
+            return
+        if isinstance(event, TaskValidationExecutionCompleted):
+            attempt = event.attempt
+            self._write(
+                f"[wave {event.wave_number}] {attempt.task_id} attempt "
+                f"{attempt.attempt_number} {event.profile.value} "
+                f"{event.outcome.value.lower()}."
             )
             return
         if isinstance(event, TaskExecutionAttemptSettled):

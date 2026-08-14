@@ -200,7 +200,56 @@ Paths must be canonical relative POSIX paths. Absolute, drive-qualified, travers
 
 Application is a process-level transaction: `CREATE` uses exclusive creation, `MODIFY` stages a same-directory atomic replacement while preserving mode bits, and a fresh snapshot verifies every postimage. Once effects exist, handled failure triggers reverse rollback. Created files/directories are removed and modified bytes/modes restored only if captured device, inode, content, and mode evidence still proves transaction ownership. Rollback is verified. Inability to prove cleanup or workspace integrity becomes explicit `ROLLBACK_FAILED`, marks the session `UNPROVABLE`, aborts unsettled peers, and hard-stops all further dispatch and mutation. This is not crash-consistent journaling or hostile-process isolation.
 
-## 8. Ambiguity Governance and Governed Replanning
+## 8. Governed Validation Execution
+
+Required runtime validation is explicit canonical TaskGraph data, never a keyword
+in task prose. A planner may select only an application-defined profile; the human
+reviews that profile with the canonical graph. Slice 1 supports only
+`PYTHON_COMPILE`. Task Agents receive no subprocess, executable, argv, shell, cwd,
+environment, installer, network-command, or script authority, and
+`TaskExecutionResult` cannot carry authoritative execution evidence.
+
+The orchestration-thread sequence is:
+
+```text
+validated TaskExecutionResult and artifacts
+  -> validated materialization and WorkspaceChangeSet
+  -> deterministic same-wave conflict reconciliation
+  -> disposable postimage from exact pre-wave authority plus this task only
+  -> application-resolved governed validation policy and backend
+  -> immutable correlated execution evidence
+  -> PASS: apply only the governed WorkspaceChangeSet to live authority
+  -> FAIL/TIMEOUT: existing bounded Task Agent recovery decision
+```
+
+Each disposable postimage has its own workspace identity and canonical snapshot
+identity. The fixed backend invokes the trusted interpreter with argv equivalent
+to `sys.executable -I -B -m compileall -q .`, `shell=False`, a minimal explicit
+environment, disposable home/temp directories, a fixed timeout, process-group
+termination, constant-memory stream hashing, and 16 KiB retained raw prefixes per
+stream. Retained output is control-character escaped and remains bounded; total
+byte counts, hashes, and truncation flags preserve the audit boundary.
+Command-created files and
+changes are discarded. The live workspace is unchanged until exact evidence for
+the current run, graph, task, request, attempt, requirement, profile, policy,
+source snapshot, and staged snapshot passes correlation and integrity checks.
+
+Normal non-zero compilation and reliably cleaned timeout outcomes may enter the
+existing three-attempt Task Agent repair path with explicitly untrusted bounded
+diagnostics. Backend, staging, policy, termination, cleanup, and evidence-integrity
+failures are infrastructure/integrity failures and fail closed without consuming
+an LLM repair retry. Progress events are observational; persisted evidence and the
+task-attempt exit decision govern success.
+
+This backend is safe only for the narrow compilation profile: cwd confinement is
+not an OS sandbox, and the architecture does not claim network, child-process,
+CPU, memory, or hostile generated-code isolation. The contracts separate approved
+requirements, policy, environment/backend, requests, evidence, and settlement so
+a future container or OS-sandbox backend can add governed dependency provisioning,
+`PYTHON_PYTEST`, and benchmark profiles without granting package-manager or shell
+authority to Task Agents.
+
+## 9. Ambiguity Governance and Governed Replanning
 
 The ambiguity reviewer scenario starts with: “Enhance the URL shortener so shortened URLs automatically expire after a period of time.” Revision 0 identifies unresolved choices including TTL duration and start, expired redirect/analytics behavior, existing-code scope, and persistence. Because `needs_clarification=true`, deterministic readiness is `BLOCKED`; the human interrupt offers only `REQUEST_CHANGES` or `REJECT`, the planner has zero calls, and neither a specification nor TaskGraph exists.
 
@@ -210,13 +259,13 @@ This scenario demonstrates the governed replanning boundary, but Revision 1 prod
 
 These controls do not perform live TaskGraph topology mutation, active dependency surgery, running-task migration, cancellation, or active-DAG rewriting.
 
-## 9. Exit Gate and Durable Project Promotion
+## 10. Exit Gate and Durable Project Promotion
 
-Task success alone is insufficient. The workflow exit gate checks processed input, approved validated analysis, an approved specification, validated and approved TaskGraph evidence, `SUCCEEDED` runtime state, exact final-attempt request/result/artifact/validation chains, verified workspace integrity, and complete final materialization/mutation/exit-decision evidence. A `REQUIRED` materialization task must have passed materialization evidence and an `APPLIED` transaction; non-materializing permitted tasks still require a successful governed exit decision. For `RUNNABLE_PROJECT`, a final `ProjectReadinessValidation` additionally proves that every required role is backed by a successful final task attempt, passed semantic and materialization evidence, a validated/applied change set, and a matching path/content hash in the authoritative final snapshot; run instructions must resolve specifically to root `README.md`.
+Task success alone is insufficient. The workflow exit gate checks processed input, approved validated analysis, an approved specification, validated and approved TaskGraph evidence, `SUCCEEDED` runtime state, exact final-attempt request/result/artifact/validation chains, verified workspace integrity, complete final materialization/mutation/exit-decision evidence, and exact PASS evidence for every approved required validation. A `REQUIRED` materialization task must have passed materialization evidence and an `APPLIED` transaction; non-materializing permitted tasks still require a successful governed exit decision. For `RUNNABLE_PROJECT`, a final `ProjectReadinessValidation` additionally proves that every required role is backed by a successful final task attempt, passed semantic and materialization evidence, a validated/applied change set, and a matching path/content hash in the authoritative final snapshot; run instructions must resolve specifically to root `README.md`.
 
-This is an evidence-completeness and workspace-integrity boundary, not runtime execution or deployment authority. Runnable-project readiness proves required launch/test surfaces and reviewer instructions are materially present; `runtime_execution_verified` remains false. After the gate passes, the live CLI resolves the exact retained workspace capability and explicitly supplies the same run's terminal `LiveRunArtifactBundle` to project publication. The exporter validates the successful manifest, exact regular-file set, hashes, byte sizes, bundle identity, run identity, and authoritative workspace lineage. It then uses descriptor-relative no-follow POSIX operations to copy the authoritative project content and evidence bundle into one staging package. Staging and final verification independently prove that the non-reserved projection equals the authoritative workspace, the `sdlc-artifacts/` projection equals the validated live bundle, and no unexplained third path set exists. Promotion reserves a new non-overwriting directory and remains relative to retained staging/destination descriptors. Export fails closed where those filesystem primitives are unavailable. The live run bundle remains retained, the durable directory is not an agent workspace, and the orchestrator does not run the generated product or its tests, initialize Git, deploy, or invoke CI/CD.
+This is an evidence-completeness and workspace-integrity boundary, not general runtime or deployment authority. Readiness separately records whether validation was required and, when required, whether every final successful task attempt has matching PASS evidence. `PYTHON_COMPILE` verification means compilation only; it never claims that generated tests, applications, or benchmarks executed. After the gate passes, the live CLI resolves the exact retained workspace capability and explicitly supplies the same run's terminal `LiveRunArtifactBundle` to project publication. The exporter validates the successful manifest, exact regular-file set, hashes, byte sizes, bundle identity, run identity, and authoritative workspace lineage. It then uses descriptor-relative no-follow POSIX operations to copy the authoritative project content and evidence bundle into one staging package. Staging and final verification independently prove that the non-reserved projection equals the authoritative workspace, the `sdlc-artifacts/` projection equals the validated live bundle, and no unexplained third path set exists. Promotion reserves a new non-overwriting directory and remains relative to retained staging/destination descriptors. Export fails closed where those filesystem primitives are unavailable. The live run bundle remains retained, the durable directory is not an agent workspace, and the orchestrator does not run the generated product or its tests, initialize Git, deploy, or invoke CI/CD.
 
-## 10. Traceability and Reliability Evidence
+## 11. Traceability and Reliability Evidence
 
 Within a workflow run, frozen Pydantic contracts make canonical plan, execution, artifact, workspace, mutation, and final project-readiness records immutable by contract, while `operator.add` state reducers accumulate histories rather than replace them. Together they retain requirement analyses and human decisions, TaskGraph candidates and approvals, execution waves, requests, results, failures, recovery decisions, canonical engineering artifacts, bounded workspace requests, snapshots, materialization validations, change sets, conflicts, mutation results, task-attempt exit decisions, and role-to-final-snapshot readiness evidence. Deterministic UUIDv5 identifiers and content hashes bind specification, graph, task, attempt, request, artifact slot, content, references, and mutation evidence. Failed attempts remain audit evidence; only the final successful attempt's exactly validated artifact set can feed dependents. The default `InMemorySaver` checkpoint is process-local, and exported JSON/Markdown reviewer artifacts are ordinary files rather than a tamper-evident durable event store.
 
@@ -239,7 +288,7 @@ store.
 
 End-to-end latency and MTTR are explicitly `NOT_MEASURED`: the evidence model retains structural events but not authoritative elapsed-time or incident-to-recovery boundaries. Reliability claims are made only where retained evidence supports them; no timing precision is inferred from creation timestamps or file metadata.
 
-## 11. Architectural Decisions and Deliberate Limitations
+## 12. Architectural Decisions and Deliberate Limitations
 
 - **No live TaskGraph mutation.** Static control topology plus governed plan regeneration favors reproducibility over runtime graph surgery.
 - **No autonomous Git promotion.** Agent mutation authority ends at the isolated workspace. The application may promote an exit-verified snapshot into a new durable project directory, while branch, commit, push, review, merge, and release decisions remain outside the autonomous loop.
@@ -249,7 +298,7 @@ End-to-end latency and MTTR are explicitly `NOT_MEASURED`: the evidence model re
 - **No unsupported timing metrics.** MTTR and end-to-end latency remain unmeasured until authoritative timing boundaries exist.
 - **Prototype recovery scope.** The design is not a distributed scheduler, persistent cross-process recovery platform, crash-durable transaction manager, CI/CD system, deployment service, or remote repository manager.
 
-## 12. Reviewer Evidence Anchors
+## 13. Reviewer Evidence Anchors
 
 - **Greenfield:** reviewer bundle `artifacts/demo-run/`; runnable export `artifacts/demo-run/generated-project/` (11 tests).
 - **Brownfield:** reviewer bundle `artifacts/brownfield-demo-run/`; runnable export `artifacts/brownfield-demo-run/enhanced-project/` (18 tests).

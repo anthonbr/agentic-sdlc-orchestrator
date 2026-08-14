@@ -6,7 +6,7 @@ import hashlib
 import json
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentic_sdlc.project_delivery import (
     ProjectDeliverableRole,
@@ -24,6 +24,11 @@ from agentic_sdlc.task_execution_contracts import (
     TaskExecutionValidationResult,
 )
 from agentic_sdlc.task_graph import Task, TaskGraph, TaskMaterializationPolicy
+from agentic_sdlc.validation_execution_contracts import (
+    RequiredValidationExecutionStatus,
+    TaskValidationExecutionEvidence,
+    required_validation_execution_status,
+)
 from agentic_sdlc.workspace_contracts import (
     ArtifactMaterializationValidationResult,
     WorkspaceChangeSet,
@@ -38,6 +43,10 @@ from agentic_sdlc.workspace_mutation import (
     WorkspaceMutationResult,
     WorkspaceMutationStatus,
 )
+from agentic_sdlc.workspace_integration_contracts import (
+    TaskAttemptExitDecision,
+    WorkspaceBoundTaskExecutionRequest,
+)
 
 
 class ProjectReadinessIssueCode(StrEnum):
@@ -47,6 +56,7 @@ class ProjectReadinessIssueCode(StrEnum):
     TASK_GRAPH_ROLE = "TASK_GRAPH_ROLE"
     ROLE_EVIDENCE = "ROLE_EVIDENCE"
     FINAL_SNAPSHOT = "FINAL_SNAPSHOT"
+    RUNTIME_VALIDATION = "RUNTIME_VALIDATION"
 
 
 class ProjectReadinessIssue(BaseModel):
@@ -86,12 +96,16 @@ class ProjectReadinessValidation(BaseModel):
     required_roles: tuple[ProjectDeliverableRole, ...]
     role_evidence: tuple[ProjectReadinessRoleEvidence, ...]
     issues: tuple[ProjectReadinessIssue, ...]
+    runtime_validation_required: bool = False
+    runtime_validation_required_count: int = Field(default=0, ge=0)
+    runtime_validation_verified_count: int = Field(default=0, ge=0)
     runtime_execution_verified: bool = False
 
 
 def validate_project_readiness(
     policy: ProjectDeliveryPolicy,
     *,
+    run_id: str | None = None,
     graph: TaskGraph | None,
     execution: TaskGraphExecutionState | None,
     requests: tuple[TaskExecutionRequest, ...] = (),
@@ -104,15 +118,44 @@ def validate_project_readiness(
     change_set_validations: tuple[WorkspaceChangeSetValidationResult, ...] = (),
     mutations: tuple[WorkspaceMutationResult, ...] = (),
     authoritative_snapshot: WorkspaceSnapshot | None = None,
+    workspace_bound_requests: tuple[
+        WorkspaceBoundTaskExecutionRequest, ...
+    ] = (),
+    workspace_snapshots: tuple[WorkspaceSnapshot, ...] = (),
+    validation_execution_evidence: tuple[
+        TaskValidationExecutionEvidence, ...
+    ] = (),
+    task_attempt_exit_decisions: tuple[TaskAttemptExitDecision, ...] = (),
 ) -> ProjectReadinessValidation:
     """Prove structural delivery readiness from retained authoritative evidence.
 
-    This validator never reads or executes the generated project. Runtime execution
-    remains explicitly unverified even when every required surface is materialized.
+    This validator never runs commands. It verifies retained execution evidence
+    only when the approved TaskGraph explicitly required governed validation.
     """
 
     issues: list[ProjectReadinessIssue] = []
     evidence: list[ProjectReadinessRoleEvidence] = []
+    runtime_status = required_validation_execution_status(
+        graph,
+        execution,
+        run_id=run_id,
+        bound_requests=workspace_bound_requests,
+        evidence=validation_execution_evidence,
+        snapshots=workspace_snapshots,
+        change_sets=change_sets,
+        exit_decisions=task_attempt_exit_decisions,
+    )
+    if runtime_status.required and not runtime_status.verified:
+        issues.append(
+            ProjectReadinessIssue(
+                code=ProjectReadinessIssueCode.RUNTIME_VALIDATION,
+                role=None,
+                detail=(
+                    "Approved required validation lacks exact successful "
+                    "final-attempt execution evidence."
+                ),
+            )
+        )
     if graph is not None and graph.delivery_policy != policy:
         issues.append(
             ProjectReadinessIssue(
@@ -126,7 +169,7 @@ def validate_project_readiness(
         )
 
     if policy.mode is ProjectDeliveryMode.ENGINEERING_ARTIFACTS:
-        return _validation(policy, evidence, issues)
+        return _validation(policy, evidence, issues, runtime_status)
 
     if graph is None:
         issues.append(
@@ -136,7 +179,7 @@ def validate_project_readiness(
                 detail="Runnable-project readiness requires an approved TaskGraph.",
             )
         )
-        return _validation(policy, evidence, issues)
+        return _validation(policy, evidence, issues, runtime_status)
     if authoritative_snapshot is None:
         issues.append(
             ProjectReadinessIssue(
@@ -168,7 +211,7 @@ def validate_project_readiness(
             )
         )
     if execution is None or authoritative_snapshot is None:
-        return _validation(policy, evidence, issues)
+        return _validation(policy, evidence, issues, runtime_status)
 
     for role in policy.required_roles:
         role_tasks = tuple(
@@ -219,7 +262,7 @@ def validate_project_readiness(
                     ),
                 )
             )
-    return _validation(policy, evidence, issues)
+    return _validation(policy, evidence, issues, runtime_status)
 
 
 def _evidence_for_task_role(
@@ -397,6 +440,7 @@ def _validation(
     policy: ProjectDeliveryPolicy,
     evidence: list[ProjectReadinessRoleEvidence],
     issues: list[ProjectReadinessIssue],
+    runtime_status: RequiredValidationExecutionStatus,
 ) -> ProjectReadinessValidation:
     ordered_evidence = tuple(
         sorted(
@@ -425,7 +469,10 @@ def _validation(
         "required_roles": [role.value for role in policy.required_roles],
         "role_evidence": [item.model_dump(mode="json") for item in ordered_evidence],
         "issues": [item.model_dump(mode="json") for item in ordered_issues],
-        "runtime_execution_verified": False,
+        "runtime_validation_required": runtime_status.required,
+        "runtime_validation_required_count": runtime_status.required_count,
+        "runtime_validation_verified_count": runtime_status.verified_count,
+        "runtime_execution_verified": runtime_status.verified,
     }
     canonical = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -440,5 +487,8 @@ def _validation(
         required_roles=policy.required_roles,
         role_evidence=ordered_evidence,
         issues=ordered_issues,
-        runtime_execution_verified=False,
+        runtime_validation_required=runtime_status.required,
+        runtime_validation_required_count=runtime_status.required_count,
+        runtime_validation_verified_count=runtime_status.verified_count,
+        runtime_execution_verified=runtime_status.verified,
     )

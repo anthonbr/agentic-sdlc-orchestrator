@@ -21,9 +21,14 @@ from agentic_sdlc.project_delivery import (
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
+    ProposedTaskValidationRequirement,
+    TaskGraph,
+    TaskValidationRequirement,
     TaskMaterializationPolicy,
     TaskGraphValidationError,
     TaskType,
+    ValidationExecutionProfile,
+    derive_task_graph_semantics,
     normalize_and_validate_task_graph,
 )
 
@@ -68,6 +73,7 @@ def _task(
         TaskMaterializationPolicy.FORBIDDEN
     ),
     deliverable_roles: list[ProjectDeliverableRole] | None = None,
+    required_validations: list[ProposedTaskValidationRequirement] | None = None,
 ) -> ProposedTask:
     return ProposedTask(
         key=key,
@@ -90,6 +96,7 @@ def _task(
         ambiguity_refs=ambiguity_refs if ambiguity_refs is not None else [],
         expected_outputs=[f"{key}.md"],
         deliverable_roles=deliverable_roles or [],
+        required_validations=required_validations or [],
     )
 
 
@@ -265,6 +272,80 @@ def test_materialization_policy_participates_in_graph_identity() -> None:
     )
     assert forbidden.content_hash != required.content_hash
     assert forbidden.graph_id != required.graph_id
+
+
+def test_required_validation_becomes_canonical_and_participates_in_identity() -> None:
+    spec = _spec()
+    without_validation, _ = normalize_and_validate_task_graph(
+        _proposal(_task("implement")),
+        spec,
+        version=1,
+        created_at=FIXED_TIME,
+    )
+    with_validation, _ = normalize_and_validate_task_graph(
+        _proposal(
+            _task(
+                "implement",
+                required_validations=[
+                    ProposedTaskValidationRequirement(
+                        profile=ValidationExecutionProfile.PYTHON_COMPILE
+                    )
+                ],
+            )
+        ),
+        spec,
+        version=1,
+        created_at=FIXED_TIME,
+    )
+
+    requirement = with_validation.tasks[0].required_validations[0]
+    assert requirement.requirement_id == "TASK-001-VALIDATION-001"
+    assert requirement.profile is ValidationExecutionProfile.PYTHON_COMPILE
+    assert with_validation.content_hash != without_validation.content_hash
+    assert with_validation.graph_id != without_validation.graph_id
+
+    restored = TaskGraph.model_validate_json(with_validation.model_dump_json())
+    assert restored == with_validation
+    assert restored.tasks[0].required_validations == (requirement,)
+
+    invalid_task = with_validation.tasks[0].model_copy(
+        update={
+            "required_validations": (
+                TaskValidationRequirement(
+                    requirement_id="TASK-999-VALIDATION-001",
+                    profile=ValidationExecutionProfile.PYTHON_COMPILE,
+                ),
+            )
+        }
+    )
+    with raises(TaskGraphValidationError, match="non-canonical"):
+        derive_task_graph_semantics((invalid_task,))
+
+
+def test_unsupported_and_duplicate_required_validation_profiles_fail_closed() -> None:
+    with raises(ValidationError, match="profile"):
+        ProposedTaskValidationRequirement.model_validate_json(
+            '{"profile":"PYTHON_PYTEST"}'
+        )
+
+    requirement = ProposedTaskValidationRequirement(
+        profile=ValidationExecutionProfile.PYTHON_COMPILE
+    )
+    with raises(ValidationError, match="required validation profiles must be unique"):
+        _task(
+            "duplicate",
+            required_validations=[requirement, requirement],
+        )
+
+
+def test_task_without_required_validation_remains_backward_compatible() -> None:
+    task = _task("legacy")
+    serialized = task.model_dump(mode="json")
+    serialized.pop("required_validations")
+
+    restored = ProposedTask.model_validate_json(json.dumps(serialized))
+
+    assert restored.required_validations == []
 
 
 def test_default_delivery_policy_preserves_engineering_artifact_graphs() -> None:

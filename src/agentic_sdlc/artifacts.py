@@ -361,6 +361,14 @@ def _task_graph_markdown(state: WorkflowState, graph: TaskGraphData) -> str:
                     f"- Materialization policy: {task['materialization_policy']}",
                     "- Delivery roles: "
                     + (", ".join(task["deliverable_roles"]) or "None"),
+                    "- Required validations: "
+                    + (
+                        ", ".join(
+                            item["profile"]
+                            for item in task.get("required_validations", [])
+                        )
+                        or "None"
+                    ),
                     f"- Depends on: {depends_on}",
                     "- Runtime status: "
                     + (
@@ -432,6 +440,10 @@ def _execution_evidence(state: WorkflowState) -> dict[str, object]:
         "recovery_decisions": [
             decision.model_dump(mode="json")
             for decision in state.get("task_execution_recovery_decisions", [])
+        ],
+        "validation_executions": [
+            item.model_dump(mode="json")
+            for item in state.get("task_validation_execution_evidence", [])
         ],
     }
 
@@ -511,6 +523,21 @@ def _summary_markdown(
         "mode", "ENGINEERING_ARTIFACTS"
     )
     readiness = state.get("project_readiness_validation")
+    validation_evidence = state.get("task_validation_execution_evidence", [])
+    required_validation_count = sum(
+        len(task.get("required_validations", []))
+        for task in state.get("approved_task_graph", {}).get("tasks", [])
+    )
+    successful_exit_evidence_ids = {
+        evidence_id
+        for decision in state.get("task_attempt_exit_decisions", [])
+        if decision.disposition.value == "SUCCEED_TASK"
+        for evidence_id in decision.evidence_ids
+    }
+    passed_validation_count = sum(
+        item.passed and item.evidence_id in successful_exit_evidence_ids
+        for item in validation_evidence
+    )
     mutations = state.get("workspace_mutation_results", [])
     materialized_changes = tuple(
         f"{change.path} ({change.operation.value})"
@@ -576,7 +603,14 @@ def _summary_markdown(
         f"- Rollback outcomes: {rollback_count}",
         "- Materialized desired paths: "
         + (", ".join(sorted(set(materialized_changes))) or "None"),
+        f"- Governed required validations: {passed_validation_count} passed / "
+        f"{required_validation_count} required",
+        "- PYTHON_COMPILE validation executed: "
+        + ("yes" if validation_evidence else "no"),
         "- Generated code/tests executed: no",
+        "- Generated tests executed: no",
+        "- Generated application executed: no",
+        "- Benchmarks executed: no",
         "- Project readiness: "
         + (
             "not reached"
