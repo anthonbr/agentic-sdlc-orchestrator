@@ -8,6 +8,7 @@ from typing import Any, cast
 from uuid import uuid4
 
 import streamlit as st
+from pydantic import ValidationError
 
 from agentic_sdlc.application import (
     GovernedRunApplicationStatus,
@@ -15,7 +16,18 @@ from agentic_sdlc.application import (
     GovernedRunSnapshot,
     HumanGovernanceGate,
 )
+from agentic_sdlc.clarification_draft import (
+    ClarificationDrafter,
+    ClarificationDraftError,
+    ClarificationDraftRequest,
+    OpenAIClarificationDrafter,
+    clarification_draft_context_identity,
+)
 from agentic_sdlc.project_export import ProjectNameError
+from agentic_sdlc.requirement_analysis import (
+    RequirementAnalysis,
+    RequirementPlanningReadiness,
+)
 from agentic_sdlc.requirement_submission import RequirementSubmissionError
 from agentic_sdlc.state import ApprovalDecision, ApprovalResponse
 from agentic_sdlc.streamlit_execution_progress import (
@@ -41,6 +53,8 @@ TASK_GRAPH_REVIEW_STAGE = "task_graph_review"
 _UI_PHASE_KEY = "agentic_sdlc_ui_phase"
 _RUN_ID_KEY = "agentic_sdlc_current_run_id"
 _OPERATION_ID_KEY = "agentic_sdlc_operation_id"
+_CLARIFICATION_DRAFT_CONTEXT_KEY = "agentic_sdlc_clarification_draft_context"
+_CLARIFICATION_DRAFT_TEXT_KEY = "agentic_sdlc_clarification_draft_text"
 
 
 @st.cache_resource(
@@ -66,7 +80,11 @@ def main() -> None:
     render_app(_session_runtime())
 
 
-def render_app(runtime: StreamlitRunRuntime) -> None:
+def render_app(
+    runtime: StreamlitRunRuntime,
+    *,
+    clarification_drafter: ClarificationDrafter | None = None,
+) -> None:
     """Render one UI pass from the runtime's immutable polling projection."""
 
     st.title("Agentic SDLC Orchestrator")
@@ -98,6 +116,7 @@ def render_app(runtime: StreamlitRunRuntime) -> None:
         runtime,
         snapshot,
         execution_progress=view.execution_progress,
+        clarification_drafter=clarification_drafter,
     )
 
 
@@ -246,6 +265,7 @@ def _render_snapshot(
     snapshot: GovernedRunSnapshot,
     *,
     execution_progress: StreamlitExecutionProgressView | None,
+    clarification_drafter: ClarificationDrafter | None,
 ) -> None:
     for warning in snapshot.warnings:
         st.warning(warning)
@@ -257,7 +277,12 @@ def _render_snapshot(
     ):
         if gate.stage == REQUIREMENT_REVIEW_STAGE:
             st.session_state[_UI_PHASE_KEY] = "requirement_analysis_review"
-            _render_requirement_analysis_review(runtime, snapshot, gate)
+            _render_requirement_analysis_review(
+                runtime,
+                snapshot,
+                gate,
+                clarification_drafter=clarification_drafter,
+            )
             return
         if gate.stage == TASK_GRAPH_REVIEW_STAGE:
             st.session_state[_UI_PHASE_KEY] = "task_graph_review"
@@ -458,6 +483,8 @@ def _render_requirement_analysis_review(
     runtime: StreamlitRunRuntime,
     snapshot: GovernedRunSnapshot,
     gate: HumanGovernanceGate,
+    *,
+    clarification_drafter: ClarificationDrafter | None,
 ) -> None:
     payload = gate.payload
     analysis = _mapping(payload.get("requirement_analysis"))
@@ -542,7 +569,142 @@ def _render_requirement_analysis_review(
         )
 
     _render_analysis_history(snapshot)
+    if readiness_status == "BLOCKED":
+        try:
+            draft_request = _clarification_draft_request(
+                snapshot,
+                gate,
+                analysis=analysis,
+                readiness=readiness,
+                revision=revision,
+            )
+        except (ValidationError, ValueError) as error:
+            _clear_clarification_draft_state()
+            st.error(
+                "Clarification assistance is unavailable because the current "
+                f"governed context is incomplete ({type(error).__name__})."
+            )
+        else:
+            _render_clarification_draft_helper(
+                gate,
+                draft_request,
+                clarification_drafter=clarification_drafter,
+            )
+    else:
+        _clear_clarification_draft_state()
     _render_requirement_decision_form(runtime, snapshot, gate)
+
+
+def _clarification_draft_request(
+    snapshot: GovernedRunSnapshot,
+    gate: HumanGovernanceGate,
+    *,
+    analysis: Mapping[str, Any],
+    readiness: Mapping[str, Any],
+    revision: object,
+) -> ClarificationDraftRequest:
+    """Validate the narrow current context supplied to presentation assistance."""
+
+    submission = _mapping(snapshot.workflow_state.get("requirement_submission"))
+    original_requirement = submission.get("original_text")
+    if not isinstance(original_requirement, str) or not original_requirement.strip():
+        raise ValueError("Original requirement evidence is unavailable.")
+    if not isinstance(revision, int) or isinstance(revision, bool):
+        raise ValueError("Requirement Analysis revision is invalid.")
+    return ClarificationDraftRequest(
+        run_id=snapshot.run_id,
+        gate_token=gate.gate_token,
+        analysis_revision=revision,
+        original_requirement=original_requirement,
+        requirement_analysis=RequirementAnalysis.model_validate(
+            dict(analysis),
+            strict=False,
+        ),
+        planning_readiness=RequirementPlanningReadiness.model_validate(
+            dict(readiness),
+            strict=False,
+        ),
+    )
+
+
+def _render_clarification_draft_helper(
+    gate: HumanGovernanceGate,
+    request: ClarificationDraftRequest,
+    *,
+    clarification_drafter: ClarificationDrafter | None,
+) -> None:
+    """Render ephemeral drafting controls without invoking governed resume."""
+
+    context_identity = clarification_draft_context_identity(request)
+    if st.session_state.get(_CLARIFICATION_DRAFT_CONTEXT_KEY) != context_identity:
+        _clear_clarification_draft_state()
+        st.session_state[_CLARIFICATION_DRAFT_CONTEXT_KEY] = context_identity
+
+    st.subheader("Clarification assistance")
+    st.caption(
+        "This optional AI draft is editable presentation state. It does not resolve "
+        "ambiguities or submit a human decision."
+    )
+    existing_draft = st.session_state.get(_CLARIFICATION_DRAFT_TEXT_KEY)
+    has_draft = isinstance(existing_draft, str) and bool(existing_draft.strip())
+    generation_label = (
+        "Regenerate draft" if has_draft else "Draft clarification response"
+    )
+    if st.button(
+        generation_label,
+        key=f"clarification_draft_generate_{gate.gate_token}",
+    ):
+        active_drafter = clarification_drafter or OpenAIClarificationDrafter()
+        try:
+            with st.spinner("Drafting clarification response..."):
+                result = active_drafter.draft(request)
+        except ClarificationDraftError as error:
+            st.error(f"Clarification draft was not generated: {error}")
+        else:
+            st.session_state[_CLARIFICATION_DRAFT_TEXT_KEY] = (
+                result.suggested_clarification
+            )
+
+    current_draft = st.session_state.get(_CLARIFICATION_DRAFT_TEXT_KEY)
+    if not isinstance(current_draft, str) or not current_draft.strip():
+        return
+    edited_draft = st.text_area(
+        "Suggested clarification",
+        key=_CLARIFICATION_DRAFT_TEXT_KEY,
+        height=180,
+        help=(
+            "Edit this non-authoritative suggestion before copying it into human "
+            "review feedback."
+        ),
+    )
+    feedback_key = _requirement_feedback_key(gate)
+    existing_feedback = st.session_state.get(feedback_key)
+    feedback_exists = isinstance(existing_feedback, str) and existing_feedback != ""
+    adoption_label = (
+        "Replace feedback with this draft" if feedback_exists else "Use this draft"
+    )
+    if feedback_exists:
+        st.caption(
+            "Existing human feedback will be preserved unless you explicitly "
+            "replace it."
+        )
+    if st.button(
+        adoption_label,
+        key=f"clarification_draft_adopt_{gate.gate_token}",
+        disabled=not edited_draft.strip(),
+    ):
+        st.session_state[feedback_key] = edited_draft
+
+
+def _clear_clarification_draft_state() -> None:
+    """Discard stale non-authoritative text before another gate renders it."""
+
+    st.session_state.pop(_CLARIFICATION_DRAFT_CONTEXT_KEY, None)
+    st.session_state.pop(_CLARIFICATION_DRAFT_TEXT_KEY, None)
+
+
+def _requirement_feedback_key(gate: HumanGovernanceGate) -> str:
+    return f"requirement_decision_feedback_{gate.gate_token}"
 
 
 def _render_analysis_collection(
@@ -603,26 +765,26 @@ def _render_requirement_decision_form(
         "REJECT": "Reject and safely stop",
     }
     st.subheader("Human decision")
-    with st.form(f"requirement_decision_{gate.gate_token}"):
-        decision = st.radio(
-            "Decision",
-            allowed_decisions,
-            format_func=lambda value: labels[value],
-            key=f"requirement_decision_choice_{gate.gate_token}",
-        )
-        feedback = st.text_area(
-            "Review feedback",
-            key=f"requirement_decision_feedback_{gate.gate_token}",
-            help=(
-                "Required for Request changes. Meaningful whitespace and line breaks "
-                "are passed to the governed workflow unchanged."
-            ),
-        )
-        submitted = st.form_submit_button(
-            "Submit Decision",
-            type="primary",
-            use_container_width=True,
-        )
+    decision = st.radio(
+        "Decision",
+        allowed_decisions,
+        format_func=lambda value: labels[value],
+        key=f"requirement_decision_choice_{gate.gate_token}",
+    )
+    feedback = st.text_area(
+        "Review feedback",
+        key=_requirement_feedback_key(gate),
+        help=(
+            "Required for Request changes. Meaningful whitespace and line breaks "
+            "are passed to the governed workflow unchanged."
+        ),
+    )
+    submitted = st.button(
+        "Submit Decision",
+        key=f"requirement_decision_submit_{gate.gate_token}",
+        type="primary",
+        use_container_width=True,
+    )
 
     if not submitted:
         return

@@ -147,18 +147,27 @@ def _snapshot(
         GovernedRunApplicationStatus.AWAITING_HUMAN
     ),
     workflow_status: str = "awaiting_approval",
+    blocked: bool = False,
 ) -> GovernedRunSnapshot:
+    ambiguities = (
+        [
+            "How long should scheduled jobs be retained?",
+            "Is authentication required for this prototype?",
+        ]
+        if blocked
+        else []
+    )
     analysis = {
         "normalized_problem_statement": f"revision-{revision}: Build a scheduler.",
         "requirement_type": "greenfield",
         "functional_requirements": ["Create scheduled jobs."],
         "nonfunctional_requirements": ["Execute jobs reliably."],
         "constraints": ["Use the existing runtime."],
-        "ambiguities": [],
+        "ambiguities": ambiguities,
         "assumptions": ["Users supply valid schedules."],
         "acceptance_criteria": ["A scheduled job runs."],
         "risks": ["Clock drift can delay a job."],
-        "needs_clarification": False,
+        "needs_clarification": blocked,
         "confidence": 0.91,
     }
     payload = {
@@ -168,23 +177,30 @@ def _snapshot(
             if stage == "requirement_analysis_review"
             else "task_graph"
         ),
-        "allowed_decisions": list(allowed_decisions),
+        "allowed_decisions": [
+            decision
+            for decision in allowed_decisions
+            if not blocked or decision != "APPROVE"
+        ],
         "revision_number": revision,
         "requirement_analysis": analysis,
         "planning_readiness": {
             "analysis_revision": revision,
-            "status": "READY",
-            "needs_clarification": False,
-            "blocking_ambiguities": [],
-            "reason_code": None,
+            "status": "BLOCKED" if blocked else "READY",
+            "needs_clarification": blocked,
+            "blocking_ambiguities": ambiguities,
+            "reason_code": (
+                "UNRESOLVED_REQUIREMENT_AMBIGUITY" if blocked else None
+            ),
         },
     }
+    effective_allowed_decisions = tuple(payload["allowed_decisions"])
     gate = (
         HumanGovernanceGate(
             gate_token=gate_token,
             stage=stage,
             checkpoint=payload["checkpoint"],
-            allowed_decisions=allowed_decisions,  # type: ignore[arg-type]
+            allowed_decisions=effective_allowed_decisions,  # type: ignore[arg-type]
             payload=payload,
         )
         if gate_token is not None
@@ -192,6 +208,10 @@ def _snapshot(
     )
     workflow_state: dict[str, Any] = {
         "workflow_status": workflow_status,
+        "raw_requirement": "Build a scheduler for recurring jobs.",
+        "requirement_submission": resolve_inline_requirement(
+            "  Build a scheduler for recurring jobs.  "
+        ).as_state_data(),
         "requirement_analysis": analysis,
         "requirement_analysis_revision_count": revision,
         "requirement_analysis_history": [

@@ -258,6 +258,9 @@ assessment implementation; they are distinct from the Python package version in
   `PYTHON_PYTEST` authority, governed public dependency installation from the
   staged `pyproject.toml`, Docker-backed generated-test execution, separate
   provisioning/test evidence, cleanup verification, and pre-mutation PASS gating.
+- **V0.15 — AI-assisted ambiguity clarification:** an explicit Streamlit-only
+  helper drafts editable answers for a blocked Requirement Analysis while keeping
+  REQUEST_CHANGES submission and all workflow authority with the human reviewer.
 
 The V0.5 execution slices execute approved engineering tasks as bounded semantic
 LLM calls and may transactionally materialize validated executable URL-shortener
@@ -977,7 +980,10 @@ and REJECT when the current human gate allows them. After TaskGraph approval, th
 GUI displays live governed execution progress: observed scheduler waves,
 authoritative execution layers, concurrent Task Agents, starts, completions,
 elapsed progress, and retry or failure information when present. It retains the
-final progress summary alongside the authoritative terminal result.
+final progress summary alongside the authoritative terminal result. When a
+Requirement Analysis is `BLOCKED`, an optional AI helper can draft editable
+clarification text; drafting or adopting that text does not resume the workflow,
+and only the existing explicit human decision submission creates a revision.
 
 An optional project name selects the durable destination folder:
 

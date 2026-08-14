@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from typing import Any
 
 from streamlit.testing.v1 import AppTest
 
@@ -11,6 +12,11 @@ from agentic_sdlc.application import (
     GovernedRunApplicationStatus,
     GovernedRunRequest,
     GovernedRunSnapshot,
+)
+from agentic_sdlc.clarification_draft import (
+    ClarificationDraftError,
+    ClarificationDraftResult,
+    FakeClarificationDrafter,
 )
 from agentic_sdlc.state import ApprovalResponse
 from agentic_sdlc.streamlit_execution_progress import (
@@ -34,10 +40,10 @@ from agentic_sdlc.task_execution_progress import (
 from tests.test_streamlit_runtime import _snapshot, _task_graph_snapshot
 
 
-def _render_for_test(runtime: object) -> None:
+def _render_for_test(runtime: object, drafter: object | None = None) -> None:
     from agentic_sdlc.streamlit_app import render_app
 
-    render_app(runtime)  # type: ignore[arg-type]
+    render_app(runtime, clarification_drafter=drafter)  # type: ignore[arg-type]
 
 
 class FakeUIRuntime:
@@ -131,12 +137,23 @@ class FakeUIRuntime:
         )
 
 
-def _app_for(runtime: FakeUIRuntime) -> AppTest:
-    return AppTest.from_function(_render_for_test, args=(runtime,)).run()
+def _app_for(
+    runtime: FakeUIRuntime,
+    drafter: FakeClarificationDrafter | None = None,
+) -> AppTest:
+    return AppTest.from_function(_render_for_test, args=(runtime, drafter)).run()
 
 
 def _values(elements: object) -> list[str]:
     return [str(element.value) for element in elements]  # type: ignore[attr-defined]
+
+
+def _button(app: AppTest, label: str) -> Any:
+    return next(button for button in app.button if button.label == label)
+
+
+def _text_area(app: AppTest, label: str) -> Any:
+    return next(area for area in app.text_area if area.label == label)
 
 
 def _execution_collector(
@@ -261,6 +278,157 @@ def test_requirement_gate_renders_authoritative_analysis_and_allowed_decisions(
     assert any(
         snapshot.human_gate.gate_token in value for value in _values(app.caption)
     )
+
+
+def test_blocked_analysis_draft_survives_rerun_without_governed_transition(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(tmp_path, blocked=True)
+    runtime = FakeUIRuntime(snapshot)
+    drafter = FakeClarificationDrafter(
+        [
+            ClarificationDraftResult(
+                suggested_clarification=(
+                    "Retain completed jobs for 30 days.\n"
+                    "Authentication is not required for this prototype."
+                )
+            )
+        ]
+    )
+    app = _app_for(runtime, drafter)
+
+    _button(app, "Draft clarification response").click().run()
+
+    assert len(drafter.calls) == 1
+    request = drafter.calls[0]
+    assert request.run_id == snapshot.run_id
+    assert request.gate_token == snapshot.human_gate.gate_token
+    assert request.analysis_revision == 0
+    assert request.original_requirement == "  Build a scheduler for recurring jobs.  "
+    assert request.planning_readiness.blocking_ambiguities == (
+        "How long should scheduled jobs be retained?",
+        "Is authentication required for this prototype?",
+    )
+    assert runtime.resume_calls == []
+    assert _text_area(app, "Suggested clarification").value.startswith(
+        "Retain completed jobs"
+    )
+
+    app.run()
+
+    assert len(drafter.calls) == 1
+    assert runtime.resume_calls == []
+    assert _button(app, "Regenerate draft") is not None
+
+
+def test_edited_draft_adoption_only_populates_feedback_until_explicit_submit(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(tmp_path, blocked=True)
+    runtime = FakeUIRuntime(snapshot)
+    drafter = FakeClarificationDrafter(
+        [ClarificationDraftResult(suggested_clarification="Initial suggestion.")]
+    )
+    app = _app_for(runtime, drafter)
+    _button(app, "Draft clarification response").click().run()
+
+    edited = (
+        "Retain completed jobs for 14 days.\n"
+        "Authentication is not required for the prototype."
+    )
+    _text_area(app, "Suggested clarification").input(edited).run()
+    assert runtime.resume_calls == []
+
+    _button(app, "Use this draft").click().run()
+
+    assert _text_area(app, "Review feedback").value == edited
+    assert runtime.resume_calls == []
+
+    app.radio[0].set_value("Request changes")
+    _button(app, "Submit Decision").click().run()
+
+    assert len(runtime.resume_calls) == 1
+    assert runtime.resume_calls[0][2] == {
+        "decision": "REQUEST_CHANGES",
+        "feedback": edited,
+    }
+
+
+def test_existing_human_feedback_requires_explicit_draft_replacement(
+    tmp_path: Path,
+) -> None:
+    runtime = FakeUIRuntime(_snapshot(tmp_path, blocked=True))
+    drafter = FakeClarificationDrafter(
+        [ClarificationDraftResult(suggested_clarification="Generated answer.")]
+    )
+    app = _app_for(runtime, drafter)
+    _text_area(app, "Review feedback").input("Human-authored feedback.").run()
+
+    _button(app, "Draft clarification response").click().run()
+
+    assert _text_area(app, "Review feedback").value == "Human-authored feedback."
+    assert _button(app, "Replace feedback with this draft") is not None
+    assert runtime.resume_calls == []
+
+    _button(app, "Replace feedback with this draft").click().run()
+
+    assert _text_area(app, "Review feedback").value == "Generated answer."
+    assert runtime.resume_calls == []
+
+
+def test_new_requirement_gate_invalidates_stale_clarification_draft(
+    tmp_path: Path,
+) -> None:
+    original = _snapshot(tmp_path, blocked=True)
+    revised = _snapshot(
+        tmp_path,
+        gate_token="run-streamlit:human-gate:2",
+        revision=1,
+        blocked=True,
+    )
+    runtime = FakeUIRuntime(original)
+    drafter = FakeClarificationDrafter(
+        [
+            ClarificationDraftResult(suggested_clarification="Old revision answer."),
+            ClarificationDraftResult(suggested_clarification="New revision answer."),
+        ]
+    )
+    app = _app_for(runtime, drafter)
+    _button(app, "Draft clarification response").click().run()
+    assert _text_area(app, "Suggested clarification").value == "Old revision answer."
+
+    runtime.complete(revised)
+    app.run()
+
+    assert all(area.label != "Suggested clarification" for area in app.text_area)
+    assert all(button.label != "Use this draft" for button in app.button)
+    assert _button(app, "Draft clarification response") is not None
+    assert len(drafter.calls) == 1
+    assert runtime.resume_calls == []
+
+    _button(app, "Draft clarification response").click().run()
+
+    assert _text_area(app, "Suggested clarification").value == "New revision answer."
+    assert len(drafter.calls) == 2
+    assert runtime.resume_calls == []
+
+
+def test_draft_provider_failure_preserves_feedback_and_never_resumes(
+    tmp_path: Path,
+) -> None:
+    runtime = FakeUIRuntime(_snapshot(tmp_path, blocked=True))
+    drafter = FakeClarificationDrafter(
+        [ClarificationDraftError("provider unavailable")]
+    )
+    app = _app_for(runtime, drafter)
+    _text_area(app, "Review feedback").input("Keep this human feedback.").run()
+
+    _button(app, "Draft clarification response").click().run()
+
+    assert runtime.resume_calls == []
+    assert _text_area(app, "Review feedback").value == "Keep this human feedback."
+    assert any("provider unavailable" in value for value in _values(app.error))
+    assert all(area.label != "Suggested clarification" for area in app.text_area)
 
 
 def test_request_changes_requires_feedback_then_passes_exact_text_and_token(
@@ -609,7 +777,7 @@ def test_unknown_non_execution_phase_uses_generic_elapsed_fallback(
     )
 
 
-def test_operation_timing_has_no_streamlit_session_state_key() -> None:
+def test_explicit_streamlit_session_state_keys_remain_presentation_only() -> None:
     app_path = (
         Path(__file__).parents[1]
         / "src"
@@ -632,6 +800,10 @@ def test_operation_timing_has_no_streamlit_session_state_key() -> None:
         "_UI_PHASE_KEY": "agentic_sdlc_ui_phase",
         "_RUN_ID_KEY": "agentic_sdlc_current_run_id",
         "_OPERATION_ID_KEY": "agentic_sdlc_operation_id",
+        "_CLARIFICATION_DRAFT_CONTEXT_KEY": (
+            "agentic_sdlc_clarification_draft_context"
+        ),
+        "_CLARIFICATION_DRAFT_TEXT_KEY": "agentic_sdlc_clarification_draft_text",
     }
 
 
