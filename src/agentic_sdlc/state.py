@@ -5,6 +5,7 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Literal, NotRequired, TypedDict
 
+from agentic_sdlc.brownfield_baseline import BrownfieldBaselineProvenanceData
 from agentic_sdlc.project_delivery import RUNNABLE_PROJECT_DELIVERY_POLICY
 from agentic_sdlc.project_readiness import ProjectReadinessValidation
 from agentic_sdlc.requirement_submission import (
@@ -325,6 +326,7 @@ class WorkflowState(TypedDict, total=False):
     ]
     task_execution_waves: Annotated[list[TaskExecutionWave], operator.add]
     governed_workspace_session: GovernedWorkspaceSession
+    brownfield_baseline: BrownfieldBaselineProvenanceData
     workspace_snapshots: Annotated[list[WorkspaceSnapshot], operator.add]
     workspace_execution_waves: Annotated[list[WorkspaceExecutionWave], operator.add]
     workspace_bound_task_execution_requests: Annotated[
