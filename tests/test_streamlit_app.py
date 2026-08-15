@@ -10,7 +10,9 @@ from typing import Any
 from streamlit.testing.v1 import AppTest
 
 from agentic_sdlc.application import (
+    EligibleBrownfieldProject,
     GovernedRunApplicationStatus,
+    GovernedRunMode,
     GovernedRunRequest,
     GovernedRunSnapshot,
 )
@@ -55,7 +57,12 @@ def _render_for_test(runtime: object, drafter: object | None = None) -> None:
 class FakeUIRuntime:
     """Mutable test double held outside Streamlit session state."""
 
-    def __init__(self, snapshot: GovernedRunSnapshot | None = None) -> None:
+    def __init__(
+        self,
+        snapshot: GovernedRunSnapshot | None = None,
+        *,
+        eligible_projects: tuple[EligibleBrownfieldProject, ...] = (),
+    ) -> None:
         self.view = StreamlitRuntimeView(
             snapshot=snapshot,
             operation_id=None,
@@ -65,6 +72,14 @@ class FakeUIRuntime:
         )
         self.start_calls: list[tuple[str, GovernedRunRequest]] = []
         self.resume_calls: list[tuple[str, str, ApprovalResponse, str]] = []
+        self.eligible_projects = eligible_projects
+        self.list_eligible_calls = 0
+
+    def list_eligible_brownfield_projects(
+        self,
+    ) -> tuple[EligibleBrownfieldProject, ...]:
+        self.list_eligible_calls += 1
+        return self.eligible_projects
 
     def poll(self) -> StreamlitRuntimeView:
         return self.view
@@ -195,6 +210,94 @@ def _successful_export(destination: Path) -> ProjectExportResult:
     )
 
 
+def _eligible_project(
+    project_name: str = "published-project",
+) -> EligibleBrownfieldProject:
+    return EligibleBrownfieldProject(
+        project_name=project_name,
+        originating_run_id="published-run",
+        workflow_project_name="Published Project",
+        source_snapshot_id="WORKSPACE-SNAPSHOT-SOURCE",
+        engineering_file_count=4,
+        publication_bundle_sha256="a" * 64,
+    )
+
+
+def _as_brownfield_snapshot(
+    snapshot: GovernedRunSnapshot,
+    *,
+    baseline_name: str = "published-project",
+    output_name: str = "enhanced-project",
+) -> GovernedRunSnapshot:
+    impact = {
+        "baseline_id": "BROWNFIELD-BASELINE-TEST",
+        "codebase_context_id": "BROWNFIELD-CONTEXT-TEST",
+        "impacted_modules": [
+            {
+                "target": "src/service.py",
+                "reason": "The existing service must implement the requested change.",
+            }
+        ],
+        "impacted_services": [],
+        "impacted_apis": [],
+        "impacted_state": [],
+        "impacted_flows": [],
+        "impacted_tests": [
+            {
+                "target": "tests/test_service.py",
+                "reason": "Regression coverage must preserve existing behavior.",
+            }
+        ],
+        "impacted_documentation": [],
+        "architectural_implications": [],
+        "preserved_behaviors": [
+            {
+                "target": "existing behavior",
+                "reason": "Unaffected behavior must remain backward compatible.",
+            }
+        ],
+    }
+    baseline = {
+        "baseline_id": "BROWNFIELD-BASELINE-TEST",
+        "selected_project_name": baseline_name,
+        "originating_run_id": "published-run",
+        "source_snapshot_id": "WORKSPACE-SNAPSHOT-SOURCE",
+        "engineering_files": [
+            {"path": "README.md", "content_hash": "a" * 64},
+            {"path": "src/service.py", "content_hash": "b" * 64},
+            {"path": "tests/test_service.py", "content_hash": "c" * 64},
+        ],
+    }
+    context = {"context_id": "BROWNFIELD-CONTEXT-TEST"}
+    workflow_state = dict(snapshot.workflow_state)
+    workflow_state.update(
+        {
+            "project_name": output_name,
+            "brownfield_baseline": baseline,
+            "brownfield_codebase_context": context,
+        }
+    )
+    gate = snapshot.human_gate
+    if gate is not None:
+        payload = dict(gate.payload)
+        analysis = payload.get("requirement_analysis")
+        if isinstance(analysis, dict):
+            analysis = dict(analysis)
+            analysis["requirement_type"] = "brownfield"
+            analysis["brownfield_impact"] = impact
+            payload["requirement_analysis"] = analysis
+            workflow_state["requirement_analysis"] = analysis
+        spec = payload.get("approved_requirement_spec")
+        if isinstance(spec, dict):
+            spec = dict(spec)
+            spec["requirement_type"] = "brownfield"
+            spec["brownfield_impact"] = impact
+            payload["approved_requirement_spec"] = spec
+            workflow_state["approved_requirement_spec"] = spec
+        gate = replace(gate, payload=payload)
+    return replace(snapshot, human_gate=gate, workflow_state=workflow_state)
+
+
 def test_actual_streamlit_entrypoint_imports_and_renders_initial_screen() -> None:
     app_path = (
         Path(__file__).parents[1]
@@ -206,11 +309,124 @@ def test_actual_streamlit_entrypoint_imports_and_renders_initial_screen() -> Non
 
     assert app.exception == []
     assert _values(app.title) == ["Agentic SDLC Orchestrator"]
+    assert app.radio[0].label == "What do you want to do?"
+    assert app.radio[0].value == "Build a new project"
     assert _values(app.text_area) == [""]
     assert app.text_area[0].label == "Software requirement"
     assert app.text_input[0].label == "Project name (optional)"
     assert [button.label for button in app.button] == ["Analyze Requirement"]
     assert app.file_uploader == []
+
+
+def test_brownfield_entry_uses_verified_logical_baseline_and_distinct_output() -> None:
+    runtime = FakeUIRuntime(eligible_projects=(_eligible_project(),))
+    app = _app_for(runtime)
+
+    app.radio[0].set_value("Change an existing project").run()
+
+    assert runtime.list_eligible_calls >= 1
+    assert app.selectbox[0].label == "Existing project"
+    assert app.selectbox[0].options == ["published-project"]
+    assert _text_area(app, "Describe the change you want to make")
+    assert app.text_input[0].label == "New project name"
+    assert _button(app, "Analyze Change").disabled is False
+    assert any(
+        "preserve the original baseline" in value for value in _values(app.caption)
+    )
+
+    _text_area(app, "Describe the change you want to make").input(
+        "Add expiration while preserving existing behavior."
+    )
+    app.text_input[0].input("enhanced-project")
+    _button(app, "Analyze Change").click().run()
+
+    assert len(runtime.start_calls) == 1
+    request = runtime.start_calls[0][1]
+    assert request.run_mode is GovernedRunMode.BROWNFIELD
+    assert request.baseline_project_name == "published-project"
+    assert request.requested_project_name == "enhanced-project"
+    assert request.workflow_input["project_name"] == "enhanced-project"
+    assert any(
+        "Baseline: published-project" in value for value in _values(app.info)
+    )
+
+
+def test_brownfield_entry_without_eligible_projects_fails_closed_cleanly() -> None:
+    runtime = FakeUIRuntime()
+    app = _app_for(runtime)
+
+    app.radio[0].set_value("Change an existing project").run()
+
+    assert runtime.list_eligible_calls >= 1
+    assert any(
+        "No eligible published projects" in value for value in _values(app.info)
+    )
+    assert _button(app, "Analyze Change").disabled is True
+    assert runtime.start_calls == []
+
+
+def test_brownfield_entry_requires_explicit_new_project_name() -> None:
+    runtime = FakeUIRuntime(eligible_projects=(_eligible_project(),))
+    app = _app_for(runtime)
+    app.radio[0].set_value("Change an existing project").run()
+
+    _text_area(app, "Describe the change you want to make").input(
+        "Change the existing service."
+    )
+    _button(app, "Analyze Change").click().run()
+
+    assert runtime.start_calls == []
+    assert any("new output project name" in value for value in _values(app.error))
+
+
+def test_brownfield_start_error_is_presented_as_fail_closed() -> None:
+    runtime = FakeUIRuntime()
+    app = _app_for(runtime)
+    app.session_state["agentic_sdlc_active_run_mode"] = "BROWNFIELD"
+    runtime.view = replace(
+        runtime.view,
+        operation_kind=StreamlitOperationKind.START,
+        error_message=(
+            "Brownfield baseline preparation failed: reasoning limit exceeded."
+        ),
+    )
+
+    app.run()
+
+    assert any("reasoning limit exceeded" in value for value in _values(app.error))
+    assert any("failed closed" in value for value in _values(app.caption))
+    assert runtime.start_calls == []
+
+
+def test_brownfield_resume_error_does_not_claim_setup_failed(
+    tmp_path: Path,
+) -> None:
+    snapshot = _as_brownfield_snapshot(_snapshot(tmp_path))
+    runtime = FakeUIRuntime(snapshot)
+    app = _app_for(runtime)
+    app.session_state["agentic_sdlc_active_run_mode"] = "BROWNFIELD"
+    runtime.view = replace(
+        runtime.view,
+        operation_id="resume-error",
+        operation_kind=StreamlitOperationKind.RESUME,
+        error_message="Later governed resume operation failed.",
+    )
+
+    app.run()
+
+    assert any(
+        "Later governed resume operation failed" in value
+        for value in _values(app.error)
+    )
+    captions = _values(app.caption)
+    assert all("Brownfield setup failed closed" not in value for value in captions)
+    assert all(
+        "No partial codebase context was accepted" not in value
+        for value in captions
+    )
+    assert any(
+        "Baseline: published-project" in value for value in _values(app.info)
+    )
 
 
 def test_whitespace_requirement_is_rejected_before_start_side_effects() -> None:
@@ -298,6 +514,49 @@ def test_requirement_gate_renders_authoritative_analysis_and_allowed_decisions(
     assert all("Approve" not in option for option in app.radio[0].options)
     assert any(
         snapshot.human_gate.gate_token in value for value in _values(app.caption)
+    )
+    assert "Brownfield Impact" not in _values(app.subheader)
+
+
+def test_brownfield_requirement_review_renders_baseline_and_structured_impact(
+    tmp_path: Path,
+) -> None:
+    snapshot = _as_brownfield_snapshot(_snapshot(tmp_path))
+    app = _app_for(FakeUIRuntime(snapshot))
+
+    assert app.exception == []
+    assert any(
+        "Baseline: published-project" in value for value in _values(app.info)
+    )
+    assert "Brownfield Impact" in _values(app.subheader)
+    markdown = _values(app.markdown)
+    assert any("src/service.py" in value for value in markdown)
+    assert any("existing service must implement" in value for value in markdown)
+    assert any("tests/test_service.py" in value for value in markdown)
+    assert any("backward compatible" in value for value in markdown)
+    assert "Baseline provenance" in [item.label for item in app.expander]
+    assert "Brownfield impact provenance" in [
+        item.label for item in app.expander
+    ]
+
+
+def test_blocked_brownfield_review_keeps_clarification_governance(
+    tmp_path: Path,
+) -> None:
+    snapshot = _as_brownfield_snapshot(_snapshot(tmp_path, blocked=True))
+    runtime = FakeUIRuntime(snapshot)
+    drafter = FakeClarificationDrafter(
+        [ClarificationDraftResult(suggested_clarification="Preserve compatibility.")]
+    )
+    app = _app_for(runtime, drafter)
+
+    assert "Brownfield Impact" in _values(app.subheader)
+    _button(app, "Draft clarification response").click().run()
+
+    assert len(drafter.calls) == 1
+    assert runtime.resume_calls == []
+    assert _text_area(app, "Suggested clarification").value == (
+        "Preserve compatibility."
     )
 
 
@@ -657,6 +916,35 @@ def test_task_graph_review_renders_authoritative_visual_metadata_and_details(
     assert "Prompt: task-planning-v1.4 · Model: fake-task-planner" in text_values
 
 
+def test_brownfield_task_graph_review_preserves_incremental_context(
+    tmp_path: Path,
+) -> None:
+    snapshot = _as_brownfield_snapshot(_task_graph_snapshot(tmp_path))
+    runtime = FakeUIRuntime(snapshot)
+    app = _app_for(runtime)
+
+    assert any(
+        "Planning incremental changes to baseline published-project" in value
+        for value in _values(app.info)
+    )
+    assert any(
+        "publication as enhanced-project" in value for value in _values(app.info)
+    )
+    assert "Approved Brownfield Impact" in [
+        item.label for item in app.expander
+    ]
+    assert app.radio[0].label == "TaskGraph decision"
+    assert app.button[0].label == "Submit TaskGraph Decision"
+
+    app.radio[0].set_value("Approve TaskGraph and execute")
+    app.button[0].click().run()
+
+    assert "Engineering Execution" in _values(app.header)
+    assert any(
+        "Baseline: published-project" in value for value in _values(app.info)
+    )
+
+
 def test_task_graph_decisions_come_only_from_authoritative_allowed_decisions(
     tmp_path: Path,
 ) -> None:
@@ -805,7 +1093,8 @@ def test_explicit_streamlit_session_state_keys_remain_presentation_only() -> Non
         / "agentic_sdlc"
         / "streamlit_app.py"
     )
-    tree = ast.parse(app_path.read_text(encoding="utf-8"))
+    source = app_path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
     session_key_constants = {
         node.targets[0].id: node.value.value
         for node in ast.walk(tree)
@@ -825,7 +1114,13 @@ def test_explicit_streamlit_session_state_keys_remain_presentation_only() -> Non
             "agentic_sdlc_clarification_draft_context"
         ),
         "_CLARIFICATION_DRAFT_TEXT_KEY": "agentic_sdlc_clarification_draft_text",
+        "_ACTIVE_RUN_MODE_KEY": "agentic_sdlc_active_run_mode",
+        "_ACTIVE_BASELINE_PROJECT_KEY": "agentic_sdlc_active_baseline_project",
+        "_ACTIVE_OUTPUT_PROJECT_KEY": "agentic_sdlc_active_output_project",
+        "_ENTRY_MODE_KEY": "agentic_sdlc_entry_mode",
     }
+    assert "PublishedProjectCatalog" not in source
+    assert "runtime.list_eligible_brownfield_projects()" in source
 
 
 def test_live_execution_dashboard_shows_parallel_running_tasks_and_wave(
@@ -1025,7 +1320,11 @@ def test_terminal_success_retains_final_execution_summary(tmp_path: Path) -> Non
 def test_new_run_clears_stale_terminal_progress_and_binds_new_execution(
     tmp_path: Path,
 ) -> None:
-    old_graph = replace(_task_graph_snapshot(tmp_path), run_id="run-old")
+    old_graph = _as_brownfield_snapshot(
+        replace(_task_graph_snapshot(tmp_path), run_id="run-old"),
+        baseline_name="old-baseline",
+        output_name="old-output",
+    )
     runtime = FakeUIRuntime(old_graph)
     app = _app_for(runtime)
     app.radio[0].set_value("Approve TaskGraph and execute")
@@ -1063,12 +1362,16 @@ def test_new_run_clears_stale_terminal_progress_and_binds_new_execution(
         total_task_count=10,
     )
     runtime.set_execution_progress(old_progress)
-    old_terminal = _snapshot(
-        tmp_path,
-        run_id="run-old",
-        gate_token=None,
-        application_status=GovernedRunApplicationStatus.SUCCEEDED,
-        workflow_status="success",
+    old_terminal = _as_brownfield_snapshot(
+        _snapshot(
+            tmp_path,
+            run_id="run-old",
+            gate_token=None,
+            application_status=GovernedRunApplicationStatus.SUCCEEDED,
+            workflow_status="success",
+        ),
+        baseline_name="old-baseline",
+        output_name="old-output",
     )
     runtime.complete(
         replace(
@@ -1083,11 +1386,15 @@ def test_new_run_clears_stale_terminal_progress_and_binds_new_execution(
         "Completed tasks"
     ] == "10 / 10"
     assert any("Run ID: run-old" in value for value in _values(app.caption))
+    assert any("Baseline: old-baseline" in value for value in _values(app.info))
 
     app.session_state["agentic_sdlc_clarification_draft_context"] = "old-context"
     app.session_state["agentic_sdlc_clarification_draft_text"] = "old draft"
     app.session_state["requirement_decision_feedback_old-gate"] = "old feedback"
     app.session_state["task_graph_decision_feedback_old-gate"] = "old graph feedback"
+    app.session_state["agentic_sdlc_active_run_mode"] = "BROWNFIELD"
+    app.session_state["agentic_sdlc_active_baseline_project"] = "old-baseline"
+    app.session_state["agentic_sdlc_active_output_project"] = "old-output"
     app.session_state["unrelated_display_preference"] = "compact"
     runtime.view = StreamlitRuntimeView(
         snapshot=None,
@@ -1107,6 +1414,9 @@ def test_new_run_clears_stale_terminal_progress_and_binds_new_execution(
     assert "agentic_sdlc_clarification_draft_text" not in state
     assert "requirement_decision_feedback_old-gate" not in state
     assert "task_graph_decision_feedback_old-gate" not in state
+    assert "agentic_sdlc_active_run_mode" not in state
+    assert "agentic_sdlc_active_baseline_project" not in state
+    assert "agentic_sdlc_active_output_project" not in state
     assert state["unrelated_display_preference"] == "compact"
 
     _text_area(app, "Software requirement").input("Build a smaller project.")
@@ -1114,6 +1424,7 @@ def test_new_run_clears_stale_terminal_progress_and_binds_new_execution(
     _button(app, "Analyze Requirement").click().run()
     assert all("run-old" not in value for value in _values(app.caption))
     assert all(metric.value != "10 / 10" for metric in app.metric)
+    assert all("old-baseline" not in value for value in _values(app.info))
 
     new_graph = replace(_task_graph_snapshot(tmp_path), run_id="run-new")
     runtime.complete(new_graph)
@@ -1122,6 +1433,7 @@ def test_new_run_clears_stale_terminal_progress_and_binds_new_execution(
         "run-new"
     )
     assert all("run-old" not in value for value in _values(app.caption))
+    assert all("old-baseline" not in value for value in _values(app.info))
 
     app.radio[0].set_value("Approve TaskGraph and execute")
     app.button[0].click().run()
@@ -1259,6 +1571,36 @@ def test_success_displays_returned_publication_destination_and_run_id(
     assert all(
         "not-the-returned-destination" not in value
         for value in _values(app.success)
+    )
+
+
+def test_brownfield_success_displays_baseline_to_authoritative_destination_lineage(
+    tmp_path: Path,
+) -> None:
+    destination = Path(__file__).parents[1] / "projects" / "enhanced-project"
+    terminal = _as_brownfield_snapshot(
+        _snapshot(
+            tmp_path,
+            run_id="run-brownfield-published",
+            gate_token=None,
+            application_status=GovernedRunApplicationStatus.SUCCEEDED,
+            workflow_status="success",
+        )
+    )
+    app = _app_for(
+        FakeUIRuntime(
+            replace(terminal, export_result=_successful_export(destination))
+        )
+    )
+
+    assert "Published project: projects/enhanced-project" in _values(app.success)
+    assert any(
+        "Baseline project published-project was preserved" in value
+        for value in _values(app.info)
+    )
+    assert any(
+        "Authoritative run ID: run-brownfield-published" in value
+        for value in _values(app.caption)
     )
 
 

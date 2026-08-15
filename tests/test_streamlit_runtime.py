@@ -11,8 +11,10 @@ from typing import Any, Callable
 import pytest
 
 from agentic_sdlc.application import (
+    EligibleBrownfieldProject,
     GovernedRunApplicationStatus,
     GovernedRunLifecycleError,
+    GovernedRunMode,
     GovernedRunRequest,
     GovernedRunSnapshot,
     HumanGovernanceGate,
@@ -93,6 +95,7 @@ class RecordingService:
         self,
         start_snapshot: GovernedRunSnapshot,
         resume_snapshots: list[GovernedRunSnapshot],
+        eligible_projects: tuple[EligibleBrownfieldProject, ...] = (),
     ) -> None:
         self.start_snapshot = start_snapshot
         self.resume_snapshots = deque(resume_snapshots)
@@ -101,6 +104,14 @@ class RecordingService:
         self.resume_calls: list[tuple[str, ApprovalResponse, str]] = []
         self.inspect_calls: list[str] = []
         self.progress_reporter: TaskExecutionProgressReporter | None = None
+        self.eligible_projects = eligible_projects
+        self.list_eligible_calls = 0
+
+    def list_eligible_brownfield_projects(
+        self,
+    ) -> tuple[EligibleBrownfieldProject, ...]:
+        self.list_eligible_calls += 1
+        return self.eligible_projects
 
     def start_run(
         self,
@@ -563,6 +574,8 @@ def test_inline_request_uses_submission_evidence_and_deterministic_name() -> Non
     request = governed_run_request_from_inline_requirement(original, "")
 
     assert request.command == "run"
+    assert request.run_mode is GovernedRunMode.GREENFIELD
+    assert request.baseline_project_name is None
     assert request.requested_project_name is None
     assert request.workflow_input["project_name"] == deterministic_project_name(
         submission
@@ -591,6 +604,46 @@ def test_inline_request_uses_existing_explicit_project_name_normalization() -> N
             "Build a scheduler.",
             "../escape",
         )
+
+
+def test_inline_brownfield_request_uses_logical_baseline_and_required_output() -> None:
+    request = governed_run_request_from_inline_requirement(
+        "Add expiration while preserving existing behavior.",
+        "enhanced-project",
+        run_mode=GovernedRunMode.BROWNFIELD,
+        baseline_project_name="published-project",
+    )
+
+    assert request.run_mode is GovernedRunMode.BROWNFIELD
+    assert request.baseline_project_name == "published-project"
+    assert request.requested_project_name == "enhanced-project"
+    assert request.workflow_input["project_name"] == "enhanced-project"
+
+    with pytest.raises(ValueError, match="new output project name"):
+        governed_run_request_from_inline_requirement(
+            "Change the existing project.",
+            "",
+            run_mode=GovernedRunMode.BROWNFIELD,
+            baseline_project_name="published-project",
+        )
+
+
+def test_runtime_delegates_brownfield_listing_to_application_service(
+    tmp_path: Path,
+) -> None:
+    project = EligibleBrownfieldProject(
+        project_name="published-project",
+        originating_run_id="published-run",
+        workflow_project_name="Published Project",
+        source_snapshot_id="WORKSPACE-SNAPSHOT-BASELINE",
+        engineering_file_count=3,
+        publication_bundle_sha256="a" * 64,
+    )
+    service = RecordingService(_snapshot(tmp_path), [], (project,))
+    runtime = StreamlitRunRuntime(service, executor=QueuedExecutor())
+
+    assert runtime.list_eligible_brownfield_projects() == (project,)
+    assert service.list_eligible_calls == 1
 
 
 @pytest.mark.parametrize("requirement", ["", "  \t\r\n"])

@@ -1,6 +1,7 @@
 """Agentic SDLC Orchestrator."""
 
 from agentic_sdlc.application import (
+    EligibleBrownfieldProject,
     GovernedRunApplicationStatus,
     GovernedRunError,
     GovernedRunLifecycleError,
@@ -22,6 +23,7 @@ from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
 
 __all__ = [
     "ApprovedRequirementSpec",
+    "EligibleBrownfieldProject",
     "GovernedRunApplicationStatus",
     "GovernedRunError",
     "GovernedRunLifecycleError",

@@ -86,6 +86,18 @@ class GovernedRunMode(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class EligibleBrownfieldProject:
+    """Presentation-safe metadata for one verified published baseline."""
+
+    project_name: str
+    originating_run_id: str
+    workflow_project_name: str | None
+    source_snapshot_id: str
+    engineering_file_count: int
+    publication_bundle_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
 class GovernedRunRequest:
     """Immutable application request to start one governed workflow run."""
 
@@ -248,6 +260,30 @@ class GovernedRunService:
         )
         self._runs: dict[str, _GovernedRunContext] = {}
         self._runs_lock = Lock()
+
+    def list_eligible_brownfield_projects(
+        self,
+    ) -> tuple[EligibleBrownfieldProject, ...]:
+        """Return verified logical baselines without exposing filesystem authority."""
+
+        try:
+            baselines = self._published_project_catalog.eligible_projects()
+        except PublishedProjectBaselineError as error:
+            raise GovernedRunLifecycleError(
+                "Eligible brownfield projects could not be verified: "
+                f"{error}"
+            ) from error
+        return tuple(
+            EligibleBrownfieldProject(
+                project_name=baseline.project_name,
+                originating_run_id=baseline.originating_run_id,
+                workflow_project_name=baseline.workflow_project_name,
+                source_snapshot_id=baseline.source_snapshot.snapshot_id,
+                engineering_file_count=len(baseline.engineering_files),
+                publication_bundle_sha256=baseline.publication_bundle_sha256,
+            )
+            for baseline in baselines
+        )
 
     def start_run(
         self,

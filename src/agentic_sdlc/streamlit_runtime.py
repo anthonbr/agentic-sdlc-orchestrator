@@ -13,8 +13,10 @@ from time import monotonic
 from typing import Any, Protocol
 
 from agentic_sdlc.application import (
+    EligibleBrownfieldProject,
     GovernedRunError,
     GovernedRunLifecycleError,
+    GovernedRunMode,
     GovernedRunRequest,
     GovernedRunService,
     GovernedRunSnapshot,
@@ -55,6 +57,10 @@ class StreamlitRuntimeView:
 class GovernedRunLifecycle(Protocol):
     """Public GovernedRunService surface used by the session runtime."""
 
+    def list_eligible_brownfield_projects(
+        self,
+    ) -> tuple[EligibleBrownfieldProject, ...]: ...
+
     def start_run(
         self,
         request: GovernedRunRequest,
@@ -88,11 +94,17 @@ class BackgroundExecutor(Protocol):
 def governed_run_request_from_inline_requirement(
     requirement_text: str,
     project_name: str,
+    *,
+    run_mode: GovernedRunMode = GovernedRunMode.GREENFIELD,
+    baseline_project_name: str | None = None,
 ) -> GovernedRunRequest:
     """Resolve one GUI submission through the authoritative input boundary."""
 
     submission = resolve_inline_requirement(requirement_text)
+    mode = GovernedRunMode(run_mode)
     requested_project_name = project_name if project_name != "" else None
+    if mode is GovernedRunMode.BROWNFIELD and requested_project_name is None:
+        raise ValueError("Brownfield runs require a new output project name.")
     normalized_project_name = (
         normalize_project_name(requested_project_name)
         if requested_project_name is not None
@@ -105,6 +117,8 @@ def governed_run_request_from_inline_requirement(
             project_name=normalized_project_name,
         ),
         requested_project_name=requested_project_name,
+        run_mode=mode,
+        baseline_project_name=baseline_project_name,
     )
 
 
@@ -179,6 +193,13 @@ class StreamlitRunRuntime:
             )
             self._operation_started_at = self._clock()
             return True
+
+    def list_eligible_brownfield_projects(
+        self,
+    ) -> tuple[EligibleBrownfieldProject, ...]:
+        """Delegate verified baseline discovery to the shared application service."""
+
+        return self._service.list_eligible_brownfield_projects()
 
     def schedule_resume(
         self,

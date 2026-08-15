@@ -219,6 +219,27 @@ def test_catalog_enumerates_only_successful_evidence_backed_projects(
     assert eligible[0].workflow_project_name == "Workflow Project"
 
 
+def test_application_lists_presentation_safe_verified_brownfield_projects(
+    tmp_path: Path,
+) -> None:
+    _publish_project(tmp_path)
+    (tmp_path / "projects" / "unverified-project").mkdir()
+
+    projects = GovernedRunService(
+        repository_root=tmp_path
+    ).list_eligible_brownfield_projects()
+
+    assert len(projects) == 1
+    project = projects[0]
+    assert project.project_name == "published-project"
+    assert project.originating_run_id == "published-run"
+    assert project.workflow_project_name == "Workflow Project"
+    assert project.source_snapshot_id.startswith("WORKSPACE-SNAPSHOT-")
+    assert project.engineering_file_count == len(ENGINEERING_FILES)
+    assert len(project.publication_bundle_sha256) == 64
+    assert not hasattr(project, "project_root")
+
+
 def test_projection_uses_authoritative_inventory_and_excludes_sdlc_and_extras(
     tmp_path: Path,
 ) -> None:
