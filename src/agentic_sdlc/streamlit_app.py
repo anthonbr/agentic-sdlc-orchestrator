@@ -55,6 +55,11 @@ _RUN_ID_KEY = "agentic_sdlc_current_run_id"
 _OPERATION_ID_KEY = "agentic_sdlc_operation_id"
 _CLARIFICATION_DRAFT_CONTEXT_KEY = "agentic_sdlc_clarification_draft_context"
 _CLARIFICATION_DRAFT_TEXT_KEY = "agentic_sdlc_clarification_draft_text"
+_RUN_PRESENTATION_WIDGET_PREFIXES = (
+    "clarification_draft_",
+    "requirement_decision_",
+    "task_graph_decision_",
+)
 
 
 @st.cache_resource(
@@ -97,6 +102,9 @@ def render_app(
     if view.error_message:
         st.error(view.error_message)
 
+    if view.snapshot is not None and not _bind_active_run(view.snapshot):
+        return
+
     if view.in_flight:
         _render_polling_fragment(
             runtime,
@@ -107,15 +115,18 @@ def render_app(
 
     snapshot = view.snapshot
     if snapshot is None:
+        _clear_run_presentation_state()
         st.session_state[_UI_PHASE_KEY] = "requirement_entry"
         _render_requirement_entry(runtime)
         return
 
-    st.session_state[_RUN_ID_KEY] = snapshot.run_id
     _render_snapshot(
         runtime,
         snapshot,
-        execution_progress=view.execution_progress,
+        execution_progress=_run_bound_execution_progress(
+            view,
+            expected_run_id=snapshot.run_id,
+        ),
         clarification_drafter=clarification_drafter,
     )
 
@@ -134,7 +145,15 @@ def _render_polling_fragment(
 
     operation_kind = view.operation_kind or initial_view.operation_kind
     if ui_phase == "task_graph_execution":
-        _render_engineering_execution(view.execution_progress)
+        active_run_id = st.session_state.get(_RUN_ID_KEY)
+        _render_engineering_execution(
+            _run_bound_execution_progress(
+                view,
+                expected_run_id=(
+                    active_run_id if isinstance(active_run_id, str) else None
+                ),
+            )
+        )
         st.caption(
             "Structured progress is observed from the governed execution engine; "
             "this dashboard does not schedule tasks or retries."
@@ -255,6 +274,7 @@ def _render_requirement_entry(runtime: StreamlitRunRuntime) -> None:
         st.info("Requirement analysis is already scheduled for this session.")
         return
 
+    _clear_run_presentation_state()
     st.session_state[_OPERATION_ID_KEY] = operation_id
     st.session_state[_UI_PHASE_KEY] = "requirement_analysis"
     st.rerun()
@@ -315,6 +335,7 @@ def _render_snapshot(
     if snapshot.application_status is GovernedRunApplicationStatus.SUCCEEDED:
         st.session_state[_UI_PHASE_KEY] = "succeeded"
         st.success("The governed workflow completed successfully.")
+        _render_published_project(snapshot)
         _render_run_context(snapshot, None)
         if execution_progress is not None:
             _render_engineering_execution(execution_progress)
@@ -329,6 +350,92 @@ def _render_snapshot(
     _render_run_context(snapshot, None)
     if execution_progress is not None:
         _render_engineering_execution(execution_progress)
+
+
+def _bind_active_run(snapshot: GovernedRunSnapshot) -> bool:
+    """Accept snapshots only for the explicitly active presentation run."""
+
+    active_run_id = st.session_state.get(_RUN_ID_KEY)
+    if active_run_id is None:
+        st.session_state[_RUN_ID_KEY] = snapshot.run_id
+        return True
+    if active_run_id == snapshot.run_id:
+        return True
+    _clear_run_presentation_state(preserve_run_id=True)
+    st.error(
+        "Run presentation identity mismatch. Stale run state was not rendered; "
+        f"the active run remains {active_run_id}."
+    )
+    return False
+
+
+def _run_bound_execution_progress(
+    view: StreamlitRuntimeView,
+    *,
+    expected_run_id: str | None,
+) -> StreamlitExecutionProgressView | None:
+    """Return telemetry only when run, snapshot, and operation identities agree."""
+
+    progress = view.execution_progress
+    snapshot = view.snapshot
+    active_run_id = st.session_state.get(_RUN_ID_KEY)
+    operation_id = st.session_state.get(_OPERATION_ID_KEY)
+    if (
+        progress is None
+        or expected_run_id is None
+        or active_run_id != expected_run_id
+        or snapshot is None
+        or snapshot.run_id != expected_run_id
+        or progress.run_id != expected_run_id
+        or not isinstance(operation_id, str)
+        or view.operation_id != operation_id
+        or progress.operation_id != operation_id
+    ):
+        return None
+    return progress
+
+
+def _clear_run_presentation_state(*, preserve_run_id: bool = False) -> None:
+    """Clear only ephemeral state belonging to a prior governed run."""
+
+    keys = (
+        _UI_PHASE_KEY,
+        _OPERATION_ID_KEY,
+        _CLARIFICATION_DRAFT_CONTEXT_KEY,
+        _CLARIFICATION_DRAFT_TEXT_KEY,
+    )
+    for key in keys:
+        st.session_state.pop(key, None)
+    if not preserve_run_id:
+        st.session_state.pop(_RUN_ID_KEY, None)
+    for key in tuple(st.session_state):
+        if isinstance(key, str) and any(
+            key.startswith(prefix) for prefix in _RUN_PRESENTATION_WIDGET_PREFIXES
+        ):
+            st.session_state.pop(key, None)
+
+
+def _render_published_project(snapshot: GovernedRunSnapshot) -> None:
+    """Render only the verified destination returned by application coordination."""
+
+    export_result = snapshot.export_result
+    if (
+        export_result is None
+        or not export_result.succeeded
+        or export_result.destination_directory is None
+    ):
+        st.error(
+            "The workflow reports success, but no verified published-project "
+            "destination is available."
+        )
+        return
+    destination = export_result.destination_directory
+    try:
+        display_destination = destination.relative_to(REPOSITORY_ROOT)
+    except ValueError:
+        display_destination = destination
+    st.success(f"Published project: {display_destination}")
+    st.caption(f"Authoritative run ID: {snapshot.run_id}")
 
 
 def _render_engineering_execution(

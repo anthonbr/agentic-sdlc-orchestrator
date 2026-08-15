@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,11 @@ from agentic_sdlc.clarification_draft import (
     ClarificationDraftError,
     ClarificationDraftResult,
     FakeClarificationDrafter,
+)
+from agentic_sdlc.project_export import (
+    ProjectExportResult,
+    ProjectExportStatus,
+    ProjectExportValidation,
 )
 from agentic_sdlc.state import ApprovalResponse
 from agentic_sdlc.streamlit_execution_progress import (
@@ -172,6 +178,21 @@ def _execution_collector(
         graph_semantics=gate.payload["graph_semantics"],
     )
     return collector
+
+
+def _successful_export(destination: Path) -> ProjectExportResult:
+    return ProjectExportResult(
+        status=ProjectExportStatus.SUCCEEDED,
+        requested_project_name="misleading-input-name",
+        project_name=destination.name,
+        export_root=destination.parent,
+        destination_directory=destination,
+        exported_file_count=3,
+        packaged_artifact_file_count=2,
+        validation=ProjectExportValidation(
+            authoritative_snapshot_id="WORKSPACE-SNAPSHOT-STREAMLIT"
+        ),
+    )
 
 
 def test_actual_streamlit_entrypoint_imports_and_renders_initial_screen() -> None:
@@ -816,7 +837,8 @@ def test_live_execution_dashboard_shows_parallel_running_tasks_and_wave(
     app.radio[0].set_value("Approve TaskGraph and execute")
     app.button[0].click().run()
 
-    collector = _execution_collector(snapshot)
+    operation_id = runtime.resume_calls[0][0]
+    collector = _execution_collector(snapshot, operation_id=operation_id)
     attempts = (
         TaskExecutionProgressAttempt("TASK-002", 1, "event title ignored"),
         TaskExecutionProgressAttempt("TASK-003", 1, "event title ignored"),
@@ -876,7 +898,8 @@ def test_execution_dashboard_displays_retry_failure_and_unknown_task_warning(
     app.radio[0].set_value("Approve TaskGraph and execute")
     app.button[0].click().run()
 
-    collector = _execution_collector(snapshot)
+    operation_id = runtime.resume_calls[0][0]
+    collector = _execution_collector(snapshot, operation_id=operation_id)
     retry = TaskExecutionProgressAttempt("TASK-002", 1, "ignored")
     failed = TaskExecutionProgressAttempt("TASK-003", 1, "ignored")
     unknown = TaskExecutionProgressAttempt("TASK-999", 1, "untrusted")
@@ -934,7 +957,8 @@ def test_terminal_success_retains_final_execution_summary(tmp_path: Path) -> Non
     app = _app_for(runtime)
     app.radio[0].set_value("Approve TaskGraph and execute")
     app.button[0].click().run()
-    collector = _execution_collector(snapshot)
+    operation_id = runtime.resume_calls[0][0]
+    collector = _execution_collector(snapshot, operation_id=operation_id)
     collector.report(GovernedTaskExecutionStarted())
     for wave_number, task_ids, mode in (
         (1, ("TASK-001",), TaskExecutionWaveMode.SINGLE),
@@ -969,7 +993,7 @@ def test_terminal_success_retains_final_execution_summary(tmp_path: Path) -> Non
             )
     assert collector.finish_execution(
         run_id=snapshot.run_id,
-        operation_id="task-graph-operation",
+        operation_id=operation_id,
     )
     progress = collector.snapshot(run_id=snapshot.run_id)
     assert progress is not None
@@ -979,6 +1003,12 @@ def test_terminal_success_retains_final_execution_summary(tmp_path: Path) -> Non
         gate_token=None,
         application_status=GovernedRunApplicationStatus.SUCCEEDED,
         workflow_status="success",
+    )
+    terminal = replace(
+        terminal,
+        export_result=_successful_export(
+            Path(__file__).parents[1] / "projects" / "terminal-summary"
+        ),
     )
     runtime.complete(terminal)
 
@@ -992,6 +1022,266 @@ def test_terminal_success_retains_final_execution_summary(tmp_path: Path) -> Non
     assert sum("SUCCEEDED" in value for value in _values(app.markdown)) == 4
 
 
+def test_new_run_clears_stale_terminal_progress_and_binds_new_execution(
+    tmp_path: Path,
+) -> None:
+    old_graph = replace(_task_graph_snapshot(tmp_path), run_id="run-old")
+    runtime = FakeUIRuntime(old_graph)
+    app = _app_for(runtime)
+    app.radio[0].set_value("Approve TaskGraph and execute")
+    app.button[0].click().run()
+    old_operation_id = runtime.resume_calls[0][0]
+    old_collector = _execution_collector(
+        old_graph,
+        operation_id=old_operation_id,
+    )
+    old_attempts = tuple(
+        TaskExecutionProgressAttempt(task_id, 1, "ignored")
+        for task_id in ("TASK-001", "TASK-002", "TASK-003", "TASK-004")
+    )
+    old_collector.report(
+        TaskExecutionWaveStarted(
+            wave_number=8,
+            mode=TaskExecutionWaveMode.SINGLE,
+            attempts=old_attempts,
+        )
+    )
+    for attempt in old_attempts:
+        old_collector.report(
+            TaskExecutionAttemptSettled(
+                wave_number=8,
+                attempt=attempt,
+                outcome=TaskExecutionSettledOutcome.SUCCEEDED,
+                detail="old run succeeded",
+            )
+        )
+    old_progress = old_collector.snapshot(run_id="run-old")
+    assert old_progress is not None
+    old_progress = replace(
+        old_progress,
+        completed_task_count=10,
+        total_task_count=10,
+    )
+    runtime.set_execution_progress(old_progress)
+    old_terminal = _snapshot(
+        tmp_path,
+        run_id="run-old",
+        gate_token=None,
+        application_status=GovernedRunApplicationStatus.SUCCEEDED,
+        workflow_status="success",
+    )
+    runtime.complete(
+        replace(
+            old_terminal,
+            export_result=_successful_export(
+                Path(__file__).parents[1] / "projects" / "old-project"
+            ),
+        )
+    )
+    app.run()
+    assert {metric.label: metric.value for metric in app.metric}[
+        "Completed tasks"
+    ] == "10 / 10"
+    assert any("Run ID: run-old" in value for value in _values(app.caption))
+
+    app.session_state["agentic_sdlc_clarification_draft_context"] = "old-context"
+    app.session_state["agentic_sdlc_clarification_draft_text"] = "old draft"
+    app.session_state["requirement_decision_feedback_old-gate"] = "old feedback"
+    app.session_state["task_graph_decision_feedback_old-gate"] = "old graph feedback"
+    app.session_state["unrelated_display_preference"] = "compact"
+    runtime.view = StreamlitRuntimeView(
+        snapshot=None,
+        operation_id=None,
+        operation_kind=None,
+        in_flight=False,
+        error_message=None,
+        execution_progress=old_progress,
+    )
+    app.run()
+
+    state = app.session_state.filtered_state
+    assert state["agentic_sdlc_ui_phase"] == "requirement_entry"
+    assert "agentic_sdlc_current_run_id" not in state
+    assert "agentic_sdlc_operation_id" not in state
+    assert "agentic_sdlc_clarification_draft_context" not in state
+    assert "agentic_sdlc_clarification_draft_text" not in state
+    assert "requirement_decision_feedback_old-gate" not in state
+    assert "task_graph_decision_feedback_old-gate" not in state
+    assert state["unrelated_display_preference"] == "compact"
+
+    _text_area(app, "Software requirement").input("Build a smaller project.")
+    app.text_input[0].input("new-project")
+    _button(app, "Analyze Requirement").click().run()
+    assert all("run-old" not in value for value in _values(app.caption))
+    assert all(metric.value != "10 / 10" for metric in app.metric)
+
+    new_graph = replace(_task_graph_snapshot(tmp_path), run_id="run-new")
+    runtime.complete(new_graph)
+    app.run()
+    assert app.session_state.filtered_state["agentic_sdlc_current_run_id"] == (
+        "run-new"
+    )
+    assert all("run-old" not in value for value in _values(app.caption))
+
+    app.radio[0].set_value("Approve TaskGraph and execute")
+    app.button[0].click().run()
+    assert "Engineering Execution" in _values(app.header)
+    assert any(
+        "Waiting for structured Task Agent execution telemetry" in value
+        for value in _values(app.info)
+    )
+    assert all(metric.value != "10 / 10" for metric in app.metric)
+
+    new_operation_id = runtime.resume_calls[-1][0]
+    new_collector = _execution_collector(
+        new_graph,
+        operation_id=new_operation_id,
+    )
+    new_collector.report(
+        TaskExecutionWaveStarted(
+            wave_number=1,
+            mode=TaskExecutionWaveMode.SINGLE,
+            attempts=(TaskExecutionProgressAttempt("TASK-001", 1, "ignored"),),
+        )
+    )
+    new_progress = new_collector.snapshot(run_id="run-new")
+    assert new_progress is not None
+    runtime.set_execution_progress(new_progress)
+    app.run()
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert metrics["Completed tasks"] == "0 / 4"
+    assert metrics["Current wave"] == "1 · SINGLE"
+    assert any("Run ID: run-new" in value for value in _values(app.caption))
+    assert all("run-old" not in value for value in _values(app.caption))
+
+    runtime.set_execution_progress(old_progress)
+    stopped = _snapshot(
+        tmp_path,
+        run_id="run-new",
+        gate_token=None,
+        application_status=GovernedRunApplicationStatus.SAFE_STOPPED,
+        workflow_status="safe_stopped",
+    )
+    stopped.workflow_state["safe_stop_reason"] = "New run stopped safely."
+    runtime.complete(stopped)
+    app.run()
+    assert any("stopped safely" in value for value in _values(app.warning))
+    assert all("completed successfully" not in value for value in _values(app.success))
+    assert all(metric.label != "Completed tasks" for metric in app.metric)
+
+
+def test_progress_requires_current_operation_identity(tmp_path: Path) -> None:
+    snapshot = _task_graph_snapshot(tmp_path)
+    runtime = FakeUIRuntime(snapshot)
+    app = _app_for(runtime)
+    app.radio[0].set_value("Approve TaskGraph and execute")
+    app.button[0].click().run()
+
+    stale_operation = _execution_collector(
+        snapshot,
+        operation_id="prior-operation",
+    )
+    stale_operation.report(
+        TaskExecutionWaveStarted(
+            wave_number=8,
+            mode=TaskExecutionWaveMode.SINGLE,
+            attempts=(TaskExecutionProgressAttempt("TASK-001", 1, "ignored"),),
+        )
+    )
+    progress = stale_operation.snapshot(run_id=snapshot.run_id)
+    assert progress is not None
+    runtime.set_execution_progress(progress)
+    app.run()
+
+    assert any(
+        "Waiting for structured Task Agent execution telemetry" in value
+        for value in _values(app.info)
+    )
+    assert all(metric.label != "Completed tasks" for metric in app.metric)
+    assert all("prior-operation" not in value for value in _values(app.caption))
+
+
+def test_stale_terminal_snapshot_is_not_rendered_for_active_run(
+    tmp_path: Path,
+) -> None:
+    active = replace(_snapshot(tmp_path), run_id="run-active")
+    runtime = FakeUIRuntime(active)
+    app = _app_for(runtime)
+    stale = _snapshot(
+        tmp_path,
+        run_id="run-stale",
+        gate_token=None,
+        application_status=GovernedRunApplicationStatus.SUCCEEDED,
+        workflow_status="success",
+    )
+    runtime.complete(
+        replace(
+            stale,
+            export_result=_successful_export(
+                Path(__file__).parents[1] / "projects" / "stale-project"
+            ),
+        )
+    )
+
+    app.run()
+
+    assert any("identity mismatch" in value for value in _values(app.error))
+    assert all("completed successfully" not in value for value in _values(app.success))
+    assert all("Published project" not in value for value in _values(app.success))
+    assert app.session_state.filtered_state["agentic_sdlc_current_run_id"] == (
+        "run-active"
+    )
+
+
+def test_success_displays_returned_publication_destination_and_run_id(
+    tmp_path: Path,
+) -> None:
+    destination = Path(__file__).parents[1] / "projects" / "returned-destination"
+    terminal = _snapshot(
+        tmp_path,
+        run_id="run-published",
+        gate_token=None,
+        application_status=GovernedRunApplicationStatus.SUCCEEDED,
+        workflow_status="success",
+    )
+    terminal.workflow_state["project_name"] = "not-the-returned-destination"
+    runtime = FakeUIRuntime(
+        replace(terminal, export_result=_successful_export(destination))
+    )
+
+    app = _app_for(runtime)
+
+    assert "Published project: projects/returned-destination" in _values(app.success)
+    assert any(
+        "Authoritative run ID: run-published" in value
+        for value in _values(app.caption)
+    )
+    assert all(
+        "not-the-returned-destination" not in value
+        for value in _values(app.success)
+    )
+
+
+def test_success_without_verified_publication_destination_is_reported(
+    tmp_path: Path,
+) -> None:
+    terminal = _snapshot(
+        tmp_path,
+        run_id="run-missing-publication",
+        gate_token=None,
+        application_status=GovernedRunApplicationStatus.SUCCEEDED,
+        workflow_status="success",
+    )
+
+    app = _app_for(FakeUIRuntime(terminal))
+
+    assert any(
+        "no verified published-project destination" in value
+        for value in _values(app.error)
+    )
+    assert all("Published project:" not in value for value in _values(app.success))
+
+
 def test_terminal_safe_stop_keeps_failed_task_telemetry_and_authoritative_reason(
     tmp_path: Path,
 ) -> None:
@@ -1000,7 +1290,8 @@ def test_terminal_safe_stop_keeps_failed_task_telemetry_and_authoritative_reason
     app = _app_for(runtime)
     app.radio[0].set_value("Approve TaskGraph and execute")
     app.button[0].click().run()
-    collector = _execution_collector(snapshot)
+    operation_id = runtime.resume_calls[0][0]
+    collector = _execution_collector(snapshot, operation_id=operation_id)
     failed = TaskExecutionProgressAttempt("TASK-002", 2, "ignored")
     collector.report(GovernedTaskExecutionStarted())
     collector.report(
@@ -1023,7 +1314,7 @@ def test_terminal_safe_stop_keeps_failed_task_telemetry_and_authoritative_reason
     )
     assert collector.finish_execution(
         run_id=snapshot.run_id,
-        operation_id="task-graph-operation",
+        operation_id=operation_id,
     )
     progress = collector.snapshot(run_id=snapshot.run_id)
     assert progress is not None
