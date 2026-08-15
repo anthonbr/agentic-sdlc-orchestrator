@@ -13,11 +13,20 @@ from time import monotonic
 from typing import Any, Protocol
 
 from agentic_sdlc.application import (
+    EligibleBrownfieldProject,
     GovernedRunError,
     GovernedRunLifecycleError,
+    GovernedRunMode,
     GovernedRunRequest,
     GovernedRunService,
     GovernedRunSnapshot,
+)
+from agentic_sdlc.clarification_draft import (
+    ClarificationDrafter,
+    ClarificationDraftError,
+    ClarificationDraftRequest,
+    ClarificationDraftResult,
+    clarification_draft_context_identity,
 )
 from agentic_sdlc.project_export import normalize_project_name
 from agentic_sdlc.requirement_submission import (
@@ -52,8 +61,23 @@ class StreamlitRuntimeView:
     execution_progress: StreamlitExecutionProgressView | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ClarificationDraftRuntimeView:
+    """Immutable state for one presentation-only clarification generation."""
+
+    generation_id: str | None
+    context_identity: str | None
+    in_flight: bool
+    result: ClarificationDraftResult | None
+    error_message: str | None
+
+
 class GovernedRunLifecycle(Protocol):
     """Public GovernedRunService surface used by the session runtime."""
+
+    def list_eligible_brownfield_projects(
+        self,
+    ) -> tuple[EligibleBrownfieldProject, ...]: ...
 
     def start_run(
         self,
@@ -78,21 +102,144 @@ class BackgroundExecutor(Protocol):
 
     def submit(
         self,
-        function: Callable[..., GovernedRunSnapshot],
+        function: Callable[..., Any],
         /,
         *args: Any,
         **kwargs: Any,
-    ) -> Future[GovernedRunSnapshot]: ...
+    ) -> Future[Any]: ...
+
+
+class ClarificationDraftBackgroundRuntime:
+    """Run optional clarification assistance off-thread without workflow authority."""
+
+    def __init__(self, *, executor: BackgroundExecutor | None = None) -> None:
+        self._executor = executor or ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="agentic-sdlc-clarification",
+        )
+        self._owns_executor = executor is None
+        self._lock = Lock()
+        self._future: Future[Any] | None = None
+        self._generation_id: str | None = None
+        self._context_identity: str | None = None
+        self._known_generation_ids: set[str] = set()
+        self._result: ClarificationDraftResult | None = None
+        self._error_message: str | None = None
+
+    def schedule(
+        self,
+        generation_id: str,
+        context_identity: str,
+        request: ClarificationDraftRequest,
+        drafter: ClarificationDrafter,
+    ) -> bool:
+        """Schedule one explicit draft request without invoking governed lifecycle."""
+
+        self._require_identity(generation_id, "generation")
+        self._require_identity(context_identity, "context")
+        if clarification_draft_context_identity(request) != context_identity:
+            raise ValueError(
+                "Clarification draft context identity does not match the request."
+            )
+        with self._lock:
+            self._settle_finished_locked()
+            if generation_id in self._known_generation_ids:
+                return False
+            if self._future is not None:
+                return False
+            self._known_generation_ids.add(generation_id)
+            self._generation_id = generation_id
+            self._context_identity = context_identity
+            self._result = None
+            self._error_message = None
+            self._future = self._executor.submit(
+                drafter.draft,
+                request.model_copy(deep=True),
+            )
+            return True
+
+    def poll(self, expected_context_identity: str) -> ClarificationDraftRuntimeView:
+        """Return assistance state only when it belongs to the current gate context."""
+
+        self._require_identity(expected_context_identity, "expected context")
+        with self._lock:
+            self._settle_finished_locked()
+            if self._context_identity != expected_context_identity:
+                in_flight = self._future is not None
+                if not in_flight:
+                    self._clear_completed_locked()
+                return ClarificationDraftRuntimeView(
+                    generation_id=self._generation_id,
+                    context_identity=self._context_identity,
+                    in_flight=in_flight,
+                    result=None,
+                    error_message=None,
+                )
+            return ClarificationDraftRuntimeView(
+                generation_id=self._generation_id,
+                context_identity=self._context_identity,
+                in_flight=self._future is not None,
+                result=self._result,
+                error_message=self._error_message,
+            )
+
+    def close(self, *, wait: bool = False) -> None:
+        """Release the session-owned assistance executor."""
+
+        if self._owns_executor and isinstance(self._executor, ThreadPoolExecutor):
+            self._executor.shutdown(wait=wait, cancel_futures=False)
+
+    def _settle_finished_locked(self) -> None:
+        future = self._future
+        if future is None or not future.done():
+            return
+        try:
+            result = future.result()
+            if not isinstance(result, ClarificationDraftResult):
+                raise ClarificationDraftError(
+                    "The clarification drafter returned an invalid result."
+                )
+        except ClarificationDraftError as error:
+            self._result = None
+            self._error_message = str(error)
+        except Exception as error:
+            self._result = None
+            self._error_message = (
+                "Clarification drafting failed "
+                f"({type(error).__name__}). Review the local server logs and retry."
+            )
+        else:
+            self._result = result
+            self._error_message = None
+        finally:
+            self._future = None
+
+    def _clear_completed_locked(self) -> None:
+        self._generation_id = None
+        self._context_identity = None
+        self._result = None
+        self._error_message = None
+
+    @staticmethod
+    def _require_identity(value: str, label: str) -> None:
+        if not isinstance(value, str) or not value:
+            raise ValueError(f"Clarification draft {label} ID must be non-empty text.")
 
 
 def governed_run_request_from_inline_requirement(
     requirement_text: str,
     project_name: str,
+    *,
+    run_mode: GovernedRunMode = GovernedRunMode.GREENFIELD,
+    baseline_project_name: str | None = None,
 ) -> GovernedRunRequest:
     """Resolve one GUI submission through the authoritative input boundary."""
 
     submission = resolve_inline_requirement(requirement_text)
+    mode = GovernedRunMode(run_mode)
     requested_project_name = project_name if project_name != "" else None
+    if mode is GovernedRunMode.BROWNFIELD and requested_project_name is None:
+        raise ValueError("Brownfield runs require a new output project name.")
     normalized_project_name = (
         normalize_project_name(requested_project_name)
         if requested_project_name is not None
@@ -105,6 +252,8 @@ def governed_run_request_from_inline_requirement(
             project_name=normalized_project_name,
         ),
         requested_project_name=requested_project_name,
+        run_mode=mode,
+        baseline_project_name=baseline_project_name,
     )
 
 
@@ -116,6 +265,7 @@ class StreamlitRunRuntime:
         service: GovernedRunLifecycle,
         *,
         executor: BackgroundExecutor | None = None,
+        clarification_executor: BackgroundExecutor | None = None,
         progress_collector: StreamlitExecutionProgressCollector | None = None,
         clock: Callable[[], float] = monotonic,
     ) -> None:
@@ -125,6 +275,9 @@ class StreamlitRunRuntime:
             thread_name_prefix="agentic-sdlc-streamlit",
         )
         self._owns_executor = executor is None
+        self._clarification_drafts = ClarificationDraftBackgroundRuntime(
+            executor=clarification_executor
+        )
         self._progress_collector = (
             progress_collector or StreamlitExecutionProgressCollector()
         )
@@ -179,6 +332,37 @@ class StreamlitRunRuntime:
             )
             self._operation_started_at = self._clock()
             return True
+
+    def list_eligible_brownfield_projects(
+        self,
+    ) -> tuple[EligibleBrownfieldProject, ...]:
+        """Delegate verified baseline discovery to the shared application service."""
+
+        return self._service.list_eligible_brownfield_projects()
+
+    def schedule_clarification_draft(
+        self,
+        generation_id: str,
+        context_identity: str,
+        request: ClarificationDraftRequest,
+        drafter: ClarificationDrafter,
+    ) -> bool:
+        """Schedule optional assistance on its non-governed background lane."""
+
+        return self._clarification_drafts.schedule(
+            generation_id,
+            context_identity,
+            request,
+            drafter,
+        )
+
+    def poll_clarification_draft(
+        self,
+        context_identity: str,
+    ) -> ClarificationDraftRuntimeView:
+        """Poll assistance bound to the exact current human-gate context."""
+
+        return self._clarification_drafts.poll(context_identity)
 
     def schedule_resume(
         self,
@@ -284,6 +468,7 @@ class StreamlitRunRuntime:
     def close(self, *, wait: bool = False) -> None:
         """Release the owned executor when the Streamlit session is discarded."""
 
+        self._clarification_drafts.close(wait=wait)
         if self._owns_executor:
             executor = self._executor
             if isinstance(executor, ThreadPoolExecutor):

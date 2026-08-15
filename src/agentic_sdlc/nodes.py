@@ -11,6 +11,11 @@ from typing import cast
 from langgraph.types import interrupt
 from pydantic import ValidationError
 
+from agentic_sdlc.brownfield_baseline import brownfield_baseline_from_value
+from agentic_sdlc.brownfield_context import (
+    BrownfieldCodebaseContext,
+    brownfield_codebase_context_from_value,
+)
 from agentic_sdlc.llm import (
     RequirementAnalysisClient,
     RequirementAnalysisClientError,
@@ -32,6 +37,7 @@ from agentic_sdlc.requirement_analysis import (
     RequirementPlanningReadinessError,
     RequirementPlanningReadinessStatus,
     determine_requirement_planning_readiness,
+    requirement_analysis_from_value,
 )
 from agentic_sdlc.requirement_spec import (
     ApprovedRequirementSpec,
@@ -295,27 +301,34 @@ def requirement_analysis_task(
     attempt_number = state.get("requirement_analysis_attempt_count", 0) + 1
     prior_analysis = None
     if state.get("requirement_analysis"):
-        prior_analysis = RequirementAnalysis.model_validate(
+        prior_analysis = requirement_analysis_from_value(
             state["requirement_analysis"]
         )
     try:
+        brownfield_context = _brownfield_codebase_context_from_state(state)
         candidate = client.invoke_structured(
             state["raw_requirement"],
             prior_analysis,
             state.get("requirement_review_feedback", ""),
+            brownfield_context,
         )
-    except RequirementAnalysisClientError as error:
+    except (RequirementAnalysisClientError, ValueError) as error:
+        retryable = (
+            error.retryable
+            if isinstance(error, RequirementAnalysisClientError)
+            else False
+        )
         failure = _requirement_analysis_failure(
             state,
             attempt_number=attempt_number,
             reason=str(error),
-            retryable=error.retryable,
+            retryable=retryable,
         )
         return {
             "requirement_analysis_candidate": None,
             "requirement_analysis_status": "failed",
             "requirement_analysis_attempt_count": attempt_number,
-            "requirement_analysis_retryable": error.retryable,
+            "requirement_analysis_retryable": retryable,
             "requirement_analysis_error": str(error),
             "requirement_analysis_model": client.model_name,
             "requirement_analysis_failures": [failure],
@@ -338,12 +351,17 @@ def validate_requirement_analysis(state: WorkflowState) -> WorkflowState:
     """Validate one LLM candidate before it can reach human review."""
 
     try:
-        analysis = RequirementAnalysis.model_validate(
+        analysis = requirement_analysis_from_value(
             state.get("requirement_analysis_candidate")
         )
-    except ValidationError as error:
-        reason = _pydantic_failure_reason(
-            "Structured requirement analysis validation", error
+        _validate_requirement_analysis_brownfield_authority(state, analysis)
+    except (ValidationError, ValueError) as error:
+        reason = (
+            _pydantic_failure_reason(
+                "Structured requirement analysis validation", error
+            )
+            if isinstance(error, ValidationError)
+            else f"Structured requirement analysis validation failed: {error}"
         )
         failure = _requirement_analysis_failure(
             state,
@@ -478,14 +496,15 @@ def build_approved_requirement_spec(state: WorkflowState) -> WorkflowState:
 
     if state.get("requirement_review_decision") != "APPROVE":
         raise ValueError("Requirement specification requires human approval.")
-    analysis = RequirementAnalysis.model_validate(state["requirement_analysis"])
+    analysis = requirement_analysis_from_value(state["requirement_analysis"])
     spec = package_approved_requirement_spec(
         analysis,
         source_analysis_revision=state.get("requirement_analysis_revision_count", 0),
     )
     return {
         "approved_requirement_spec": cast(
-            ApprovedRequirementSpecData, spec.model_dump(mode="json")
+            ApprovedRequirementSpecData,
+            spec.model_dump(mode="json"),
         ),
         "trace": [
             f"[build_approved_requirement_spec] {spec.spec_id} version {spec.version}"
@@ -506,6 +525,8 @@ def task_decomposition_task(
     if state.get("candidate_task_graph"):
         prior_graph = _task_graph_from_data(state["candidate_task_graph"])
     try:
+        brownfield_context = _brownfield_codebase_context_from_state(state)
+        _validate_approved_spec_brownfield_authority(spec, brownfield_context)
         delivery_policy = project_delivery_policy_from_value(
             state.get("project_delivery_policy")
         )
@@ -514,19 +535,23 @@ def task_decomposition_task(
             prior_graph,
             state.get("task_graph_feedback", ""),
             delivery_policy,
+            brownfield_context,
         )
-    except TaskPlanningClientError as error:
+    except (TaskPlanningClientError, ValueError) as error:
+        retryable = (
+            error.retryable if isinstance(error, TaskPlanningClientError) else False
+        )
         failure = _task_planning_failure(
             state,
             attempt_number=attempt_number,
             reason=str(error),
-            retryable=error.retryable,
+            retryable=retryable,
         )
         return {
             "task_planning_candidate": None,
             "task_planning_status": "failed",
             "task_planning_attempt_count": attempt_number,
-            "task_planning_retryable": error.retryable,
+            "task_planning_retryable": retryable,
             "task_planning_error": str(error),
             "task_planning_model": client.model_name,
             "task_planning_failures": [failure],
@@ -1708,11 +1733,17 @@ def _repository_context_paths(
             and change_set.attempt_number == attempt_number - 1
             for change in change_set.file_changes
         )
-    return provider.paths_for_attempt(
+    selected_paths = provider.paths_for_attempt(
         task,
         dependency_paths=tuple(sorted(set(dependency_paths))),
         retry_paths=tuple(sorted(set(retry_paths))),
     )
+    brownfield_context = _brownfield_codebase_context_from_state(state)
+    if brownfield_context is None:
+        return selected_paths
+    # Slice 1's verified inventory, not planner/agent input, grants these bounded
+    # reads.  Contents still come from the current authoritative workspace snapshot.
+    return tuple(sorted({*selected_paths, *brownfield_context.text_paths}))
 
 
 def _materialization_feedback(
@@ -2762,7 +2793,7 @@ def _pydantic_failure_reason(prefix: str, error: ValidationError) -> str:
 def _requirement_planning_readiness_from_state(
     state: WorkflowState,
 ) -> RequirementPlanningReadiness:
-    analysis = RequirementAnalysis.model_validate(state["requirement_analysis"])
+    analysis = requirement_analysis_from_value(state["requirement_analysis"])
     expected = determine_requirement_planning_readiness(
         analysis,
         analysis_revision=state.get("requirement_analysis_revision_count", 0),
@@ -2779,6 +2810,89 @@ def _requirement_planning_readiness_from_state(
             "validated analysis revision."
         )
     return stored
+
+
+def _brownfield_codebase_context_from_state(
+    state: WorkflowState,
+) -> BrownfieldCodebaseContext | None:
+    baseline_value = state.get("brownfield_baseline")
+    context_value = state.get("brownfield_codebase_context")
+    if baseline_value is None and context_value is None:
+        return None
+    if baseline_value is None or context_value is None:
+        raise ValueError(
+            "Brownfield baseline and codebase context must be present together."
+        )
+    baseline = brownfield_baseline_from_value(baseline_value)
+    context = brownfield_codebase_context_from_value(context_value)
+    if (
+        context.baseline_id != baseline.baseline_id
+        or context.selected_project_name != baseline.selected_project_name
+        or context.binding.workspace_id != baseline.seed_result.workspace_id
+        or context.binding.snapshot_id
+        != baseline.governed_baseline_snapshot_id
+        or tuple((item.path, item.content_hash) for item in context.files)
+        != tuple(
+            (item.path, item.content_hash) for item in baseline.engineering_files
+        )
+    ):
+        raise ValueError(
+            "Brownfield codebase context does not match baseline authority."
+        )
+    return context
+
+
+def _validate_requirement_analysis_brownfield_authority(
+    state: WorkflowState,
+    analysis: RequirementAnalysis,
+) -> None:
+    context = _brownfield_codebase_context_from_state(state)
+    impact = analysis.brownfield_impact
+    if context is None:
+        if impact is not None:
+            raise ValueError(
+                "Greenfield analysis must not claim brownfield codebase impact."
+            )
+        return
+    if analysis.requirement_type != "brownfield":
+        raise ValueError(
+            "A governed brownfield run requires brownfield requirement analysis."
+        )
+    if impact is None:
+        raise ValueError(
+            "A governed brownfield run requires structured codebase impact analysis."
+        )
+    if (
+        impact.baseline_id != context.baseline_id
+        or impact.codebase_context_id != context.context_id
+    ):
+        raise ValueError(
+            "Brownfield impact analysis is not correlated to current context."
+        )
+
+
+def _validate_approved_spec_brownfield_authority(
+    spec: ApprovedRequirementSpec,
+    context: BrownfieldCodebaseContext | None,
+) -> None:
+    impact = spec.brownfield_impact
+    if context is None:
+        if impact is not None:
+            raise ValueError(
+                "Approved greenfield specification claims brownfield impact."
+            )
+        return
+    if spec.requirement_type != "brownfield" or impact is None:
+        raise ValueError(
+            "Approved brownfield specification lacks impact authority."
+        )
+    if (
+        impact.baseline_id != context.baseline_id
+        or impact.codebase_context_id != context.context_id
+    ):
+        raise ValueError(
+            "Approved brownfield impact does not match current context."
+        )
 
 
 def _spec_from_state(state: WorkflowState) -> ApprovedRequirementSpec:

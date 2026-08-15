@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agentic_sdlc.workspace_contracts import (
     WorkspaceContractError,
+    WorkspaceFileState,
     WorkspaceSnapshot,
     normalize_repository_path,
 )
@@ -92,6 +93,61 @@ class WorkspaceSeedResult(BaseModel):
     @classmethod
     def validate_source_root(cls, value: str) -> str:
         return normalize_repository_path(value)
+
+
+def verify_approved_source_files(
+    source_root: Path,
+    *,
+    relative_paths: tuple[str, ...],
+) -> tuple[WorkspaceFileState, ...]:
+    """Verify one explicit regular-file projection without following links.
+
+    This is the read-only companion to baseline seeding.  Callers select the
+    paths through application-owned evidence; this boundary proves that those
+    exact source files still exist with stable content before they are granted
+    baseline authority.
+    """
+
+    try:
+        paths = tuple(
+            sorted(normalize_repository_path(path) for path in relative_paths)
+        )
+    except (TypeError, WorkspaceContractError) as error:
+        raise WorkspaceSeedingError(
+            WorkspaceSeedingIssueCode.SOURCE_PATH,
+            "Approved baseline path violates repository path policy.",
+        ) from error
+    if len(paths) != len(set(paths)):
+        raise WorkspaceSeedingError(
+            WorkspaceSeedingIssueCode.DUPLICATE_PATH,
+            "Approved baseline paths must be unique.",
+        )
+
+    canonical_source = _validated_source_root(source_root)
+    first = tuple(
+        WorkspaceFileState(
+            path=path,
+            content_hash=hashlib.sha256(
+                _read_source_regular_file(canonical_source, path)
+            ).hexdigest(),
+        )
+        for path in paths
+    )
+    second = tuple(
+        WorkspaceFileState(
+            path=path,
+            content_hash=hashlib.sha256(
+                _read_source_regular_file(canonical_source, path)
+            ).hexdigest(),
+        )
+        for path in paths
+    )
+    if first != second:
+        raise WorkspaceSeedingError(
+            WorkspaceSeedingIssueCode.VERIFICATION_FAILED,
+            "Approved source changed during projection verification.",
+        )
+    return first
 
 
 def seed_isolated_workspace_from_approved_files(

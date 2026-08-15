@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from agentic_sdlc.brownfield_baseline import brownfield_baseline_from_value
+from agentic_sdlc.brownfield_context import brownfield_codebase_context_from_value
 from agentic_sdlc.reliability_metrics import (
     ReliabilityMetricsArtifact,
     RunReliabilityMetrics,
@@ -466,8 +468,10 @@ def _execution_evidence(state: WorkflowState) -> dict[str, object]:
 
 def _workspace_execution_evidence(state: WorkflowState) -> dict[str, object]:
     session = state.get("governed_workspace_session")
+    brownfield_baseline = state.get("brownfield_baseline")
+    brownfield_codebase_context = state.get("brownfield_codebase_context")
     readiness = state.get("project_readiness_validation")
-    return {
+    evidence: dict[str, object] = {
         "session": session.model_dump(mode="json") if session is not None else None,
         "snapshots": [
             item.model_dump(mode="json")
@@ -513,6 +517,17 @@ def _workspace_execution_evidence(state: WorkflowState) -> dict[str, object]:
             readiness.model_dump(mode="json") if readiness is not None else None
         ),
     }
+    if brownfield_baseline is not None:
+        evidence["brownfield_baseline"] = brownfield_baseline_from_value(
+            brownfield_baseline
+        ).model_dump(mode="json")
+    if brownfield_codebase_context is not None:
+        evidence["brownfield_codebase_context"] = (
+            brownfield_codebase_context_from_value(
+                brownfield_codebase_context
+            ).model_dump(mode="json")
+        )
+    return evidence
 
 
 def _summary_markdown(

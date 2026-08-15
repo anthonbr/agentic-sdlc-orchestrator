@@ -13,10 +13,23 @@ from uuid import uuid4
 
 from langgraph.graph.state import CompiledStateGraph
 
+from agentic_sdlc.brownfield_baseline import (
+    BrownfieldBaselineProvenance,
+    PublishedProjectBaselineError,
+    PublishedProjectCatalog,
+    build_brownfield_baseline_provenance,
+)
+from agentic_sdlc.brownfield_context import (
+    BrownfieldCodebaseContext,
+    BrownfieldCodebaseContextError,
+    build_brownfield_codebase_context,
+)
 from agentic_sdlc.project_export import (
+    ProjectNameError,
     ProjectExportContractError,
     ProjectExporter,
     ProjectExportResult,
+    normalize_project_name,
     project_export_request_from_state,
 )
 from agentic_sdlc.run_artifacts import (
@@ -32,6 +45,14 @@ from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
 from agentic_sdlc.workspace_integration import (
     GovernedWorkspaceRuntime,
     WorkspaceIntegrationError,
+)
+from agentic_sdlc.workspace_runtime import (
+    WorkspaceRuntimeError,
+    discard_isolated_workspace,
+)
+from agentic_sdlc.workspace_seeding import (
+    WorkspaceSeedingError,
+    seed_isolated_workspace_from_approved_files,
 )
 
 
@@ -57,6 +78,25 @@ class GovernedRunLifecycleError(GovernedRunError):
     """Raised when an application operation is invalid for the run lifecycle."""
 
 
+class GovernedRunMode(StrEnum):
+    """Application-owned source mode for one shared governed run."""
+
+    GREENFIELD = "GREENFIELD"
+    BROWNFIELD = "BROWNFIELD"
+
+
+@dataclass(frozen=True, slots=True)
+class EligibleBrownfieldProject:
+    """Presentation-safe metadata for one verified published baseline."""
+
+    project_name: str
+    originating_run_id: str
+    workflow_project_name: str | None
+    source_snapshot_id: str
+    engineering_file_count: int
+    publication_bundle_sha256: str
+
+
 @dataclass(frozen=True, slots=True)
 class GovernedRunRequest:
     """Immutable application request to start one governed workflow run."""
@@ -64,10 +104,40 @@ class GovernedRunRequest:
     command: Literal["demo", "run"]
     workflow_input: WorkflowState
     requested_project_name: str | None = None
+    run_mode: GovernedRunMode = GovernedRunMode.GREENFIELD
+    baseline_project_name: str | None = None
 
     def __post_init__(self) -> None:
         if self.command not in {"demo", "run"}:
             raise ValueError("Governed run command must be 'demo' or 'run'.")
+        try:
+            mode = GovernedRunMode(self.run_mode)
+        except ValueError as error:
+            raise ValueError(
+                "Governed run mode must be GREENFIELD or BROWNFIELD."
+            ) from error
+        object.__setattr__(self, "run_mode", mode)
+        if mode is GovernedRunMode.GREENFIELD:
+            if self.baseline_project_name is not None:
+                raise ValueError(
+                    "Greenfield runs must not specify a published baseline."
+                )
+            return
+        if self.baseline_project_name is None:
+            raise ValueError("Brownfield runs require a published baseline name.")
+        if self.requested_project_name is None:
+            raise ValueError("Brownfield runs require an explicit output project name.")
+        try:
+            baseline_name = normalize_project_name(self.baseline_project_name)
+            output_name = normalize_project_name(self.requested_project_name)
+        except ProjectNameError as error:
+            raise ValueError(
+                "Brownfield project names must be safe logical names."
+            ) from error
+        if baseline_name == output_name:
+            raise ValueError(
+                "Brownfield output project name must differ from its baseline."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +242,7 @@ class GovernedRunService:
         run_id_factory: RunIdFactory | None = None,
         workflow_diagram_writer: WorkflowDiagramWriter | None = None,
         project_exporter: ProjectExporter | None = None,
+        published_project_catalog: PublishedProjectCatalog | None = None,
     ) -> None:
         self._repository_root = Path(repository_root).resolve()
         self._workflow_factory = workflow_factory or build_workflow
@@ -183,8 +254,36 @@ class GovernedRunService:
             workflow_diagram_writer or write_workflow_diagram
         )
         self._project_exporter = project_exporter or ProjectExporter()
+        self._published_project_catalog = (
+            published_project_catalog
+            or PublishedProjectCatalog(self._repository_root)
+        )
         self._runs: dict[str, _GovernedRunContext] = {}
         self._runs_lock = Lock()
+
+    def list_eligible_brownfield_projects(
+        self,
+    ) -> tuple[EligibleBrownfieldProject, ...]:
+        """Return verified logical baselines without exposing filesystem authority."""
+
+        try:
+            baselines = self._published_project_catalog.eligible_projects()
+        except PublishedProjectBaselineError as error:
+            raise GovernedRunLifecycleError(
+                "Eligible brownfield projects could not be verified: "
+                f"{error}"
+            ) from error
+        return tuple(
+            EligibleBrownfieldProject(
+                project_name=baseline.project_name,
+                originating_run_id=baseline.originating_run_id,
+                workflow_project_name=baseline.workflow_project_name,
+                source_snapshot_id=baseline.source_snapshot.snapshot_id,
+                engineering_file_count=len(baseline.engineering_files),
+                publication_bundle_sha256=baseline.publication_bundle_sha256,
+            )
+            for baseline in baselines
+        )
 
     def start_run(
         self,
@@ -209,6 +308,20 @@ class GovernedRunService:
             WorkflowState,
             {**deepcopy(request.workflow_input), "run_id": run_id},
         )
+        if request.run_mode is GovernedRunMode.BROWNFIELD:
+            provenance, codebase_context = self._prepare_brownfield_baseline(
+                request,
+                run_id=run_id,
+                workspace_runtime=workspace_runtime,
+            )
+            initial_state["brownfield_baseline"] = cast(
+                Any,
+                provenance.model_dump(mode="json"),
+            )
+            initial_state["brownfield_codebase_context"] = cast(
+                Any,
+                codebase_context.model_dump(mode="json"),
+            )
         context = _GovernedRunContext(
             run_id=run_id,
             workflow=workflow,
@@ -228,7 +341,7 @@ class GovernedRunService:
         self._write_workflow_diagram(context)
         try:
             state = run_workflow(
-                deepcopy(request.workflow_input),
+                deepcopy(initial_state),
                 thread_id=run_id,
                 artifact_dir=artifact_bundle.artifact_dir,
                 workflow=workflow,
@@ -238,6 +351,71 @@ class GovernedRunService:
                 context.executing = False
             raise
         return self._complete_advance(context, state)
+
+    def _prepare_brownfield_baseline(
+        self,
+        request: GovernedRunRequest,
+        *,
+        run_id: str,
+        workspace_runtime: GovernedWorkspaceRuntime,
+    ) -> tuple[BrownfieldBaselineProvenance, BrownfieldCodebaseContext]:
+        """Select and seed one published baseline before workflow authority starts."""
+
+        baseline_name = request.baseline_project_name
+        output_name = request.requested_project_name
+        if baseline_name is None or output_name is None:
+            raise GovernedRunLifecycleError(
+                "Brownfield baseline and output identities are incomplete."
+            )
+        try:
+            baseline = self._published_project_catalog.select(baseline_name)
+            self._published_project_catalog.require_available_output(
+                output_name,
+                baseline_project_name=baseline.project_name,
+            )
+            workspace = workspace_runtime.establish_workspace_for_run(run_id)
+            self._published_project_catalog.require_current_identity(baseline)
+            seed_result, seeded_snapshot = (
+                seed_isolated_workspace_from_approved_files(
+                    workspace,
+                    source_root=baseline.project_root,
+                    source_root_label=f"projects/{baseline.project_name}",
+                    relative_paths=tuple(
+                        item.path for item in baseline.engineering_files
+                    ),
+                )
+            )
+            self._published_project_catalog.require_current_identity(baseline)
+            provenance = build_brownfield_baseline_provenance(
+                baseline,
+                seed_result,
+                seeded_snapshot,
+            )
+            context = build_brownfield_codebase_context(workspace, provenance)
+            return provenance, context
+        except (
+            BrownfieldCodebaseContextError,
+            PublishedProjectBaselineError,
+            WorkspaceIntegrationError,
+            WorkspaceRuntimeError,
+            WorkspaceSeedingError,
+            ValueError,
+        ) as error:
+            try:
+                workspace = workspace_runtime.workspace_for_run(run_id)
+            except WorkspaceIntegrationError:
+                workspace = None
+            if workspace is not None:
+                try:
+                    discard_isolated_workspace(workspace)
+                except WorkspaceRuntimeError as cleanup_error:
+                    raise GovernedRunLifecycleError(
+                        "Brownfield baseline preparation and isolated-workspace "
+                        "cleanup both failed."
+                    ) from cleanup_error
+            raise GovernedRunLifecycleError(
+                f"Brownfield baseline preparation failed: {error}"
+            ) from error
 
     def resume_run(
         self,

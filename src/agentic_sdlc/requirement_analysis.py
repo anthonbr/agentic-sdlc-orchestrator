@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Literal, Self
 
@@ -37,6 +39,57 @@ class RequirementPlanningReadinessError(ValueError):
     """Raised when blocked requirement state is asked to feed planning."""
 
 
+class BrownfieldImpactItem(BaseModel):
+    """One concise existing-code impact and the reason it is affected."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        strict=True,
+        str_strip_whitespace=True,
+    )
+
+    target: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
+class BrownfieldImpactAnalysis(BaseModel):
+    """Structured LLM proposal correlated to one bounded baseline context."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    baseline_id: str = Field(min_length=1)
+    codebase_context_id: str = Field(min_length=1)
+    impacted_modules: tuple[BrownfieldImpactItem, ...] = ()
+    impacted_services: tuple[BrownfieldImpactItem, ...] = ()
+    impacted_apis: tuple[BrownfieldImpactItem, ...] = ()
+    impacted_state: tuple[BrownfieldImpactItem, ...] = ()
+    impacted_flows: tuple[BrownfieldImpactItem, ...] = ()
+    impacted_tests: tuple[BrownfieldImpactItem, ...] = ()
+    impacted_documentation: tuple[BrownfieldImpactItem, ...] = ()
+    architectural_implications: tuple[BrownfieldImpactItem, ...] = ()
+    preserved_behaviors: tuple[BrownfieldImpactItem, ...] = ()
+
+    @model_validator(mode="after")
+    def require_meaningful_impact(self) -> Self:
+        groups = (
+            self.impacted_modules,
+            self.impacted_services,
+            self.impacted_apis,
+            self.impacted_state,
+            self.impacted_flows,
+            self.impacted_tests,
+            self.impacted_documentation,
+            self.architectural_implications,
+            self.preserved_behaviors,
+        )
+        if not any(groups):
+            raise ValueError(
+                "Brownfield impact analysis requires at least one supported finding."
+            )
+        return self
+
+
 class RequirementAnalysis(BaseModel):
     """Engineering understanding proposed by the requirement-analysis LLM."""
 
@@ -53,6 +106,7 @@ class RequirementAnalysis(BaseModel):
     risks: list[str]
     needs_clarification: bool
     confidence: float = Field(ge=0.0, le=1.0)
+    brownfield_impact: BrownfieldImpactAnalysis | None = None
 
     @field_validator(
         "functional_requirements",
@@ -90,6 +144,16 @@ class RequirementAnalysis(BaseModel):
                 "needs_clarification=true requires at least one ambiguity item"
             )
         return self
+
+
+def requirement_analysis_from_value(
+    value: RequirementAnalysis | Mapping[str, object],
+) -> RequirementAnalysis:
+    """Restore strict structured analysis from checkpoint-safe JSON values."""
+
+    if isinstance(value, RequirementAnalysis):
+        return RequirementAnalysis.model_validate_json(value.model_dump_json())
+    return RequirementAnalysis.model_validate_json(json.dumps(value))
 
 
 def determine_requirement_planning_readiness(
