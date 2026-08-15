@@ -20,7 +20,6 @@ from agentic_sdlc.application import (
 )
 from agentic_sdlc.clarification_draft import (
     ClarificationDrafter,
-    ClarificationDraftError,
     ClarificationDraftRequest,
     OpenAIClarificationDrafter,
     clarification_draft_context_identity,
@@ -57,6 +56,9 @@ _RUN_ID_KEY = "agentic_sdlc_current_run_id"
 _OPERATION_ID_KEY = "agentic_sdlc_operation_id"
 _CLARIFICATION_DRAFT_CONTEXT_KEY = "agentic_sdlc_clarification_draft_context"
 _CLARIFICATION_DRAFT_TEXT_KEY = "agentic_sdlc_clarification_draft_text"
+_CLARIFICATION_DRAFT_APPLIED_GENERATION_KEY = (
+    "agentic_sdlc_clarification_draft_applied_generation"
+)
 _ACTIVE_RUN_MODE_KEY = "agentic_sdlc_active_run_mode"
 _ACTIVE_BASELINE_PROJECT_KEY = "agentic_sdlc_active_baseline_project"
 _ACTIVE_OUTPUT_PROJECT_KEY = "agentic_sdlc_active_output_project"
@@ -198,6 +200,23 @@ def _render_polling_fragment(
         operation_kind=operation_kind,
         ui_phase=ui_phase,
         elapsed_seconds=view.operation_elapsed_seconds,
+    )
+
+
+@st.fragment(run_every=0.5)
+def _render_clarification_polling_fragment(
+    runtime: StreamlitRunRuntime,
+    context_identity: str,
+) -> None:
+    """Poll optional draft work while the authoritative human gate stays visible."""
+
+    draft_view = runtime.poll_clarification_draft(context_identity)
+    if not draft_view.in_flight:
+        st.rerun()
+    st.info("Drafting clarification response...")
+    st.caption(
+        "This is optional presentation assistance; the governed workflow remains "
+        "at the current human gate."
     )
 
 
@@ -538,6 +557,7 @@ def _clear_run_presentation_state(*, preserve_run_id: bool = False) -> None:
         _OPERATION_ID_KEY,
         _CLARIFICATION_DRAFT_CONTEXT_KEY,
         _CLARIFICATION_DRAFT_TEXT_KEY,
+        _CLARIFICATION_DRAFT_APPLIED_GENERATION_KEY,
         _ACTIVE_RUN_MODE_KEY,
         _ACTIVE_BASELINE_PROJECT_KEY,
         _ACTIVE_OUTPUT_PROJECT_KEY,
@@ -894,6 +914,7 @@ def _render_requirement_analysis_review(
             )
         else:
             _render_clarification_draft_helper(
+                runtime,
                 gate,
                 draft_request,
                 clarification_drafter=clarification_drafter,
@@ -936,6 +957,7 @@ def _clarification_draft_request(
 
 
 def _render_clarification_draft_helper(
+    runtime: StreamlitRunRuntime,
     gate: HumanGovernanceGate,
     request: ClarificationDraftRequest,
     *,
@@ -948,6 +970,20 @@ def _render_clarification_draft_helper(
         _clear_clarification_draft_state()
         st.session_state[_CLARIFICATION_DRAFT_CONTEXT_KEY] = context_identity
 
+    draft_view = runtime.poll_clarification_draft(context_identity)
+    if (
+        draft_view.result is not None
+        and draft_view.generation_id is not None
+        and st.session_state.get(_CLARIFICATION_DRAFT_APPLIED_GENERATION_KEY)
+        != draft_view.generation_id
+    ):
+        st.session_state[_CLARIFICATION_DRAFT_TEXT_KEY] = (
+            draft_view.result.suggested_clarification
+        )
+        st.session_state[_CLARIFICATION_DRAFT_APPLIED_GENERATION_KEY] = (
+            draft_view.generation_id
+        )
+
     st.subheader("Clarification assistance")
     st.caption(
         "This optional AI draft is editable presentation state. It does not resolve "
@@ -958,20 +994,28 @@ def _render_clarification_draft_helper(
     generation_label = (
         "Regenerate draft" if has_draft else "Draft clarification response"
     )
-    if st.button(
+    if draft_view.error_message:
+        st.error(
+            "Clarification draft was not generated: "
+            f"{draft_view.error_message}"
+        )
+    generation_clicked = st.button(
         generation_label,
         key=f"clarification_draft_generate_{gate.gate_token}",
-    ):
+        disabled=draft_view.in_flight,
+    )
+    if generation_clicked:
         active_drafter = clarification_drafter or OpenAIClarificationDrafter()
-        try:
-            with st.spinner("Drafting clarification response..."):
-                result = active_drafter.draft(request)
-        except ClarificationDraftError as error:
-            st.error(f"Clarification draft was not generated: {error}")
-        else:
-            st.session_state[_CLARIFICATION_DRAFT_TEXT_KEY] = (
-                result.suggested_clarification
-            )
+        runtime.schedule_clarification_draft(
+            uuid4().hex,
+            context_identity,
+            request,
+            active_drafter,
+        )
+        draft_view = runtime.poll_clarification_draft(context_identity)
+
+    if draft_view.in_flight:
+        _render_clarification_polling_fragment(runtime, context_identity)
 
     current_draft = st.session_state.get(_CLARIFICATION_DRAFT_TEXT_KEY)
     if not isinstance(current_draft, str) or not current_draft.strip():
@@ -1009,6 +1053,7 @@ def _clear_clarification_draft_state() -> None:
 
     st.session_state.pop(_CLARIFICATION_DRAFT_CONTEXT_KEY, None)
     st.session_state.pop(_CLARIFICATION_DRAFT_TEXT_KEY, None)
+    st.session_state.pop(_CLARIFICATION_DRAFT_APPLIED_GENERATION_KEY, None)
 
 
 def _requirement_feedback_key(gate: HumanGovernanceGate) -> str:

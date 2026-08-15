@@ -19,12 +19,23 @@ from agentic_sdlc.application import (
     GovernedRunSnapshot,
     HumanGovernanceGate,
 )
+from agentic_sdlc.clarification_draft import (
+    ClarificationDraftError,
+    ClarificationDraftRequest,
+    ClarificationDraftResult,
+    FakeClarificationDrafter,
+    clarification_draft_context_identity,
+)
 from agentic_sdlc.llm import FakeRequirementAnalysisClient, FakeTaskPlanningClient
 from agentic_sdlc.project_export import ProjectNameError
 from agentic_sdlc.requirement_submission import (
     RequirementSubmissionError,
     deterministic_project_name,
     resolve_inline_requirement,
+)
+from agentic_sdlc.requirement_analysis import (
+    RequirementAnalysis,
+    RequirementPlanningReadiness,
 )
 from agentic_sdlc.run_artifacts import LiveRunArtifactBundle
 from agentic_sdlc.state import (
@@ -33,6 +44,7 @@ from agentic_sdlc.state import (
     demo_input,
 )
 from agentic_sdlc.streamlit_runtime import (
+    ClarificationDraftBackgroundRuntime,
     StreamlitOperationKind,
     StreamlitRunRuntime,
     governed_run_request_from_inline_requirement,
@@ -247,6 +259,26 @@ def _snapshot(
         export_result=None,
         application_error=None,
         warnings=(),
+    )
+
+
+def _draft_request(snapshot: GovernedRunSnapshot) -> ClarificationDraftRequest:
+    gate = snapshot.human_gate
+    assert gate is not None
+    submission = snapshot.workflow_state["requirement_submission"]
+    return ClarificationDraftRequest(
+        run_id=snapshot.run_id,
+        gate_token=gate.gate_token,
+        analysis_revision=gate.payload["revision_number"],
+        original_requirement=submission["original_text"],
+        requirement_analysis=RequirementAnalysis.model_validate(
+            gate.payload["requirement_analysis"],
+            strict=False,
+        ),
+        planning_readiness=RequirementPlanningReadiness.model_validate(
+            gate.payload["planning_readiness"],
+            strict=False,
+        ),
     )
 
 
@@ -644,6 +676,138 @@ def test_runtime_delegates_brownfield_listing_to_application_service(
 
     assert runtime.list_eligible_brownfield_projects() == (project,)
     assert service.list_eligible_calls == 1
+
+
+def test_clarification_runtime_schedules_provider_work_without_blocking(
+    tmp_path: Path,
+) -> None:
+    request = _draft_request(_snapshot(tmp_path, blocked=True))
+    drafter = FakeClarificationDrafter(
+        [ClarificationDraftResult(suggested_clarification="Keep existing behavior.")]
+    )
+    executor = QueuedExecutor()
+    runtime = ClarificationDraftBackgroundRuntime(executor=executor)
+    context_identity = clarification_draft_context_identity(request)
+
+    assert runtime.schedule("generation-1", context_identity, request, drafter)
+    assert not runtime.schedule("generation-1", context_identity, request, drafter)
+    assert not runtime.schedule("generation-2", context_identity, request, drafter)
+    assert drafter.calls == []
+    assert runtime.poll(context_identity).in_flight
+
+    executor.run_next()
+    completed = runtime.poll(context_identity)
+
+    assert not completed.in_flight
+    assert completed.generation_id == "generation-1"
+    assert completed.result is not None
+    assert completed.result.suggested_clarification == "Keep existing behavior."
+    assert completed.error_message is None
+    assert len(drafter.calls) == 1
+    assert runtime.poll(context_identity).result == completed.result
+
+
+def test_session_runtime_keeps_clarification_outside_governed_operation_lane(
+    tmp_path: Path,
+) -> None:
+    snapshot = _snapshot(tmp_path, blocked=True)
+    service = RecordingService(snapshot, [])
+    governed_executor = QueuedExecutor()
+    clarification_executor = QueuedExecutor()
+    runtime = StreamlitRunRuntime(
+        service,
+        executor=governed_executor,
+        clarification_executor=clarification_executor,
+    )
+    drafter = FakeClarificationDrafter(
+        [ClarificationDraftResult(suggested_clarification="Keep existing behavior.")]
+    )
+    request = _draft_request(snapshot)
+    context_identity = clarification_draft_context_identity(request)
+
+    assert runtime.schedule_clarification_draft(
+        "generation-1",
+        context_identity,
+        request,
+        drafter,
+    )
+
+    assert not runtime.poll().in_flight
+    assert runtime.poll().operation_kind is None
+    assert service.start_calls == []
+    assert service.resume_calls == []
+    assert governed_executor.jobs == deque()
+    assert len(clarification_executor.jobs) == 1
+
+
+def test_clarification_runtime_discards_completion_for_stale_context(
+    tmp_path: Path,
+) -> None:
+    request = _draft_request(_snapshot(tmp_path, blocked=True))
+    revised_request = _draft_request(
+        _snapshot(
+            tmp_path,
+            gate_token="run-streamlit:human-gate:2",
+            revision=1,
+            blocked=True,
+        )
+    )
+    drafter = FakeClarificationDrafter(
+        [
+            ClarificationDraftResult(suggested_clarification="Stale answer."),
+            ClarificationDraftResult(suggested_clarification="Current answer."),
+        ]
+    )
+    executor = QueuedExecutor()
+    runtime = ClarificationDraftBackgroundRuntime(executor=executor)
+    old_context = clarification_draft_context_identity(request)
+    new_context = clarification_draft_context_identity(revised_request)
+
+    assert runtime.schedule("generation-old", old_context, request, drafter)
+    stale_in_flight = runtime.poll(new_context)
+    assert stale_in_flight.in_flight
+    assert stale_in_flight.result is None
+
+    executor.run_next()
+    discarded = runtime.poll(new_context)
+    assert not discarded.in_flight
+    assert discarded.result is None
+    assert discarded.error_message is None
+    assert runtime.schedule(
+        "generation-new",
+        new_context,
+        revised_request,
+        drafter,
+    )
+    executor.run_next()
+    current = runtime.poll(new_context)
+    assert current.result is not None
+    assert current.result.suggested_clarification == "Current answer."
+
+
+def test_clarification_runtime_translates_provider_error_without_workflow_state(
+    tmp_path: Path,
+) -> None:
+    request = _draft_request(_snapshot(tmp_path, blocked=True))
+    drafter = FakeClarificationDrafter(
+        [ClarificationDraftError("provider unavailable")]
+    )
+    executor = QueuedExecutor()
+    runtime = ClarificationDraftBackgroundRuntime(executor=executor)
+    context_identity = clarification_draft_context_identity(request)
+
+    assert runtime.schedule(
+        "generation-error",
+        context_identity,
+        request,
+        drafter,
+    )
+    executor.run_next()
+    failed = runtime.poll(context_identity)
+
+    assert not failed.in_flight
+    assert failed.result is None
+    assert failed.error_message == "provider unavailable"
 
 
 @pytest.mark.parametrize("requirement", ["", "  \t\r\n"])

@@ -17,7 +17,9 @@ from agentic_sdlc.application import (
     GovernedRunSnapshot,
 )
 from agentic_sdlc.clarification_draft import (
+    ClarificationDrafter,
     ClarificationDraftError,
+    ClarificationDraftRequest,
     ClarificationDraftResult,
     FakeClarificationDrafter,
 )
@@ -32,6 +34,8 @@ from agentic_sdlc.streamlit_execution_progress import (
     StreamlitExecutionProgressView,
 )
 from agentic_sdlc.streamlit_runtime import (
+    ClarificationDraftBackgroundRuntime,
+    ClarificationDraftRuntimeView,
     StreamlitOperationKind,
     StreamlitRuntimeView,
 )
@@ -45,7 +49,7 @@ from agentic_sdlc.task_execution_progress import (
     TaskExecutionWaveMode,
     TaskExecutionWaveStarted,
 )
-from tests.test_streamlit_runtime import _snapshot, _task_graph_snapshot
+from tests.test_streamlit_runtime import QueuedExecutor, _snapshot, _task_graph_snapshot
 
 
 def _render_for_test(runtime: object, drafter: object | None = None) -> None:
@@ -74,6 +78,10 @@ class FakeUIRuntime:
         self.resume_calls: list[tuple[str, str, ApprovalResponse, str]] = []
         self.eligible_projects = eligible_projects
         self.list_eligible_calls = 0
+        self.clarification_executor = QueuedExecutor()
+        self.clarification_runtime = ClarificationDraftBackgroundRuntime(
+            executor=self.clarification_executor
+        )
 
     def list_eligible_brownfield_projects(
         self,
@@ -83,6 +91,29 @@ class FakeUIRuntime:
 
     def poll(self) -> StreamlitRuntimeView:
         return self.view
+
+    def schedule_clarification_draft(
+        self,
+        generation_id: str,
+        context_identity: str,
+        request: ClarificationDraftRequest,
+        drafter: ClarificationDrafter,
+    ) -> bool:
+        return self.clarification_runtime.schedule(
+            generation_id,
+            context_identity,
+            request,
+            drafter,
+        )
+
+    def poll_clarification_draft(
+        self,
+        context_identity: str,
+    ) -> ClarificationDraftRuntimeView:
+        return self.clarification_runtime.poll(context_identity)
+
+    def settle_clarification_draft(self) -> None:
+        self.clarification_executor.run_next()
 
     def schedule_start(
         self,
@@ -553,6 +584,25 @@ def test_blocked_brownfield_review_keeps_clarification_governance(
     assert "Brownfield Impact" in _values(app.subheader)
     _button(app, "Draft clarification response").click().run()
 
+    assert drafter.calls == []
+    assert len(runtime.clarification_executor.jobs) == 1
+    assert "Requirement Analysis" in _values(app.header)
+    assert "Brownfield Impact" in _values(app.subheader)
+    assert any(
+        "Baseline: published-project" in value for value in _values(app.info)
+    )
+    assert any(
+        "Drafting clarification response" in value for value in _values(app.info)
+    )
+    assert all(area.label != "Software requirement" for area in app.text_area)
+    app.run()
+    assert drafter.calls == []
+    assert len(runtime.clarification_executor.jobs) == 1
+    assert _button(app, "Draft clarification response").disabled is True
+
+    runtime.settle_clarification_draft()
+    app.run()
+
     assert len(drafter.calls) == 1
     assert runtime.resume_calls == []
     assert _text_area(app, "Suggested clarification").value == (
@@ -578,6 +628,9 @@ def test_blocked_analysis_draft_survives_rerun_without_governed_transition(
     app = _app_for(runtime, drafter)
 
     _button(app, "Draft clarification response").click().run()
+    assert drafter.calls == []
+    runtime.settle_clarification_draft()
+    app.run()
 
     assert len(drafter.calls) == 1
     request = drafter.calls[0]
@@ -611,6 +664,8 @@ def test_edited_draft_adoption_only_populates_feedback_until_explicit_submit(
     )
     app = _app_for(runtime, drafter)
     _button(app, "Draft clarification response").click().run()
+    runtime.settle_clarification_draft()
+    app.run()
 
     edited = (
         "Retain completed jobs for 14 days.\n"
@@ -645,6 +700,8 @@ def test_existing_human_feedback_requires_explicit_draft_replacement(
     _text_area(app, "Review feedback").input("Human-authored feedback.").run()
 
     _button(app, "Draft clarification response").click().run()
+    runtime.settle_clarification_draft()
+    app.run()
 
     assert _text_area(app, "Review feedback").value == "Human-authored feedback."
     assert _button(app, "Replace feedback with this draft") is not None
@@ -675,9 +732,14 @@ def test_new_requirement_gate_invalidates_stale_clarification_draft(
     )
     app = _app_for(runtime, drafter)
     _button(app, "Draft clarification response").click().run()
-    assert _text_area(app, "Suggested clarification").value == "Old revision answer."
+    assert drafter.calls == []
 
     runtime.complete(revised)
+    app.run()
+
+    assert "Requirement Analysis" in _values(app.header)
+    assert _button(app, "Draft clarification response").disabled is True
+    runtime.settle_clarification_draft()
     app.run()
 
     assert all(area.label != "Suggested clarification" for area in app.text_area)
@@ -687,6 +749,8 @@ def test_new_requirement_gate_invalidates_stale_clarification_draft(
     assert runtime.resume_calls == []
 
     _button(app, "Draft clarification response").click().run()
+    runtime.settle_clarification_draft()
+    app.run()
 
     assert _text_area(app, "Suggested clarification").value == "New revision answer."
     assert len(drafter.calls) == 2
@@ -704,11 +768,15 @@ def test_draft_provider_failure_preserves_feedback_and_never_resumes(
     _text_area(app, "Review feedback").input("Keep this human feedback.").run()
 
     _button(app, "Draft clarification response").click().run()
+    assert drafter.calls == []
+    runtime.settle_clarification_draft()
+    app.run()
 
     assert runtime.resume_calls == []
     assert _text_area(app, "Review feedback").value == "Keep this human feedback."
     assert any("provider unavailable" in value for value in _values(app.error))
     assert all(area.label != "Suggested clarification" for area in app.text_area)
+    assert _button(app, "Draft clarification response").disabled is False
 
 
 def test_request_changes_requires_feedback_then_passes_exact_text_and_token(
@@ -1114,6 +1182,9 @@ def test_explicit_streamlit_session_state_keys_remain_presentation_only() -> Non
             "agentic_sdlc_clarification_draft_context"
         ),
         "_CLARIFICATION_DRAFT_TEXT_KEY": "agentic_sdlc_clarification_draft_text",
+        "_CLARIFICATION_DRAFT_APPLIED_GENERATION_KEY": (
+            "agentic_sdlc_clarification_draft_applied_generation"
+        ),
         "_ACTIVE_RUN_MODE_KEY": "agentic_sdlc_active_run_mode",
         "_ACTIVE_BASELINE_PROJECT_KEY": "agentic_sdlc_active_baseline_project",
         "_ACTIVE_OUTPUT_PROJECT_KEY": "agentic_sdlc_active_output_project",
@@ -1390,6 +1461,9 @@ def test_new_run_clears_stale_terminal_progress_and_binds_new_execution(
 
     app.session_state["agentic_sdlc_clarification_draft_context"] = "old-context"
     app.session_state["agentic_sdlc_clarification_draft_text"] = "old draft"
+    app.session_state["agentic_sdlc_clarification_draft_applied_generation"] = (
+        "old-generation"
+    )
     app.session_state["requirement_decision_feedback_old-gate"] = "old feedback"
     app.session_state["task_graph_decision_feedback_old-gate"] = "old graph feedback"
     app.session_state["agentic_sdlc_active_run_mode"] = "BROWNFIELD"
@@ -1412,6 +1486,7 @@ def test_new_run_clears_stale_terminal_progress_and_binds_new_execution(
     assert "agentic_sdlc_operation_id" not in state
     assert "agentic_sdlc_clarification_draft_context" not in state
     assert "agentic_sdlc_clarification_draft_text" not in state
+    assert "agentic_sdlc_clarification_draft_applied_generation" not in state
     assert "requirement_decision_feedback_old-gate" not in state
     assert "task_graph_decision_feedback_old-gate" not in state
     assert "agentic_sdlc_active_run_mode" not in state
