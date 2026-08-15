@@ -103,6 +103,62 @@ class StagedValidationWorkspace:
 
 
 @contextmanager
+def disposable_validation_workspace_clone(
+    *,
+    source_workspace: IsolatedWorkspace,
+    source_snapshot: WorkspaceSnapshot,
+    staged_workspace_id: str,
+) -> Iterator[StagedValidationWorkspace]:
+    """Clone one exact authoritative snapshot into a disposable workspace."""
+
+    staged: IsolatedWorkspace | None = None
+    try:
+        observed_before = snapshot_isolated_workspace(source_workspace)
+        if observed_before != source_snapshot:
+            raise ValidationExecutionInfrastructureError(
+                ValidationExecutionInfrastructureCode.STAGED_WORKSPACE,
+                "Authoritative source workspace changed before validation staging.",
+            )
+        staged = create_isolated_workspace(staged_workspace_id)
+        _, staged_snapshot = seed_isolated_workspace_from_approved_files(
+            staged,
+            source_root=source_workspace.root,
+            source_root_label="governed/validation-source",
+            relative_paths=tuple(item.path for item in source_snapshot.files),
+        )
+        observed_after_copy = snapshot_isolated_workspace(source_workspace)
+        if observed_after_copy != source_snapshot:
+            raise ValidationExecutionInfrastructureError(
+                ValidationExecutionInfrastructureCode.STAGED_WORKSPACE,
+                "Authoritative source workspace changed during validation staging.",
+            )
+        if staged_snapshot.files != source_snapshot.files:
+            raise ValidationExecutionInfrastructureError(
+                ValidationExecutionInfrastructureCode.STAGED_WORKSPACE,
+                "Disposable validation baseline differs from source authority.",
+            )
+        yield StagedValidationWorkspace(staged, staged_snapshot)
+    except (
+        WorkspaceContractError,
+        WorkspaceRuntimeError,
+        WorkspaceSeedingError,
+    ) as error:
+        raise ValidationExecutionInfrastructureError(
+            ValidationExecutionInfrastructureCode.STAGED_WORKSPACE,
+            "Disposable validation workspace could not be constructed.",
+        ) from error
+    finally:
+        if staged is not None:
+            try:
+                discard_isolated_workspace(staged)
+            except WorkspaceRuntimeError as cleanup_error:
+                raise ValidationExecutionInfrastructureError(
+                    ValidationExecutionInfrastructureCode.CLEANUP,
+                    "Disposable validation workspace cleanup failed.",
+                ) from cleanup_error
+
+
+@contextmanager
 def disposable_staged_validation_workspace(
     *,
     source_workspace: IsolatedWorkspace,
@@ -115,32 +171,12 @@ def disposable_staged_validation_workspace(
 ) -> Iterator[StagedValidationWorkspace]:
     """Clone exact authority, apply only one candidate change, then discard it."""
 
-    staged: IsolatedWorkspace | None = None
-    try:
-        observed_before = snapshot_isolated_workspace(source_workspace)
-        if observed_before != source_snapshot:
-            raise ValidationExecutionInfrastructureError(
-                ValidationExecutionInfrastructureCode.STAGED_WORKSPACE,
-                "Authoritative source workspace changed before validation staging.",
-            )
-        staged = create_isolated_workspace(staged_workspace_id)
-        _, staged_base = seed_isolated_workspace_from_approved_files(
-            staged,
-            source_root=source_workspace.root,
-            source_root_label="governed/validation-source",
-            relative_paths=tuple(item.path for item in source_snapshot.files),
-        )
-        observed_after_copy = snapshot_isolated_workspace(source_workspace)
-        if observed_after_copy != source_snapshot:
-            raise ValidationExecutionInfrastructureError(
-                ValidationExecutionInfrastructureCode.STAGED_WORKSPACE,
-                "Authoritative source workspace changed during validation staging.",
-            )
-        if staged_base.files != source_snapshot.files:
-            raise ValidationExecutionInfrastructureError(
-                ValidationExecutionInfrastructureCode.STAGED_WORKSPACE,
-                "Disposable validation baseline differs from attempt authority.",
-            )
+    with disposable_validation_workspace_clone(
+        source_workspace=source_workspace,
+        source_snapshot=source_snapshot,
+        staged_workspace_id=staged_workspace_id,
+    ) as staged:
+        staged_base = staged.snapshot
 
         if materialization_validation.intents:
             staged_change_set = build_workspace_change_set(
@@ -168,7 +204,7 @@ def disposable_staged_validation_workspace(
                     "Disposable staged changes differ from the authorized candidate.",
                 )
             mutation = apply_workspace_change_set(
-                staged,
+                staged.workspace,
                 staged_change_set,
                 staged_validation,
             )
@@ -183,26 +219,8 @@ def disposable_staged_validation_workspace(
                 "Authorized change set exists without materialization intents.",
             )
 
-        staged_snapshot = snapshot_isolated_workspace(staged)
-        yield StagedValidationWorkspace(staged, staged_snapshot)
-    except (
-        WorkspaceContractError,
-        WorkspaceRuntimeError,
-        WorkspaceSeedingError,
-    ) as error:
-        raise ValidationExecutionInfrastructureError(
-            ValidationExecutionInfrastructureCode.STAGED_WORKSPACE,
-            "Disposable validation workspace could not be constructed.",
-        ) from error
-    finally:
-        if staged is not None:
-            try:
-                discard_isolated_workspace(staged)
-            except WorkspaceRuntimeError as cleanup_error:
-                raise ValidationExecutionInfrastructureError(
-                    ValidationExecutionInfrastructureCode.CLEANUP,
-                    "Disposable validation workspace cleanup failed.",
-                ) from cleanup_error
+        staged_snapshot = snapshot_isolated_workspace(staged.workspace)
+        yield StagedValidationWorkspace(staged.workspace, staged_snapshot)
 
 
 class PythonCompileValidationExecutor:

@@ -34,6 +34,11 @@ from tests.test_task_execution_workflow import (
 )
 
 
+def _copied_workspace_root(argv: tuple[str, ...]) -> Path:
+    assert argv[1:3] == ("cp", "--archive")
+    return Path(argv[3])
+
+
 class RepairingCandidateExecutor(MaterializingExecutor):
     """Return a different governed candidate after validation feedback."""
 
@@ -56,7 +61,7 @@ class WorkspaceObservingDockerRunner(ScriptedDockerRunner):
 
     def run(self, argv, **kwargs):
         if _operation(argv) == "cp":
-            source = Path(argv[2][:-2])
+            source = _copied_workspace_root(argv)
             self.live_contents_at_copy.append(self.live_file.read_text())
             self.staged_contents_at_copy.append((source / "src/candidate.py").read_text())
         return super().run(argv, **kwargs)
@@ -71,7 +76,7 @@ class CopySetObservingDockerRunner(ScriptedDockerRunner):
 
     def run(self, argv, **kwargs):
         if _operation(argv) == "cp":
-            source = Path(argv[2][:-2])
+            source = _copied_workspace_root(argv)
             self.copied_path_sets.append(
                 tuple(
                     sorted(

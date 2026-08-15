@@ -311,7 +311,14 @@ def build_workflow(
         ),
     )
     builder.add_node("safe_stop", safe_stop)
-    builder.add_node("exit_gate", exit_gate)
+    builder.add_node(
+        "exit_gate",
+        partial(
+            exit_gate,
+            validation_executor=validation_executor,
+            workspace_runtime=active_workspace_runtime,
+        ),
+    )
 
     builder.add_edge(START, "requirements_intake")
     builder.add_edge("requirements_intake", "entry_gate")

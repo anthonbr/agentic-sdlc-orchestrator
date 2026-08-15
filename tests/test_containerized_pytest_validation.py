@@ -332,12 +332,15 @@ def test_pytest_policy_is_fixed_container_authority() -> None:
     assert policy.dependency_provisioning is ValidationDependencyProvisioning.PIP
     assert policy.container_image_reference == "python:3.12-slim"
     assert policy.argv == ("python", "-m", "pytest", "-q", "tests")
+    assert policy.policy_version == "python-pytest-docker-v2"
+    assert "--user" in policy.provisioning_argv_prefix
     assert policy.provisioning_argv_prefix[-1] == "pytest"
     assert PUBLIC_PYPI_INDEX_URL in policy.provisioning_argv_prefix
 
 
 def test_docker_pytest_pass_produces_matching_provisioning_and_execution_evidence(
     tmp_path: Path,
+    monkeypatch: MonkeyPatch,
 ) -> None:
     workspace = _workspace(
         tmp_path,
@@ -350,6 +353,8 @@ def test_docker_pytest_pass_produces_matching_provisioning_and_execution_evidenc
     request = _request(workspace)
     runner = ScriptedDockerRunner()
     policy = python_pytest_validation_policy()
+    monkeypatch.setattr("agentic_sdlc.docker_validation.os.getuid", lambda: 1201)
+    monkeypatch.setattr("agentic_sdlc.docker_validation.os.getgid", lambda: 1202)
 
     report = _executor(runner).execute(request, policy, workspace)
 
@@ -376,13 +381,41 @@ def test_docker_pytest_pass_produces_matching_provisioning_and_execution_evidenc
     )
     pip_call = next(call for call in runner.calls if _operation(call) == "pip")
     pytest_call = next(call for call in runner.calls if _operation(call) == "pytest")
+    create_call = next(call for call in runner.calls if _operation(call) == "create")
+    copy_call = next(call for call in runner.calls if _operation(call) == "cp")
     assert pip_call[-len(provisioning.argv) :] == provisioning.argv
     assert pytest_call[-5:] == policy.argv
+    assert create_call[create_call.index("--user") + 1] == "1201:1202"
+    assert "--workdir" not in create_call
+    assert copy_call == (
+        "/application/docker",
+        "cp",
+        "--archive",
+        str(workspace.root),
+        f"{provisioning.container_id}:/work",
+    )
     assert "PIP_CONFIG_FILE=/dev/null" in pip_call
     assert "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1" in pytest_call
     assert "PYTHONPATH=/work/src" in pytest_call
     assert all("--privileged" not in call for call in runner.calls)
     assert all("/var/run/docker.sock" not in call for call in runner.calls)
+
+
+def test_missing_numeric_application_identity_fails_before_container_creation(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path, {"tests/test_demo.py": "def test_ok(): pass\n"})
+    runner = ScriptedDockerRunner()
+    monkeypatch.delattr("agentic_sdlc.docker_validation.os.getuid")
+
+    with raises(ValidationExecutionInfrastructureError) as captured:
+        _executor(runner).execute(
+            _request(workspace), python_pytest_validation_policy(), workspace
+        )
+
+    assert captured.value.code is ValidationExecutionInfrastructureCode.POLICY_UNAVAILABLE
+    assert not any(_operation(call) == "create" for call in runner.calls)
 
 
 def test_absent_image_is_pulled_only_from_fixed_policy(tmp_path: Path) -> None:

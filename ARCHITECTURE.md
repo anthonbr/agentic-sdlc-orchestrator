@@ -210,6 +210,15 @@ executable, argv, shell, Docker, package-manager, cwd,
 environment, installer, network-command, or script authority, and
 `TaskExecutionResult` cannot carry authoritative execution evidence.
 
+Task-level validation authority and publication completeness are separate.
+Approved task requirements protect each candidate mutation. Independently, the
+application derives final requirements for `RUNNABLE_PROJECT` from the exact
+authoritative snapshot: any Python file requires `PYTHON_COMPILE`, and Python
+files below `tests/` additionally require `PYTHON_PYTEST`. An empty planner list
+cannot waive these checks. Final evidence uses the existing policies/backends but
+is bound to an application-owned validation identity and the final snapshot rather
+than a Task Agent attempt.
+
 The orchestration-thread sequence is:
 
 ```text
@@ -241,7 +250,10 @@ copy, pip, pytest, timeout, network-disconnect attempt, and cleanup argv with
 `shell=False`. The backend copies the exact staged postimage into `/work` without a
 host bind mount, reads normalized PEP 621 dependencies from that staged snapshot,
 installs only pytest plus those accepted requirements, and runs all `tests/` with
-plugin autoload disabled. Provisioning and test evidence are distinct and linked;
+plugin autoload disabled. Archive copy preserves application ownership and
+restrictive modes while the container runs under the matching application-owned
+numeric user/group; the authoritative workspace is never chmodded for validation.
+Provisioning and test evidence are distinct and linked;
 both must correlate and pass, and container removal must be proven, before the
 existing live-mutation loop can run. Same-wave peer candidates remain absent.
 
@@ -253,6 +265,10 @@ network denial when disconnection is unavailable. Default Docker isolation, no
 host mounts/secrets/socket, dropped capabilities, no-new-privileges, and small
 memory/PID bounds make this safer than host execution; they are not a production
 hostile-code or supply-chain sandbox.
+
+Docker must be installed and running for `PYTHON_PYTEST` (for example Docker
+Desktop on macOS/Windows or Docker Engine on Linux). Backend unavailability fails
+closed; there is no host-pytest fallback.
 
 Normal non-zero compilation and reliably cleaned timeout outcomes may enter the
 existing three-attempt Task Agent repair path with explicitly untrusted bounded
@@ -282,9 +298,9 @@ These controls do not perform live TaskGraph topology mutation, active dependenc
 
 ## 10. Exit Gate and Durable Project Promotion
 
-Task success alone is insufficient. The workflow exit gate checks processed input, approved validated analysis, an approved specification, validated and approved TaskGraph evidence, `SUCCEEDED` runtime state, exact final-attempt request/result/artifact/validation chains, verified workspace integrity, complete final materialization/mutation/exit-decision evidence, and exact PASS evidence for every approved required validation. A `REQUIRED` materialization task must have passed materialization evidence and an `APPLIED` transaction; non-materializing permitted tasks still require a successful governed exit decision. For `RUNNABLE_PROJECT`, a final `ProjectReadinessValidation` additionally proves that every required role is backed by a successful final task attempt, passed semantic and materialization evidence, a validated/applied change set, and a matching path/content hash in the authoritative final snapshot; run instructions must resolve specifically to root `README.md`.
+Task success alone is insufficient. The workflow exit gate checks processed input, approved validated analysis, an approved specification, validated and approved TaskGraph evidence, `SUCCEEDED` runtime state, exact final-attempt request/result/artifact/validation chains, verified workspace integrity, complete final materialization/mutation/exit-decision evidence, and exact PASS evidence for every approved required validation. A `REQUIRED` materialization task must have passed materialization evidence and an `APPLIED` transaction; non-materializing permitted tasks still require a successful governed exit decision. For `RUNNABLE_PROJECT`, a final `ProjectReadinessValidation` additionally proves that every required role is backed by a successful final task attempt, passed semantic and materialization evidence, a validated/applied change set, and a matching path/content hash in the authoritative final snapshot; run instructions must resolve specifically to root `README.md`. The same exit-gate node—not a new LLM stage—clones that exact final snapshot and executes application-required compile and Docker pytest profiles. Missing, failed, stale, mismatched, or uncleaned final evidence blocks exit success and durable publication even when every canonical task requested zero validations.
 
-This is an evidence-completeness and workspace-integrity boundary, not general runtime or deployment authority. Readiness separately records whether validation was required and, when required, whether every final successful task attempt has matching PASS evidence. `PYTHON_COMPILE` verification means compilation only. `PYTHON_PYTEST` verification means governed dependencies were provisioned and generated pytest executed and passed inside the recorded disposable container; it does not prove benchmarks, deployment, production readiness, or general correctness. After the gate passes, the live CLI resolves the exact retained workspace capability and explicitly supplies the same run's terminal `LiveRunArtifactBundle` to project publication. The exporter validates the successful manifest, exact regular-file set, hashes, byte sizes, bundle identity, run identity, and authoritative workspace lineage. It then uses descriptor-relative no-follow POSIX operations to copy the authoritative project content and evidence bundle into one staging package. Staging and final verification independently prove that the non-reserved projection equals the authoritative workspace, the `sdlc-artifacts/` projection equals the validated live bundle, and no unexplained third path set exists. Promotion reserves a new non-overwriting directory and remains relative to retained staging/destination descriptors. Export fails closed where those filesystem primitives are unavailable. The live run bundle remains retained, the durable directory is not an agent workspace, and publication does not initialize Git, deploy, or invoke CI/CD.
+This is an evidence-completeness and workspace-integrity boundary, not general runtime or deployment authority. Readiness separately records planner-requested task validation and application-required final-workspace validation, including the exact final snapshot identity. `PYTHON_COMPILE` verification means compilation only. `PYTHON_PYTEST` verification means governed dependencies were provisioned and generated pytest executed and passed inside the recorded disposable container; it does not prove benchmarks, deployment, production readiness, or general correctness. After the gate passes, the live CLI resolves the exact retained workspace capability and explicitly supplies the same run's terminal `LiveRunArtifactBundle` to project publication. Export request construction requires passed readiness bound to that authoritative snapshot before the exporter validates the successful manifest, exact regular-file set, hashes, byte sizes, bundle identity, run identity, and authoritative workspace lineage. It then uses descriptor-relative no-follow POSIX operations to copy the authoritative project content and evidence bundle into one staging package. Staging and final verification independently prove that the non-reserved projection equals the authoritative workspace, the `sdlc-artifacts/` projection equals the validated live bundle, and no unexplained third path set exists. Promotion reserves a new non-overwriting directory and remains relative to retained staging/destination descriptors. Export fails closed where those filesystem primitives are unavailable. The live run bundle remains retained, the durable directory is not an agent workspace, and publication does not initialize Git, deploy, or invoke CI/CD.
 
 ## 11. Traceability and Reliability Evidence
 

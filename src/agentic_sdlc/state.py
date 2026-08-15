@@ -317,6 +317,12 @@ class WorkflowState(TypedDict, total=False):
     task_validation_provisioning_evidence: Annotated[
         list[TaskValidationProvisioningEvidence], operator.add
     ]
+    final_workspace_validation_execution_evidence: Annotated[
+        list[TaskValidationExecutionEvidence], operator.add
+    ]
+    final_workspace_validation_provisioning_evidence: Annotated[
+        list[TaskValidationProvisioningEvidence], operator.add
+    ]
     task_execution_waves: Annotated[list[TaskExecutionWave], operator.add]
     governed_workspace_session: GovernedWorkspaceSession
     workspace_snapshots: Annotated[list[WorkspaceSnapshot], operator.add]

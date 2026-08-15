@@ -449,6 +449,18 @@ def _execution_evidence(state: WorkflowState) -> dict[str, object]:
             item.model_dump(mode="json")
             for item in state.get("task_validation_provisioning_evidence", [])
         ],
+        "final_workspace_validation_executions": [
+            item.model_dump(mode="json")
+            for item in state.get(
+                "final_workspace_validation_execution_evidence", []
+            )
+        ],
+        "final_workspace_validation_provisioning": [
+            item.model_dump(mode="json")
+            for item in state.get(
+                "final_workspace_validation_provisioning_evidence", []
+            )
+        ],
     }
 
 
@@ -531,9 +543,26 @@ def _summary_markdown(
     provisioning_evidence = state.get(
         "task_validation_provisioning_evidence", []
     )
-    required_validation_count = sum(
+    final_validation_evidence = state.get(
+        "final_workspace_validation_execution_evidence", []
+    )
+    final_provisioning_evidence = state.get(
+        "final_workspace_validation_provisioning_evidence", []
+    )
+    final_validation_evidence_ids = {
+        item.evidence_id for item in final_validation_evidence
+    }
+    task_required_validation_count = sum(
         len(task.get("required_validations", []))
         for task in state.get("approved_task_graph", {}).get("tasks", [])
+    )
+    final_required_validation_count = (
+        readiness.final_workspace_validation_required_count
+        if readiness is not None
+        else 0
+    )
+    required_validation_count = (
+        task_required_validation_count + final_required_validation_count
     )
     successful_exit_evidence_ids = {
         evidence_id
@@ -544,20 +573,26 @@ def _summary_markdown(
     passed_validation_count = sum(
         item.passed and item.evidence_id in successful_exit_evidence_ids
         for item in validation_evidence
-    )
+    ) + sum(item.passed for item in final_validation_evidence)
     successful_pytest_evidence = tuple(
         item
-        for item in validation_evidence
+        for item in (*validation_evidence, *final_validation_evidence)
         if item.profile.value == "PYTHON_PYTEST"
         and item.passed
-        and item.evidence_id in successful_exit_evidence_ids
+        and (
+            item.evidence_id in final_validation_evidence_ids
+            or item.evidence_id in successful_exit_evidence_ids
+        )
     )
     successful_compile_evidence = tuple(
         item
-        for item in validation_evidence
+        for item in (*validation_evidence, *final_validation_evidence)
         if item.profile.value == "PYTHON_COMPILE"
         and item.passed
-        and item.evidence_id in successful_exit_evidence_ids
+        and (
+            item.evidence_id in final_validation_evidence_ids
+            or item.evidence_id in successful_exit_evidence_ids
+        )
     )
     mutations = state.get("workspace_mutation_results", [])
     materialized_changes = tuple(
@@ -626,12 +661,20 @@ def _summary_markdown(
         + (", ".join(sorted(set(materialized_changes))) or "None"),
         f"- Governed required validations: {passed_validation_count} passed / "
         f"{required_validation_count} required",
+        "- Planner-requested task validations: "
+        f"{task_required_validation_count} required",
+        "- Application-required final-workspace validations: "
+        f"{final_required_validation_count} required",
         "- PYTHON_COMPILE validation executed: "
         + ("yes" if successful_compile_evidence else "no"),
         "- PYTHON_PYTEST validation executed: "
         + ("yes" if successful_pytest_evidence else "no"),
         "- Dependencies provisioned for validation: "
-        + ("yes" if provisioning_evidence else "no"),
+        + (
+            "yes"
+            if provisioning_evidence or final_provisioning_evidence
+            else "no"
+        ),
         "- Generated code/tests executed: "
         + ("yes" if successful_pytest_evidence else "no"),
         "- Generated tests executed: "
@@ -646,7 +689,7 @@ def _summary_markdown(
         ),
         "- Exit gate: "
         + (
-            "not reached"
+            ("failed" if readiness is not None else "not reached")
             if safe_stopped
             else ("passed" if state["exit_gate_passed"] else "failed")
         ),

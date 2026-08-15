@@ -3,16 +3,27 @@
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
 
 from pytest import mark
 
 from agentic_sdlc.docker_validation import DockerPytestValidationExecutor
+from agentic_sdlc.llm import FakeRequirementAnalysisClient, FakeTaskPlanningClient
+from agentic_sdlc.state import demo_input
 from agentic_sdlc.validation_execution_contracts import (
     ValidationExecutionOutcome,
     python_pytest_validation_policy,
 )
+from agentic_sdlc.workspace_mutation import (
+    WorkspaceMutationStatus,
+    apply_workspace_change_set,
+)
+from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
+from agentic_sdlc.workspace_integration import GovernedWorkspaceRuntime
 from tests.test_containerized_pytest_validation import _request, _workspace
+from tests.test_workspace_mutation import _artifact, _change_set
+from tests.test_workflow import RecordingTaskExecutor, _analysis, _proposal
 
 
 pytestmark = mark.skipif(
@@ -101,3 +112,96 @@ def test_real_docker_governed_third_party_dependency_is_provisioned(
     assert provisioning.passed is True
     assert report.execution_evidence is not None
     assert report.execution_evidence.passed is True
+
+
+def test_real_docker_reads_restrictive_governed_workspace_without_chmod(
+    tmp_path: Path,
+) -> None:
+    workspace = _workspace(tmp_path, {})
+    artifacts = (
+        _artifact("pytest.ini", "[pytest]\npythonpath = src\n", index=1),
+        _artifact("src/demo.py", "def answer(): return 42\n", index=2),
+        _artifact(
+            "tests/test_demo.py",
+            "from demo import answer\n\ndef test_answer(): assert answer() == 42\n",
+            index=3,
+        ),
+    )
+    _, change_set, validation = _change_set(workspace, *artifacts)
+    mutation = apply_workspace_change_set(workspace, change_set, validation)
+    assert mutation.status is WorkspaceMutationStatus.APPLIED
+    governed_modes = {
+        relative: stat.S_IMODE((workspace.root / relative).stat().st_mode)
+        for relative in (
+            "pytest.ini",
+            "src",
+            "src/demo.py",
+            "tests",
+            "tests/test_demo.py",
+        )
+    }
+    assert governed_modes == {
+        "pytest.ini": 0o600,
+        "src": 0o700,
+        "src/demo.py": 0o600,
+        "tests": 0o700,
+        "tests/test_demo.py": 0o600,
+    }
+
+    report = DockerPytestValidationExecutor().execute(
+        _request(workspace), python_pytest_validation_policy(), workspace
+    )
+
+    assert report.provisioning_evidence[0].passed is True
+    assert report.execution_evidence is not None
+    assert report.execution_evidence.passed is True
+    assert "1 passed" in report.execution_evidence.retained_stdout
+    assert {
+        relative: stat.S_IMODE((workspace.root / relative).stat().st_mode)
+        for relative in governed_modes
+    } == governed_modes
+
+
+def test_real_docker_application_required_final_validation_runs_without_graph_request(
+    tmp_path: Path,
+) -> None:
+    workspace_parent = tmp_path / "final-validation-workspaces"
+    workspace_parent.mkdir()
+    runtime = GovernedWorkspaceRuntime(parent_directory=workspace_parent)
+    workflow = build_workflow(
+        FakeRequirementAnalysisClient([_analysis()]),
+        FakeTaskPlanningClient([_proposal()]),
+        RecordingTaskExecutor(),
+        workspace_runtime=runtime,
+    )
+    run_id = "real-final-workspace-validation"
+
+    requirement_gate = run_workflow(
+        demo_input(), thread_id=run_id, workflow=workflow
+    )
+    assert requirement_gate["__interrupt__"]
+    graph_gate = resume_workflow(
+        run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        workflow=workflow,
+    )
+    assert graph_gate["__interrupt__"]
+    result = resume_workflow(
+        run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        workflow=workflow,
+    )
+
+    assert all(
+        not task.get("required_validations", [])
+        for task in result["approved_task_graph"]["tasks"]
+    )
+    assert result["workflow_status"] == "success"
+    readiness = result["project_readiness_validation"]
+    assert readiness.final_workspace_validation_required_count == 2
+    assert readiness.final_workspace_validation_verified_count == 2
+    assert [
+        item.profile.value
+        for item in result["final_workspace_validation_execution_evidence"]
+    ] == ["PYTHON_COMPILE", "PYTHON_PYTEST"]
+    assert len(result["final_workspace_validation_provisioning_evidence"]) == 1

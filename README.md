@@ -258,6 +258,9 @@ assessment implementation; they are distinct from the Python package version in
   `PYTHON_PYTEST` authority, governed public dependency installation from the
   staged `pyproject.toml`, Docker-backed generated-test execution, separate
   provisioning/test evidence, cleanup verification, and pre-mutation PASS gating.
+- **V0.15 — AI-assisted ambiguity clarification:** an explicit Streamlit-only
+  helper drafts editable answers for a blocked Requirement Analysis while keeping
+  REQUEST_CHANGES submission and all workflow authority with the human reviewer.
 
 The V0.5 execution slices execute approved engineering tasks as bounded semantic
 LLM calls and may transactionally materialize validated executable URL-shortener
@@ -440,6 +443,15 @@ human review, and approval authority; validation is never inferred from words in
 a title, description, acceptance criterion, expected output, or task type. The
 closed profiles are `PYTHON_COMPILE` and `PYTHON_PYTEST`.
 
+Task-level requirements reject a candidate before it mutates live authority, but
+they are not the publication-completeness policy. For `RUNNABLE_PROJECT`, the
+application independently derives final-workspace requirements from the exact
+authoritative snapshot: Python files require `PYTHON_COMPILE`, and Python files
+under `tests/` additionally require `PYTHON_PYTEST`. The planner cannot waive
+these final checks by returning an empty `required_validations` list. Exact PASS
+evidence for the final snapshot is required before readiness, exit success, and
+publication; evidence for an earlier snapshot becomes stale after any mutation.
+
 The Task Agent still returns only semantic results, artifacts, and proposed
 materialization. It cannot choose an executable, command string, argv, shell,
 working directory, environment, package manager, dependency, or script. After
@@ -474,12 +486,15 @@ into `/work`; no authoritative repository, host home, `.git`, `.env`, credential
 SSH agent, or Docker socket is mounted. Standard-library `tomllib` reads only
 `[project].dependencies` from the staged `pyproject.toml`. Basic deterministic
 policy rejects URL, VCS, local-path, editable, and installer-option forms. The
-application runs fixed argv equivalent to `python -m pip install
+application runs fixed argv equivalent to `python -m pip install --user
 --disable-pip-version-check --no-input --no-cache-dir --only-binary=:all:
 --index-url https://pypi.org/simple pytest <validated dependencies>`, then
 `python -m pytest -q tests` with plugin autoload disabled and the application-owned
 `PYTHONPATH=/work/src`. The project itself is not installed, so
-generated build hooks do not run.
+generated build hooks do not run. Docker archive copy preserves the restrictive
+governed postimage ownership and modes, and the disposable container runs as that
+same application-owned numeric user/group. Validation can therefore read and
+write its copy without weakening authoritative workspace permissions.
 
 Provisioning and pytest produce separate immutable evidence bound to the same run,
 graph, task, request, attempt, requirement, policy, manifest, staged snapshot,
@@ -498,6 +513,11 @@ and default Docker isolation plus small memory/PID limits. Task Agents still nev
 choose Docker, pip, pytest, image, package-index, environment, or shell commands.
 Benchmark profiles and production-grade image/dependency provenance remain future
 work.
+
+Docker must be installed and running for application-required `PYTHON_PYTEST`
+validation (Docker Desktop on macOS/Windows or Docker Engine on Linux). The
+workflow fails closed if Docker is unavailable and never falls back to host
+pytest execution.
 
 ### Target-workspace desired-state contracts
 
@@ -977,7 +997,10 @@ and REJECT when the current human gate allows them. After TaskGraph approval, th
 GUI displays live governed execution progress: observed scheduler waves,
 authoritative execution layers, concurrent Task Agents, starts, completions,
 elapsed progress, and retry or failure information when present. It retains the
-final progress summary alongside the authoritative terminal result.
+final progress summary alongside the authoritative terminal result. When a
+Requirement Analysis is `BLOCKED`, an optional AI helper can draft editable
+clarification text; drafting or adopting that text does not resume the workflow,
+and only the existing explicit human decision submission creates a revision.
 
 An optional project name selects the durable destination folder:
 
@@ -1018,8 +1041,12 @@ classified non-retryable, records a clear failure, and safely stops.
 For `RUNNABLE_PROJECT`, the exit gate additionally requires final project-readiness
 evidence linking the approved roles to successful final attempts, canonical typed
 artifacts, passed materialization/change-set evidence, applied workspace mutations,
-and matching paths/content hashes in the authoritative final snapshot. Only after
-that gate passes does the CLI publish a composite package into
+and matching paths/content hashes in the authoritative final snapshot. It then
+executes the application-required Python profiles against a disposable clone of
+that exact final snapshot. Successful publication therefore requires final compile
+evidence and, when Python tests exist, linked provisioning plus Docker pytest PASS
+evidence even when the approved TaskGraph requested no task-level validation. Only
+after that gate passes does the CLI publish a composite package into
 `projects/<project-name>/`. The isolated temporary workspace remains the sole task
 execution environment. The exporter revalidates that live capability and the
 same-run successful SDLC bundle, then builds the application files and reserved

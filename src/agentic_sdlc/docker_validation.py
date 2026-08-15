@@ -324,6 +324,7 @@ class DockerPytestValidationExecutor:
             "Docker daemon is unavailable.",
         )
         image_pulled, image_id = self._ensure_image(policy)
+        container_user = _application_container_user()
         container_id: str | None = None
         cleaned = False
         cleanup_attempted = False
@@ -337,7 +338,11 @@ class DockerPytestValidationExecutor:
         pytest_duration = 0.0
         network_disconnected = False
         try:
-            container_id = self._create_container(request, policy)
+            container_id = self._create_container(
+                request,
+                policy,
+                container_user=container_user,
+            )
             self._require_success(
                 self._command(("start", container_id), policy),
                 ValidationExecutionInfrastructureCode.BACKEND_UNAVAILABLE,
@@ -345,7 +350,12 @@ class DockerPytestValidationExecutor:
             )
             self._require_success(
                 self._command(
-                    ("cp", f"{workspace.root}/.", f"{container_id}:/work"),
+                    (
+                        "cp",
+                        "--archive",
+                        str(workspace.root),
+                        f"{container_id}:/work",
+                    ),
                     policy,
                 ),
                 ValidationExecutionInfrastructureCode.STAGED_WORKSPACE,
@@ -513,7 +523,11 @@ class DockerPytestValidationExecutor:
         return image_pulled, image_id
 
     def _create_container(
-        self, request: ValidationExecutionRequest, policy: GovernedValidationPolicy
+        self,
+        request: ValidationExecutionRequest,
+        policy: GovernedValidationPolicy,
+        *,
+        container_user: str,
     ) -> str:
         image = policy.container_image_reference
         if image is None:
@@ -529,6 +543,8 @@ class DockerPytestValidationExecutor:
                 "create",
                 "--name",
                 f"agentic-sdlc-validation-{name_suffix}",
+                "--user",
+                container_user,
                 "--init",
                 "--cap-drop",
                 "ALL",
@@ -540,8 +556,6 @@ class DockerPytestValidationExecutor:
                 "512m",
                 "--network",
                 "bridge",
-                "--workdir",
-                "/work",
                 image,
                 "python",
                 "-c",
@@ -666,6 +680,25 @@ def _validate_dependency_requirement(value: str) -> str:
             "Staged dependency uses an unsupported URL, VCS, path, option, or syntax."
         )
     return normalized
+
+
+def _application_container_user() -> str:
+    """Bind Docker ownership and execution to the local application identity."""
+
+    try:
+        user_id = os.getuid()
+        group_id = os.getgid()
+    except AttributeError as error:
+        raise ValidationExecutionInfrastructureError(
+            ValidationExecutionInfrastructureCode.POLICY_UNAVAILABLE,
+            "Docker pytest requires a numeric application user and group identity.",
+        ) from error
+    if user_id < 0 or group_id < 0:
+        raise ValidationExecutionInfrastructureError(
+            ValidationExecutionInfrastructureCode.POLICY_UNAVAILABLE,
+            "Docker pytest received an invalid application user or group identity.",
+        )
+    return f"{user_id}:{group_id}"
 
 
 def _verified_staged_snapshot(

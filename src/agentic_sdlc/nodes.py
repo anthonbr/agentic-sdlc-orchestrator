@@ -134,6 +134,7 @@ from agentic_sdlc.validation_execution import (
     ValidationExecutionInfrastructureCode,
     ValidationExecutionInfrastructureError,
     disposable_staged_validation_workspace,
+    disposable_validation_workspace_clone,
 )
 from agentic_sdlc.docker_validation import (
     DockerPytestValidationExecutor,
@@ -145,7 +146,10 @@ from agentic_sdlc.validation_execution_contracts import (
     TaskValidationProvisioningEvidence,
     TaskValidationExecutionEvidence,
     ValidationExecutionContractError,
+    build_final_workspace_validation_request,
     build_validation_execution_request,
+    final_workspace_validation_requirements,
+    final_workspace_validation_staged_workspace_id,
     resolve_governed_validation_policy,
     validation_execution_evidence_errors,
     validation_provisioning_evidence_errors,
@@ -2175,11 +2179,262 @@ def safe_stop(state: WorkflowState) -> WorkflowState:
     return update
 
 
-def exit_gate(state: WorkflowState) -> WorkflowState:
+@dataclass(frozen=True, slots=True)
+class _FinalWorkspaceValidationRun:
+    execution_evidence: tuple[TaskValidationExecutionEvidence, ...]
+    provisioning_evidence: tuple[TaskValidationProvisioningEvidence, ...]
+    passed: bool
+    failure_reason: str | None = None
+
+
+def _execute_final_workspace_validation(
+    state: WorkflowState,
+    *,
+    graph: TaskGraph,
+    authoritative_snapshot: WorkspaceSnapshot,
+    workspace_runtime: GovernedWorkspaceRuntime,
+    validation_executor: GovernedValidationExecutor | None,
+) -> _FinalWorkspaceValidationRun:
+    """Execute application-required profiles over one exact final snapshot."""
+
+    delivery_policy = project_delivery_policy_from_value(
+        state.get("project_delivery_policy")
+    )
+    requirements = final_workspace_validation_requirements(
+        delivery_policy, authoritative_snapshot
+    )
+    if not requirements:
+        return _FinalWorkspaceValidationRun((), (), True)
+    run_id = state.get("run_id")
+    if not run_id:
+        raise ValidationExecutionContractError(
+            "Final workspace validation requires a governed run identity."
+        )
+    workspace = workspace_runtime.workspace_for_run(run_id)
+    observed = snapshot_isolated_workspace(workspace)
+    if observed != authoritative_snapshot:
+        raise ValidationExecutionInfrastructureError(
+            ValidationExecutionInfrastructureCode.STAGED_WORKSPACE,
+            "Live workspace differs from final validation authority.",
+        )
+    staged_workspace_id = final_workspace_validation_staged_workspace_id(
+        run_id=run_id,
+        graph=graph,
+        authoritative_snapshot=authoritative_snapshot,
+    )
+    retained_evidence: list[TaskValidationExecutionEvidence] = []
+    retained_provisioning: list[TaskValidationProvisioningEvidence] = []
+    for requirement in requirements:
+        report: GovernedValidationExecutionReport
+        with disposable_validation_workspace_clone(
+            source_workspace=workspace,
+            source_snapshot=authoritative_snapshot,
+            staged_workspace_id=staged_workspace_id,
+        ) as staged:
+            dependency_manifest = None
+            if requirement.profile is ValidationExecutionProfile.PYTHON_PYTEST:
+                dependency_manifest = build_python_dependency_manifest(
+                    staged.workspace,
+                    staged_snapshot_id=staged.snapshot.snapshot_id,
+                )
+            request = build_final_workspace_validation_request(
+                run_id=run_id,
+                graph=graph,
+                delivery_policy=delivery_policy,
+                authoritative_snapshot=authoritative_snapshot,
+                staged_snapshot=staged.snapshot,
+                requirement=requirement,
+                dependency_manifest=dependency_manifest,
+            )
+            policy = resolve_governed_validation_policy(requirement.profile)
+            active_executor = validation_executor
+            if active_executor is None:
+                active_executor = (
+                    DockerPytestValidationExecutor()
+                    if requirement.profile
+                    is ValidationExecutionProfile.PYTHON_PYTEST
+                    else PythonCompileValidationExecutor()
+                )
+            result = active_executor.execute(request, policy, staged.workspace)
+            if isinstance(result, TaskValidationExecutionEvidence):
+                report = GovernedValidationExecutionReport(
+                    execution_evidence=result
+                )
+            elif isinstance(result, GovernedValidationExecutionReport):
+                report = result
+            else:
+                raise ValidationExecutionContractError(
+                    "Final validation executor returned no immutable evidence."
+                )
+            provisioning = report.provisioning_evidence
+            evidence = report.execution_evidence
+            for item in provisioning:
+                if validation_provisioning_evidence_errors(
+                    request, policy, item
+                ):
+                    raise ValidationExecutionContractError(
+                        "Final validation provisioning evidence is mismatched."
+                    )
+            if requirement.profile is ValidationExecutionProfile.PYTHON_PYTEST:
+                if len(provisioning) != 1:
+                    raise ValidationExecutionContractError(
+                        "Final PYTHON_PYTEST requires one provisioning record."
+                    )
+                if not provisioning[0].passed:
+                    retained_provisioning.extend(provisioning)
+                    return _FinalWorkspaceValidationRun(
+                        tuple(retained_evidence),
+                        tuple(retained_provisioning),
+                        False,
+                        "Application-required final dependency provisioning failed.",
+                    )
+            elif provisioning:
+                raise ValidationExecutionContractError(
+                    "Final PYTHON_COMPILE cannot retain provisioning evidence."
+                )
+            if evidence is None:
+                raise ValidationExecutionContractError(
+                    "Final validation returned no execution evidence."
+                )
+            if validation_execution_evidence_errors(
+                request, policy, evidence, provisioning
+            ):
+                raise ValidationExecutionContractError(
+                    "Final validation execution evidence is mismatched."
+                )
+        retained_provisioning.extend(provisioning)
+        retained_evidence.append(evidence)
+        if not evidence.passed:
+            return _FinalWorkspaceValidationRun(
+                tuple(retained_evidence),
+                tuple(retained_provisioning),
+                False,
+                (
+                    "Application-required final workspace validation failed: "
+                    f"{requirement.profile.value} returned "
+                    f"{evidence.outcome.value}."
+                ),
+            )
+    return _FinalWorkspaceValidationRun(
+        tuple(retained_evidence), tuple(retained_provisioning), True
+    )
+
+
+def exit_gate(
+    state: WorkflowState,
+    *,
+    validation_executor: GovernedValidationExecutor | None = None,
+    workspace_runtime: GovernedWorkspaceRuntime | None = None,
+) -> WorkflowState:
     """Validate governed planning and deterministic TaskGraph execution outputs."""
 
     execution = state.get("task_graph_execution")
     readiness = _project_readiness_from_state(state)
+    final_execution = tuple(
+        state.get("final_workspace_validation_execution_evidence", [])
+    )
+    final_provisioning = tuple(
+        state.get("final_workspace_validation_provisioning_evidence", [])
+    )
+    final_update: WorkflowState = {}
+    if readiness.final_workspace_validation_required and not (
+        final_execution or final_provisioning
+    ):
+        graph_data = state.get("approved_task_graph")
+        session_value = state.get("governed_workspace_session")
+        if graph_data is None or session_value is None or workspace_runtime is None:
+            reason = (
+                "Application-required final workspace validation infrastructure "
+                "is unavailable."
+            )
+            return {
+                "project_readiness_validation": readiness,
+                "exit_gate_passed": False,
+                "workflow_status": "safe_stopped",
+                "safe_stop_reason": reason,
+                "errors": [*state.get("errors", []), reason],
+                "trace": ["[exit_gate] final validation unavailable"],
+            }
+        graph = _task_graph_from_data(graph_data)
+        session = _workspace_session_from_state(state)
+        authoritative_snapshot = _authoritative_workspace_snapshot(state, session)
+        try:
+            final_run = _execute_final_workspace_validation(
+                state,
+                graph=graph,
+                authoritative_snapshot=authoritative_snapshot,
+                workspace_runtime=workspace_runtime,
+                validation_executor=validation_executor,
+            )
+        except (
+            ValidationDependencyManifestError,
+            ValidationExecutionContractError,
+            ValidationExecutionInfrastructureError,
+            WorkspaceIntegrationError,
+            WorkspaceRuntimeError,
+        ) as error:
+            reason = (
+                "Application-required final workspace validation could not be "
+                f"trusted: {error}"
+            )
+            return {
+                "project_readiness_validation": readiness,
+                "exit_gate_passed": False,
+                "workflow_status": "safe_stopped",
+                "safe_stop_reason": reason,
+                "errors": [*state.get("errors", []), reason],
+                "trace": ["[exit_gate] final validation failed closed"],
+            }
+        except Exception:
+            reason = (
+                "Application-required final workspace validation backend violated "
+                "its execution contract."
+            )
+            return {
+                "project_readiness_validation": readiness,
+                "exit_gate_passed": False,
+                "workflow_status": "safe_stopped",
+                "safe_stop_reason": reason,
+                "errors": [*state.get("errors", []), reason],
+                "trace": ["[exit_gate] final validation failed closed"],
+            }
+        final_update = {
+            "final_workspace_validation_execution_evidence": list(
+                final_run.execution_evidence
+            ),
+            "final_workspace_validation_provisioning_evidence": list(
+                final_run.provisioning_evidence
+            ),
+        }
+        evidence_state = cast(
+            WorkflowState,
+            {
+                **state,
+                "final_workspace_validation_execution_evidence": [
+                    *final_execution,
+                    *final_run.execution_evidence,
+                ],
+                "final_workspace_validation_provisioning_evidence": [
+                    *final_provisioning,
+                    *final_run.provisioning_evidence,
+                ],
+            },
+        )
+        readiness = _project_readiness_from_state(evidence_state)
+        if not final_run.passed or not readiness.final_workspace_validation_verified:
+            reason = final_run.failure_reason or (
+                "Application-required final workspace validation evidence is "
+                "incomplete."
+            )
+            return {
+                **final_update,
+                "project_readiness_validation": readiness,
+                "exit_gate_passed": False,
+                "workflow_status": "safe_stopped",
+                "safe_stop_reason": reason,
+                "errors": [*state.get("errors", []), reason],
+                "trace": ["[exit_gate] final validation blocked publication"],
+            }
 
     validations = {
         "processed requirements": bool(
@@ -2229,6 +2484,7 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
     if missing:
         reason = "Exit gate failed; incomplete output: " + ", ".join(missing)
         return {
+            **final_update,
             "project_readiness_validation": readiness,
             "exit_gate_passed": False,
             "workflow_status": "exit_gate_failed",
@@ -2236,6 +2492,7 @@ def exit_gate(state: WorkflowState) -> WorkflowState:
             "trace": ["[exit_gate] failed"],
         }
     return {
+        **final_update,
         "project_readiness_validation": readiness,
         "exit_gate_passed": True,
         "workflow_status": "success",
@@ -2294,6 +2551,12 @@ def _project_readiness_from_state(
         ),
         validation_provisioning_evidence=tuple(
             state.get("task_validation_provisioning_evidence", [])
+        ),
+        final_validation_execution_evidence=tuple(
+            state.get("final_workspace_validation_execution_evidence", [])
+        ),
+        final_validation_provisioning_evidence=tuple(
+            state.get("final_workspace_validation_provisioning_evidence", [])
         ),
         task_attempt_exit_decisions=tuple(
             state.get("task_attempt_exit_decisions", [])
