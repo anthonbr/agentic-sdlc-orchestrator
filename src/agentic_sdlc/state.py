@@ -6,6 +6,7 @@ import operator
 from typing import Annotated, Literal, NotRequired, TypedDict
 
 from agentic_sdlc.brownfield_baseline import BrownfieldBaselineProvenanceData
+from agentic_sdlc.brownfield_context import BrownfieldCodebaseContextData
 from agentic_sdlc.project_delivery import RUNNABLE_PROJECT_DELIVERY_POLICY
 from agentic_sdlc.project_readiness import ProjectReadinessValidation
 from agentic_sdlc.requirement_submission import (
@@ -76,6 +77,29 @@ class ApprovalEvent(TypedDict):
 RequirementAnalysisStatus = Literal["pending", "candidate", "validated", "failed"]
 
 
+class BrownfieldImpactItemData(TypedDict):
+    """JSON-safe existing-code impact proposed for human approval."""
+
+    target: str
+    reason: str
+
+
+class BrownfieldImpactAnalysisData(TypedDict):
+    """JSON-safe brownfield impact tied to one baseline context."""
+
+    baseline_id: str
+    codebase_context_id: str
+    impacted_modules: list[BrownfieldImpactItemData]
+    impacted_services: list[BrownfieldImpactItemData]
+    impacted_apis: list[BrownfieldImpactItemData]
+    impacted_state: list[BrownfieldImpactItemData]
+    impacted_flows: list[BrownfieldImpactItemData]
+    impacted_tests: list[BrownfieldImpactItemData]
+    impacted_documentation: list[BrownfieldImpactItemData]
+    architectural_implications: list[BrownfieldImpactItemData]
+    preserved_behaviors: list[BrownfieldImpactItemData]
+
+
 class RequirementAnalysisData(TypedDict):
     """JSON-safe validated analysis stored in checkpointed shared state."""
 
@@ -90,6 +114,7 @@ class RequirementAnalysisData(TypedDict):
     risks: list[str]
     needs_clarification: bool
     confidence: float
+    brownfield_impact: NotRequired[BrownfieldImpactAnalysisData | None]
 
 
 class RequirementPlanningReadinessData(TypedDict):
@@ -152,6 +177,7 @@ class ApprovedRequirementSpecData(TypedDict):
     acceptance_criteria: list[RequirementSpecItemData]
     risks: list[RequirementSpecItemData]
     ambiguities: list[RequirementSpecItemData]
+    brownfield_impact: NotRequired[BrownfieldImpactAnalysisData | None]
 
 
 TaskTypeData = Literal[
@@ -327,6 +353,7 @@ class WorkflowState(TypedDict, total=False):
     task_execution_waves: Annotated[list[TaskExecutionWave], operator.add]
     governed_workspace_session: GovernedWorkspaceSession
     brownfield_baseline: BrownfieldBaselineProvenanceData
+    brownfield_codebase_context: BrownfieldCodebaseContextData
     workspace_snapshots: Annotated[list[WorkspaceSnapshot], operator.add]
     workspace_execution_waves: Annotated[list[WorkspaceExecutionWave], operator.add]
     workspace_bound_task_execution_requests: Annotated[

@@ -19,6 +19,11 @@ from agentic_sdlc.brownfield_baseline import (
     PublishedProjectCatalog,
     build_brownfield_baseline_provenance,
 )
+from agentic_sdlc.brownfield_context import (
+    BrownfieldCodebaseContext,
+    BrownfieldCodebaseContextError,
+    build_brownfield_codebase_context,
+)
 from agentic_sdlc.project_export import (
     ProjectNameError,
     ProjectExportContractError,
@@ -268,7 +273,7 @@ class GovernedRunService:
             {**deepcopy(request.workflow_input), "run_id": run_id},
         )
         if request.run_mode is GovernedRunMode.BROWNFIELD:
-            provenance = self._prepare_brownfield_baseline(
+            provenance, codebase_context = self._prepare_brownfield_baseline(
                 request,
                 run_id=run_id,
                 workspace_runtime=workspace_runtime,
@@ -276,6 +281,10 @@ class GovernedRunService:
             initial_state["brownfield_baseline"] = cast(
                 Any,
                 provenance.model_dump(mode="json"),
+            )
+            initial_state["brownfield_codebase_context"] = cast(
+                Any,
+                codebase_context.model_dump(mode="json"),
             )
         context = _GovernedRunContext(
             run_id=run_id,
@@ -313,7 +322,7 @@ class GovernedRunService:
         *,
         run_id: str,
         workspace_runtime: GovernedWorkspaceRuntime,
-    ) -> BrownfieldBaselineProvenance:
+    ) -> tuple[BrownfieldBaselineProvenance, BrownfieldCodebaseContext]:
         """Select and seed one published baseline before workflow authority starts."""
 
         baseline_name = request.baseline_project_name
@@ -341,12 +350,15 @@ class GovernedRunService:
                 )
             )
             self._published_project_catalog.require_current_identity(baseline)
-            return build_brownfield_baseline_provenance(
+            provenance = build_brownfield_baseline_provenance(
                 baseline,
                 seed_result,
                 seeded_snapshot,
             )
+            context = build_brownfield_codebase_context(workspace, provenance)
+            return provenance, context
         except (
+            BrownfieldCodebaseContextError,
             PublishedProjectBaselineError,
             WorkspaceIntegrationError,
             WorkspaceRuntimeError,

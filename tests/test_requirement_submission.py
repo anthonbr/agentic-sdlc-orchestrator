@@ -177,7 +177,12 @@ def test_requirement_analysis_receives_normalized_story_through_existing_path() 
         "requirement_analysis_review"
     )
     assert analyst.calls == [
-        {"raw_requirement": story, "prior_analysis": None, "human_feedback": ""}
+        {
+            "raw_requirement": story,
+            "prior_analysis": None,
+            "human_feedback": "",
+            "brownfield_codebase_context": None,
+        }
     ]
     assert paused["normalized_requirements"] == [
         {"id": "REQ-001", "text": story}

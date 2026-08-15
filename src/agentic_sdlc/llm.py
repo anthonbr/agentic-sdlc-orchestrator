@@ -17,6 +17,7 @@ from openai import (
 )
 from pydantic import ValidationError
 
+from agentic_sdlc.brownfield_context import BrownfieldCodebaseContext
 from agentic_sdlc.prompts import (
     REQUIREMENT_ANALYSIS_SYSTEM_PROMPT,
     TASK_PLANNING_SYSTEM_PROMPT,
@@ -43,6 +44,7 @@ class RequirementAnalysisClient(Protocol):
         raw_requirement: str,
         prior_analysis: RequirementAnalysis | None,
         human_feedback: str,
+        brownfield_codebase_context: BrownfieldCodebaseContext | None = None,
     ) -> object:
         """Return a candidate that the workflow will validate."""
 
@@ -86,6 +88,7 @@ class OpenAIRequirementAnalysisClient:
         raw_requirement: str,
         prior_analysis: RequirementAnalysis | None,
         human_feedback: str,
+        brownfield_codebase_context: BrownfieldCodebaseContext | None = None,
     ) -> object:
         """Return the SDK-parsed Pydantic result without making routing decisions."""
 
@@ -98,7 +101,10 @@ class OpenAIRequirementAnalysisClient:
                     {
                         "role": "user",
                         "content": _requirement_analysis_input(
-                            raw_requirement, prior_analysis, human_feedback
+                            raw_requirement,
+                            prior_analysis,
+                            human_feedback,
+                            brownfield_codebase_context,
                         ),
                     },
                 ],
@@ -153,6 +159,7 @@ class FakeRequirementAnalysisClient:
         raw_requirement: str,
         prior_analysis: RequirementAnalysis | None,
         human_feedback: str,
+        brownfield_codebase_context: BrownfieldCodebaseContext | None = None,
     ) -> object:
         """Return the next scripted response and record revision context."""
 
@@ -161,6 +168,7 @@ class FakeRequirementAnalysisClient:
                 "raw_requirement": raw_requirement,
                 "prior_analysis": prior_analysis,
                 "human_feedback": human_feedback,
+                "brownfield_codebase_context": brownfield_codebase_context,
             }
         )
         if not self._responses:
@@ -182,6 +190,7 @@ class TaskPlanningClient(Protocol):
         prior_task_graph: TaskGraph | None,
         human_feedback: str,
         delivery_policy: ProjectDeliveryPolicy = DEFAULT_PROJECT_DELIVERY_POLICY,
+        brownfield_codebase_context: BrownfieldCodebaseContext | None = None,
     ) -> object:
         """Return a proposal that deterministic workflow code will validate."""
 
@@ -216,6 +225,7 @@ class OpenAITaskPlanningClient:
         prior_task_graph: TaskGraph | None,
         human_feedback: str,
         delivery_policy: ProjectDeliveryPolicy = DEFAULT_PROJECT_DELIVERY_POLICY,
+        brownfield_codebase_context: BrownfieldCodebaseContext | None = None,
     ) -> object:
         """Return an SDK-parsed semantic proposal without assigning authority."""
 
@@ -232,6 +242,7 @@ class OpenAITaskPlanningClient:
                             delivery_policy,
                             prior_task_graph,
                             human_feedback,
+                            brownfield_codebase_context,
                         ),
                     },
                 ],
@@ -289,6 +300,7 @@ class FakeTaskPlanningClient:
         prior_task_graph: TaskGraph | None,
         human_feedback: str,
         delivery_policy: ProjectDeliveryPolicy = DEFAULT_PROJECT_DELIVERY_POLICY,
+        brownfield_codebase_context: BrownfieldCodebaseContext | None = None,
     ) -> object:
         self.calls.append(
             {
@@ -296,6 +308,7 @@ class FakeTaskPlanningClient:
                 "delivery_policy": delivery_policy,
                 "prior_task_graph": prior_task_graph,
                 "human_feedback": human_feedback,
+                "brownfield_codebase_context": brownfield_codebase_context,
             }
         )
         if not self._responses:
@@ -310,8 +323,20 @@ def _requirement_analysis_input(
     raw_requirement: str,
     prior_analysis: RequirementAnalysis | None,
     human_feedback: str,
+    brownfield_codebase_context: BrownfieldCodebaseContext | None = None,
 ) -> str:
     sections = ["Raw requirement:", raw_requirement]
+    if brownfield_codebase_context is not None:
+        sections.extend(
+            [
+                "",
+                "Authoritative bounded brownfield codebase context:",
+                json.dumps(
+                    brownfield_codebase_context.model_dump(mode="json"),
+                    indent=2,
+                ),
+            ]
+        )
     if prior_analysis is not None:
         sections.extend(
             [
@@ -332,6 +357,7 @@ def _task_planning_input(
     delivery_policy: ProjectDeliveryPolicy,
     prior_task_graph: TaskGraph | None,
     human_feedback: str,
+    brownfield_codebase_context: BrownfieldCodebaseContext | None = None,
 ) -> str:
     sections = [
         "Human-approved requirement specification:",
@@ -340,6 +366,17 @@ def _task_planning_input(
         "Authoritative application-owned project delivery policy:",
         json.dumps(delivery_policy.model_dump(mode="json"), indent=2),
     ]
+    if brownfield_codebase_context is not None:
+        sections.extend(
+            [
+                "",
+                "Authoritative bounded brownfield codebase context:",
+                json.dumps(
+                    brownfield_codebase_context.model_dump(mode="json"),
+                    indent=2,
+                ),
+            ]
+        )
     if prior_task_graph is not None:
         sections.extend(
             [

@@ -24,6 +24,7 @@ from agentic_sdlc.brownfield_baseline import (
     brownfield_baseline_from_value,
     build_brownfield_baseline_provenance,
 )
+from agentic_sdlc.brownfield_context import BrownfieldCodebaseContext
 from agentic_sdlc.llm import FakeRequirementAnalysisClient, FakeTaskPlanningClient
 from agentic_sdlc.project_delivery import ProjectDeliveryMode
 from agentic_sdlc.project_export import (
@@ -33,6 +34,11 @@ from agentic_sdlc.project_export import (
 from agentic_sdlc.run_artifacts import (
     LiveRunArtifactBundle,
     write_sdlc_artifact_manifest,
+)
+from agentic_sdlc.requirement_analysis import (
+    BrownfieldImpactAnalysis,
+    BrownfieldImpactItem,
+    RequirementAnalysis,
 )
 from agentic_sdlc.state import demo_input
 from agentic_sdlc.workspace_integration import (
@@ -58,6 +64,49 @@ ENGINEERING_FILES = {
     "src/service.py": b"VALUE = 1\n",
     "tests/test_service.py": b"def test_value():\n    assert 1 == 1\n",
 }
+
+
+class _BaselineAwareRequirementAnalysisClient(FakeRequirementAnalysisClient):
+    """Return a proposal correlated to the application-supplied context."""
+
+    def __init__(self) -> None:
+        super().__init__([])
+
+    def invoke_structured(
+        self,
+        raw_requirement: str,
+        prior_analysis: RequirementAnalysis | None,
+        human_feedback: str,
+        brownfield_codebase_context: BrownfieldCodebaseContext | None = None,
+    ) -> object:
+        assert brownfield_codebase_context is not None
+        self.calls.append(
+            {
+                "raw_requirement": raw_requirement,
+                "prior_analysis": prior_analysis,
+                "human_feedback": human_feedback,
+                "brownfield_codebase_context": brownfield_codebase_context,
+            }
+        )
+        value = _analysis().model_dump(mode="json")
+        value["requirement_type"] = "brownfield"
+        value["brownfield_impact"] = BrownfieldImpactAnalysis(
+            baseline_id=brownfield_codebase_context.baseline_id,
+            codebase_context_id=brownfield_codebase_context.context_id,
+            impacted_modules=(
+                BrownfieldImpactItem(
+                    target="src/service.py",
+                    reason="The requested behavior extends the existing service.",
+                ),
+            ),
+            preserved_behaviors=(
+                BrownfieldImpactItem(
+                    target="existing service behavior",
+                    reason="Unchanged baseline behavior must remain compatible.",
+                ),
+            ),
+        )
+        return RequirementAnalysis.model_validate(value)
 
 
 def _publish_project(
@@ -456,9 +505,9 @@ def test_application_seeds_baseline_before_session_and_retains_provenance(
     source_before = {
         path: (project / path).read_bytes() for path in ENGINEERING_FILES
     }
-    service, runtime, _ = _service(
+    service, runtime, executor = _service(
         tmp_path,
-        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        analyst=_BaselineAwareRequirementAnalysisClient(),
         planner=FakeTaskPlanningClient([_proposal()]),
         run_suffix="brownfield-application",
     )
@@ -508,6 +557,13 @@ def test_application_seeds_baseline_before_session_and_retains_provenance(
     assert workspace_evidence["brownfield_baseline"]["baseline_id"] == (
         provenance.baseline_id
     )
+    assert workspace_evidence["brownfield_codebase_context"]["baseline_id"] == (
+        provenance.baseline_id
+    )
+    assert executor.calls
+    assert {
+        item.path for item in executor.calls[0].repository_context.observations
+    } == set(ENGINEERING_FILES)
     assert {
         path: (project / path).read_bytes() for path in ENGINEERING_FILES
     } == source_before

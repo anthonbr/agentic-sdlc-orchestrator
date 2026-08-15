@@ -11,6 +11,7 @@ from uuid import UUID, uuid5
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentic_sdlc.requirement_analysis import (
+    BrownfieldImpactAnalysis,
     RequirementAnalysis,
     require_requirement_planning_ready,
 )
@@ -51,6 +52,7 @@ class ApprovedRequirementSpec(BaseModel):
     acceptance_criteria: tuple[RequirementSpecItem, ...]
     risks: tuple[RequirementSpecItem, ...]
     ambiguities: tuple[RequirementSpecItem, ...]
+    brownfield_impact: BrownfieldImpactAnalysis | None = None
 
     def all_items(self) -> tuple[RequirementSpecItem, ...]:
         """Return every canonical item in stable namespace order."""
@@ -127,6 +129,10 @@ def build_approved_requirement_spec(
             item.model_dump(mode="json") for item in item_groups["ambiguities"]
         ],
     }
+    if analysis.brownfield_impact is not None:
+        content["brownfield_impact"] = analysis.brownfield_impact.model_dump(
+            mode="json"
+        )
     content_hash = _content_hash(content)
     spec_lineage_id = lineage_id or str(
         uuid5(LINEAGE_NAMESPACE, f"approved-requirement-spec:{content_hash}")
@@ -142,6 +148,7 @@ def build_approved_requirement_spec(
         normalized_problem_statement=analysis.normalized_problem_statement,
         requirement_type=analysis.requirement_type,
         assumptions=tuple(analysis.assumptions),
+        brownfield_impact=analysis.brownfield_impact,
         **item_groups,
     )
 
