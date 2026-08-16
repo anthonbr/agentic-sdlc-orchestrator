@@ -41,19 +41,17 @@ from tests.demo_ambiguity_scenario import (
     AmbiguityDemoRun,
     run_ambiguity_demo,
 )
-
-
-REPOSITORY_ROOT = Path(__file__).parents[1]
-BROWNFIELD_PROJECT = (
-    REPOSITORY_ROOT / "artifacts/brownfield-demo-run/enhanced-project"
-)
+from tests.demo_brownfield_scenario import write_deterministic_brownfield_project
 
 
 @pytest.fixture
 def ambiguity_run(tmp_path: Path) -> AmbiguityDemoRun:
+    brownfield_project = write_deterministic_brownfield_project(
+        tmp_path / "brownfield-project"
+    )
     return run_ambiguity_demo(
         tmp_path / "workspaces",
-        source_root=BROWNFIELD_PROJECT,
+        source_root=brownfield_project,
     )
 
 
@@ -262,9 +260,12 @@ def test_execution_export_and_application_validation_are_verified(
     tmp_path: Path,
 ) -> None:
     artifact_dir = tmp_path / "artifacts"
+    brownfield_project = write_deterministic_brownfield_project(
+        tmp_path / "brownfield-project"
+    )
     run = run_ambiguity_demo(
         tmp_path / "workspaces",
-        source_root=BROWNFIELD_PROJECT,
+        source_root=brownfield_project,
         artifact_dir=artifact_dir,
     )
     state = run.final_state
@@ -348,14 +349,20 @@ def test_reviewer_artifacts_are_complete_network_free_and_byte_deterministic(
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     first = tmp_path / "first"
     second = tmp_path / "second"
+    first_brownfield_project = write_deterministic_brownfield_project(
+        tmp_path / "first-brownfield-project"
+    )
+    second_brownfield_project = write_deterministic_brownfield_project(
+        tmp_path / "second-brownfield-project"
+    )
     first_run = run_ambiguity_demo(
         tmp_path / "first-workspaces",
-        source_root=BROWNFIELD_PROJECT,
+        source_root=first_brownfield_project,
         artifact_dir=first,
     )
     second_run = run_ambiguity_demo(
         tmp_path / "second-workspaces",
-        source_root=BROWNFIELD_PROJECT,
+        source_root=second_brownfield_project,
         artifact_dir=second,
     )
 

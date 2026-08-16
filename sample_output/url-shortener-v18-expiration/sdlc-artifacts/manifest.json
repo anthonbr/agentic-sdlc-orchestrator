@@ -1,0 +1,61 @@
+{
+  "schema_version": "sdlc-artifact-manifest-v1",
+  "run_id": "run-a923eade149a4a7983dbf8d19aad9984",
+  "project_name": "url-shortener-v18-expiration",
+  "workflow_status": "success",
+  "project_delivery_policy": "RUNNABLE_PROJECT",
+  "exit_gate_passed": true,
+  "bundle_sha256": "1673a96fb7d610070ac7c277c9908709e370e6c87134c6dac90bd76b9bcd4163",
+  "files": [
+    {
+      "path": "approved_requirement_spec.json",
+      "sha256": "c4a626b50a959cb300e2768c567780b98c3a1237cad9f33e31903941b2d5c8d6",
+      "size_bytes": 28168
+    },
+    {
+      "path": "engineering_artifacts.json",
+      "sha256": "a6fd778e7243d3cd84d99abac049035292a6a5de0a80b0b115fead6327ac0bee",
+      "size_bytes": 57369
+    },
+    {
+      "path": "requirement_analysis.md",
+      "sha256": "6a3c1456943e1315794427939a89996d30f1b1400bd6f343c329d4dc41e8917e",
+      "size_bytes": 19582
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "07b88c2dd9d8650f8bda5babf646adc3c767a99e1386e356c789bbc761a1abdb",
+      "size_bytes": 1238
+    },
+    {
+      "path": "summary.md",
+      "sha256": "27649b6d6deea3f703c1031228d6cb13cbb0009f41c203fb07e8fe84c8976af5",
+      "size_bytes": 4439
+    },
+    {
+      "path": "task_execution.json",
+      "sha256": "4edb34b1609d546961a7fb2314fd3fa0de4ba1b3dc18fad40814ad7e2469a3b1",
+      "size_bytes": 228048
+    },
+    {
+      "path": "task_graph.json",
+      "sha256": "28b6eaa70d3adc40787ebd50770c915186500fd218ea9743eadc6a63c57f1f8e",
+      "size_bytes": 10588
+    },
+    {
+      "path": "task_graph.md",
+      "sha256": "d5e32b391255b2f6b0e6eedd5f270fdff9c96f3ac251f3ee56c96057cd6b6608",
+      "size_bytes": 7449
+    },
+    {
+      "path": "workflow_diagram.png",
+      "sha256": "29ba9dcf3c9ae71ed8c1b0b244090afcc5ef7198be861d2f02c2814127dd2349",
+      "size_bytes": 154985
+    },
+    {
+      "path": "workspace_execution.json",
+      "sha256": "9403eefe5923d9c2dc92a267095deacceff49433646458f8ea3ee2f5f5a9c078",
+      "size_bytes": 405101
+    }
+  ]
+}

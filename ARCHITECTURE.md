@@ -306,22 +306,26 @@ This is an evidence-completeness and workspace-integrity boundary, not general r
 
 Within a workflow run, frozen Pydantic contracts make canonical plan, execution, artifact, workspace, mutation, and final project-readiness records immutable by contract, while `operator.add` state reducers accumulate histories rather than replace them. Together they retain requirement analyses and human decisions, TaskGraph candidates and approvals, execution waves, requests, results, failures, recovery decisions, canonical engineering artifacts, bounded workspace requests, snapshots, materialization validations, change sets, conflicts, mutation results, task-attempt exit decisions, and role-to-final-snapshot readiness evidence. Deterministic UUIDv5 identifiers and content hashes bind specification, graph, task, attempt, request, artifact slot, content, references, and mutation evidence. Failed attempts remain audit evidence; only the final successful attempt's exactly validated artifact set can feed dependents. The default `InMemorySaver` checkpoint is process-local, and exported JSON/Markdown reviewer artifacts are ordinary files rather than a tamper-evident durable event store.
 
-The repository separates artifact ownership. `artifacts/` contains curated,
-checked-in evaluator/reference evidence and remains the source for deterministic
-cross-scenario reliability metrics. A live CLI invocation instead derives one
+The repository separates storage and evidence ownership. `sample_output/` is
+Git-tracked, curated reviewer/reference material; it may preserve frozen scenarios,
+is not authoritative execution history, and is never a CLI or Streamlit runtime
+destination. A live invocation instead derives one ignored
 `runs/<run-id>/sdlc-artifacts/` directory from the existing governed run ID and
-uses it for initial execution, approval resumes, terminal evidence, and the static
-workflow diagram. At successful or safely stopped termination, an
+uses that application-owned directory for initial execution, approval resumes,
+terminal evidence, and the static workflow diagram. At successful or safely stopped termination, an
 `sdlc-artifact-manifest-v1` manifest binds run/status/policy/exit metadata to sorted
 bundle-relative file hashes and byte sizes. It lists only evidence actually
 present, excludes itself, and makes no signing or tamper-proofing claim. This
 application-owned directory is outside Task Agent workspace and mutation
-authority. Successful publication retains it and creates a separately verified
-copy at `projects/<project-name>/sdlc-artifacts/` before final promotion. The
-manifest remains an integrity index rather than a signature or tamper-proof event
-store.
+authority. Successful publication creates an ignored durable product under
+`projects/<project-name>/`, retains the original run evidence, and creates a
+separately manifest-verified copy at
+`projects/<project-name>/sdlc-artifacts/` before final promotion. The manifest
+remains an integrity index rather than a signature or tamper-proof event store.
+Renaming the curated tree changes none of these execution, evidence, or publication
+authority boundaries.
 
-`artifacts/reliability_metrics.json` is generated as a deterministic projection over the checked-in terminal `task_execution.json` and `workspace_execution.json` evidence for the three scenarios. The derivation validates that every started attempt has exactly one exit decision, then reports task outcomes, attempt outcomes, success ratios, retry frequency, mutation and rollback counts/frequency, and safe-stop count. It is read-only with respect to execution behavior and is not a telemetry subsystem.
+`sample_output/reliability_metrics.json` is generated as a deterministic projection over the checked-in terminal `task_execution.json` and `workspace_execution.json` evidence for the curated V17 greenfield and V18 brownfield publications. The derivation validates that every started attempt has exactly one exit decision, then reports task outcomes, attempt outcomes, success ratios, retry frequency, mutation and rollback counts/frequency, and safe-stop count. It is read-only with respect to execution behavior and is not a telemetry subsystem.
 
 End-to-end latency and MTTR are explicitly `NOT_MEASURED`: the evidence model retains structural events but not authoritative elapsed-time or incident-to-recovery boundaries. Reliability claims are made only where retained evidence supports them; no timing precision is inferred from creation timestamps or file metadata.
 
@@ -337,7 +341,13 @@ End-to-end latency and MTTR are explicitly `NOT_MEASURED`: the evidence model re
 
 ## 13. Reviewer Evidence Anchors
 
-- **Greenfield:** reviewer bundle `artifacts/demo-run/`; runnable export `artifacts/demo-run/generated-project/` (11 tests).
-- **Brownfield:** reviewer bundle `artifacts/brownfield-demo-run/`; runnable export `artifacts/brownfield-demo-run/enhanced-project/` (18 tests).
-- **Ambiguous requirement:** reviewer bundle `artifacts/ambiguity-demo-run/`; runnable export `artifacts/ambiguity-demo-run/expiration-project/` (20 tests). `artifacts/ambiguity-demo-run/ambiguity_resolution.json` is the concise governance record.
-- **Reliability:** `artifacts/reliability_metrics.json` indexes deterministic measures derived from all three run-evidence bundles.
+- **V17 greenfield:** `sample_output/url-shortener-v17/` is the curated runnable publication (13 tests); its verified evidence copy is under `sdlc-artifacts/`.
+- **V18 brownfield:** `sample_output/url-shortener-v18-expiration/` is the separate evolved publication (20 tests). Its `sdlc-artifacts/workspace_execution.json` binds the selected baseline to V17's project identity, originating run, publication bundle, and source snapshot.
+- **Ambiguous requirement:** Requirement Analysis still exposes ambiguities and `BLOCKED`/`READY` planning readiness, with human revision establishing new authority. Evaluators demonstrate this in the live workflow; deterministic tests retain the regression coverage without a third frozen sample.
+- **Reliability:** `sample_output/reliability_metrics.json` indexes deterministic measures derived from the two curated run-evidence bundles.
+
+These evaluator copies do not alter ownership: the corresponding
+`runs/<run-id>/sdlc-artifacts/` directories remain authoritative execution history,
+and `projects/<project-name>/sdlc-artifacts/` remains the manifest-verified evidence
+copy published with each durable product. Normal CLI and Streamlit execution never
+targets `sample_output/`.

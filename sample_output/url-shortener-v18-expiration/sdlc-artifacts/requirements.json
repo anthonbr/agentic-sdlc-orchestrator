@@ -1,0 +1,24 @@
+{
+  "project_name": "url-shortener-v18-expiration",
+  "project_delivery_policy": {
+    "mode": "RUNNABLE_PROJECT"
+  },
+  "raw_requirement": "Add optional expiration times to shortened URLs. URLs without an expiration should continue to behave exactly as they do today.",
+  "submitted_requirements": [
+    "Add optional expiration times to shortened URLs. URLs without an expiration should continue to behave exactly as they do today."
+  ],
+  "normalized_requirements": [
+    {
+      "id": "REQ-001",
+      "text": "Add optional expiration times to shortened URLs. URLs without an expiration should continue to behave exactly as they do today."
+    }
+  ],
+  "requirement_submission": {
+    "source_kind": "inline",
+    "original_text": "Add optional expiration times to shortened URLs. URLs without an expiration should continue to behave exactly as they do today.",
+    "normalized_text": "Add optional expiration times to shortened URLs. URLs without an expiration should continue to behave exactly as they do today.",
+    "original_sha256": "041d4747a7836361e53c6b5701f65e6e7e7e192e8c259167d542b07e5cdcee85",
+    "normalized_sha256": "041d4747a7836361e53c6b5701f65e6e7e7e192e8c259167d542b07e5cdcee85",
+    "source_filename": null
+  }
+}

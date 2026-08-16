@@ -1,0 +1,526 @@
+{
+  "spec_id": "SPEC-BE94ADD07B4C-V001",
+  "lineage_id": "8bb06904-8c83-5d80-b406-2576b7df9016",
+  "version": 1,
+  "supersedes_spec_id": null,
+  "source_analysis_revision": 1,
+  "created_at": "2026-08-15T05:48:53.016472+00:00",
+  "content_hash": "be94add07b4cd85f23b8a27617b3b752c03f91d6a12f55b46226f7be9254dafe",
+  "normalized_problem_statement": "Extend the existing process-local URL shortener to accept an optional `expires_at` value when creating a mapping. The value is an immutable, absolute, whole-second UTC timestamp in canonical RFC 3339 `YYYY-MM-DDTHH:MM:SSZ` form. Expiring mappings redirect normally before expiration and return a defined HTTP 410 error at or after expiration without incrementing analytics. Expired mappings remain available through analytics and in memory but are excluded from creation deduplication. Mappings created without `expires_at` must retain exactly the baseline request, response, deduplication, redirect, analytics, counting, and process-lifetime behavior.",
+  "requirement_type": "brownfield",
+  "assumptions": [
+    "Current UTC time is obtained from the local process environment without contacting an external time service.",
+    "Expiration is evaluated against current UTC time on each relevant operation rather than being represented by a separately persisted expired flag.",
+    "Expiration validation occurs before deduplication, so an `expires_at` value equal to or earlier than the current time receives the required HTTP 400 response even if an expired mapping stores the same value.",
+    "No persistence or cross-process expiration coordination is introduced; restarting the process discards all mappings, expiration values, and redirect counts."
+  ],
+  "functional_requirements": [
+    {
+      "item_id": "FR-001",
+      "lineage_id": "53f59c9a-df19-5f76-8586-0d8da40f3d3d",
+      "text": "Allow POST /api/urls to accept an optional `expires_at` field in addition to the required `url` field."
+    },
+    {
+      "item_id": "FR-002",
+      "lineage_id": "aaafa0a2-b413-551f-bcde-cbec7157e274",
+      "text": "Accept `expires_at` only when it is a string containing a valid future whole-second UTC timestamp in exact `YYYY-MM-DDTHH:MM:SSZ` form and within Python's supported datetime range."
+    },
+    {
+      "item_id": "FR-003",
+      "lineage_id": "bcb0bc56-38bf-5ac0-94ea-434622a0f558",
+      "text": "Reject null, booleans, numbers, malformed timestamps, non-UTC offsets, fractional seconds, and timestamps equal to or earlier than the current UTC time."
+    },
+    {
+      "item_id": "FR-004",
+      "lineage_id": "f8ce3a49-3b6d-5fd2-94d5-fe280b2f793f",
+      "text": "For invalid expiration input, return HTTP 400 with exactly `{\"error\":{\"code\":\"invalid_expiration\",\"message\":\"expires_at must be a future UTC timestamp in YYYY-MM-DDTHH:MM:SSZ format\"}}` and do not mutate state."
+    },
+    {
+      "item_id": "FR-005",
+      "lineage_id": "3a37042c-4353-5d3b-b308-272573e505db",
+      "text": "Store an accepted expiration as immutable mapping state in canonical `YYYY-MM-DDTHH:MM:SSZ` form."
+    },
+    {
+      "item_id": "FR-006",
+      "lineage_id": "bf7a2c9d-1cc5-57d8-8c9f-a67d1967b184",
+      "text": "Treat a mapping as expired when the current UTC time is equal to or later than its `expires_at` value."
+    },
+    {
+      "item_id": "FR-007",
+      "lineage_id": "62c74182-bcc4-514a-9c6e-3ac10e12d3ef",
+      "text": "Before expiration, redirect an expiring mapping with the existing HTTP 302 behavior and increment its `redirect_count` exactly once."
+    },
+    {
+      "item_id": "FR-008",
+      "lineage_id": "511d96f5-8199-56fe-a838-f2af31523501",
+      "text": "At or after expiration, return HTTP 410 with exactly `{\"error\":{\"code\":\"expired_url\",\"message\":\"Short URL has expired\"}}`, omit the `Location` header, and do not increment `redirect_count`."
+    },
+    {
+      "item_id": "FR-009",
+      "lineage_id": "cbbbdfb4-c5e7-5db8-8fed-f5390f3f7bcb",
+      "text": "Keep analytics available for expired mappings through GET /api/urls/{code}, returning HTTP 200, the stored mapping data, `expires_at`, and the unchanged `redirect_count`."
+    },
+    {
+      "item_id": "FR-010",
+      "lineage_id": "afc2b7e4-1223-59bb-8c15-b8b788332cd0",
+      "text": "Retain expired mappings in memory until process restart; do not perform background or lazy deletion."
+    },
+    {
+      "item_id": "FR-011",
+      "lineage_id": "603cae15-25d3-5eda-83b2-6eccaea1eb1c",
+      "text": "Deduplicate creation by the combination of exact destination URL and expiration value, treating omitted expiration as distinct from every supplied expiration."
+    },
+    {
+      "item_id": "FR-012",
+      "lineage_id": "7549acfb-2b54-58d6-999a-89bda3c99f16",
+      "text": "Return an existing expiring mapping with HTTP 200 only when its exact URL and `expires_at` match the request and the mapping is not expired."
+    },
+    {
+      "item_id": "FR-013",
+      "lineage_id": "d3b336d5-845d-5821-8379-064ee3df0d3f",
+      "text": "Create a new mapping with HTTP 201 when the URL matches but expiration differs, when one request omits expiration and the other supplies it, or when the only matching mappings are expired, provided the submitted expiration itself is currently valid."
+    },
+    {
+      "item_id": "FR-014",
+      "lineage_id": "0d0f5b80-39b8-50a4-8cd4-13653a716b76",
+      "text": "Do not modify an existing mapping when creating another mapping for the same URL with a different expiration configuration."
+    },
+    {
+      "item_id": "FR-015",
+      "lineage_id": "a4e887bb-c653-5bde-a8cb-233ec8388ec0",
+      "text": "Include the existing four fields plus `expires_at` in creation and analytics representations for expiring mappings."
+    },
+    {
+      "item_id": "FR-016",
+      "lineage_id": "7bdb6f5e-d37a-57f4-94d4-8424509c425a",
+      "text": "Retain exactly the existing four-field JSON representation for non-expiring mappings, with no `expires_at` field."
+    },
+    {
+      "item_id": "FR-017",
+      "lineage_id": "7a0965b7-0cc7-52f6-87c8-0b4c20ef2986",
+      "text": "Continue accepting creation requests containing only `url` and preserve all existing behavior for the resulting non-expiring mappings."
+    },
+    {
+      "item_id": "FR-018",
+      "lineage_id": "809de196-9d15-5f46-93dd-6bffdf2a3d38",
+      "text": "Do not provide any operation that adds, removes, extends, or shortens a mapping's expiration after creation."
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "item_id": "NFR-001",
+      "lineage_id": "eab1d101-bc7b-5206-bcd6-fe092ba1cb79",
+      "text": "Expiration validation and redirect decisions must use the service's current UTC time."
+    },
+    {
+      "item_id": "NFR-002",
+      "lineage_id": "868dd2e6-e3f0-563b-957e-05eb7c0d276e",
+      "text": "Expiration checking and redirect-count mutation must remain atomic under the MappingStore's existing lock-based concurrency model."
+    },
+    {
+      "item_id": "NFR-003",
+      "lineage_id": "4f4f8d9a-32fe-5a73-b53a-0e3297bf8a81",
+      "text": "Boundary behavior must be deterministic and testable immediately before, exactly at, and immediately after `expires_at`."
+    },
+    {
+      "item_id": "NFR-004",
+      "lineage_id": "6e88531d-5a1b-5fe6-bb11-70bef1772236",
+      "text": "The service must remain compatible with Python 3.12 and use only the Python standard library."
+    },
+    {
+      "item_id": "NFR-005",
+      "lineage_id": "febce3c9-777f-53b3-afcc-e43979cf479b",
+      "text": "The feature must preserve the existing process-local, in-memory lifecycle without persistence, external time services, background processing, or multi-process coordination."
+    },
+    {
+      "item_id": "NFR-006",
+      "lineage_id": "5e11bdef-2721-5872-80f1-2269e72b47a0",
+      "text": "Non-expiring response representations must remain exactly backward compatible with the existing four-field schema."
+    }
+  ],
+  "constraints": [
+    {
+      "item_id": "CON-001",
+      "lineage_id": "e0535695-69f5-59c7-b7be-d2df9a08bab0",
+      "text": "The authoritative baseline inventory is complete and contains only README.md, server.py, state_engine.py, and tests/test_url_shortener.py."
+    },
+    {
+      "item_id": "CON-002",
+      "lineage_id": "d6ccc371-bbb7-53b4-9245-c01d64f37d95",
+      "text": "`expires_at` is absolute only; relative durations are not accepted."
+    },
+    {
+      "item_id": "CON-003",
+      "lineage_id": "648c71a2-e21b-5990-b1a8-a8d15f085b82",
+      "text": "The only accepted expiration syntax is a whole-second UTC timestamp ending in `Z` and formatted as `YYYY-MM-DDTHH:MM:SSZ`."
+    },
+    {
+      "item_id": "CON-004",
+      "lineage_id": "848e4bb8-a64c-577d-894d-f3b4fc2d25d5",
+      "text": "A supplied expiration must be strictly later than current UTC time when the creation request is validated."
+    },
+    {
+      "item_id": "CON-005",
+      "lineage_id": "b45e5300-640d-59b9-b05a-0d03224a04a5",
+      "text": "Expiration is immutable after mapping creation."
+    },
+    {
+      "item_id": "CON-006",
+      "lineage_id": "031a9c67-459b-5844-b04e-f5233661faef",
+      "text": "Expired entries remain resident until process restart and remain accessible through analytics."
+    },
+    {
+      "item_id": "CON-007",
+      "lineage_id": "40b49c30-1683-5137-8658-04ff70ce4d44",
+      "text": "Deduplication identity consists of the exact submitted destination URL and the optional expiration value; expired mappings are not eligible deduplication matches."
+    },
+    {
+      "item_id": "CON-008",
+      "lineage_id": "6fd1c82a-a062-5b9c-ad35-f0ffa557698f",
+      "text": "The existing service has no database, persistence, external service, background processing, or third-party dependency."
+    },
+    {
+      "item_id": "CON-009",
+      "lineage_id": "8821e1c6-9787-5f64-b94f-84e0e1752e41",
+      "text": "Existing short codes remain eight-character ASCII alphanumeric strings."
+    },
+    {
+      "item_id": "CON-010",
+      "lineage_id": "4567cd2e-d57e-5e61-9e28-9e2efb82a2f8",
+      "text": "Submitted destination URLs retain the existing local syntactic HTTP/HTTPS validation and exact-string preservation rules."
+    },
+    {
+      "item_id": "CON-011",
+      "lineage_id": "ce45ada5-86a6-52a1-9a72-0d011bb7641a",
+      "text": "Mappings without expiration must preserve their baseline API shape and behavior exactly."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "item_id": "AC-001",
+      "lineage_id": "dcf9731f-09dd-568a-98ce-4796e56a881f",
+      "text": "POST /api/urls with a valid `url` and no `expires_at` creates a non-expiring mapping with HTTP 201 and exactly the baseline fields `code`, `short_url`, `url`, and `redirect_count`."
+    },
+    {
+      "item_id": "AC-002",
+      "lineage_id": "149c989f-6fca-5947-8f15-5b1c245ed3db",
+      "text": "Repeating a creation request without `expires_at` for the exact same URL returns the existing non-expiring mapping with HTTP 200, preserves the exact four-field representation, and does not increase store size."
+    },
+    {
+      "item_id": "AC-003",
+      "lineage_id": "2a2052b5-bb35-55ea-a23a-c4081429502a",
+      "text": "A valid future `expires_at` such as `2030-01-02T03:04:05Z` creates a mapping with HTTP 201 whose representation contains the existing four fields plus `expires_at` with the canonical submitted value."
+    },
+    {
+      "item_id": "AC-004",
+      "lineage_id": "04137c67-a8d2-54dc-a6ef-11e4f4d185f6",
+      "text": "Explicit null, booleans, numbers, malformed strings, timestamps with offsets other than `Z`, fractional seconds, out-of-range dates, and timestamps equal to or earlier than current UTC time each return HTTP 400 with exactly `{\"error\":{\"code\":\"invalid_expiration\",\"message\":\"expires_at must be a future UTC timestamp in YYYY-MM-DDTHH:MM:SSZ format\"}}`."
+    },
+    {
+      "item_id": "AC-005",
+      "lineage_id": "59c18bb4-e945-5944-b24b-75591695bc88",
+      "text": "A request rejected for invalid `expires_at` creates no mapping and does not modify any existing mapping or redirect count."
+    },
+    {
+      "item_id": "AC-006",
+      "lineage_id": "e17280e6-b320-5501-a446-db4d0f8ca2e0",
+      "text": "Before an expiring mapping's boundary, GET /{code} returns HTTP 302 with the exact destination in `Location` and increments that mapping's `redirect_count` exactly once."
+    },
+    {
+      "item_id": "AC-007",
+      "lineage_id": "103dc78c-0fe1-5da1-8d50-5ba76c7b21eb",
+      "text": "When current UTC time equals `expires_at`, GET /{code} returns HTTP 410 with exactly `{\"error\":{\"code\":\"expired_url\",\"message\":\"Short URL has expired\"}}`, contains no `Location` header, and does not increment `redirect_count`."
+    },
+    {
+      "item_id": "AC-008",
+      "lineage_id": "323838ec-5c18-5d45-b6ef-9f15547d627a",
+      "text": "After `expires_at`, GET /{code} continues to return the defined HTTP 410 response without incrementing `redirect_count`."
+    },
+    {
+      "item_id": "AC-009",
+      "lineage_id": "617586be-9e77-51ea-8371-850fab87bf0f",
+      "text": "GET /api/urls/{code} for an expired mapping returns HTTP 200 with `code`, `short_url`, `url`, unchanged `redirect_count`, and canonical `expires_at`."
+    },
+    {
+      "item_id": "AC-010",
+      "lineage_id": "8a8626f0-9fc4-59fd-a07d-c41be78a10bc",
+      "text": "Expired mappings remain counted in the in-memory store and available to analytics until process restart."
+    },
+    {
+      "item_id": "AC-011",
+      "lineage_id": "aaddce85-5b59-5488-abe0-5266babeaf04",
+      "text": "Repeating the exact URL and exact `expires_at` before expiration returns the existing mapping with HTTP 200 and does not increase store size."
+    },
+    {
+      "item_id": "AC-012",
+      "lineage_id": "a9d2d138-6954-5a47-92a9-918448578c9a",
+      "text": "Submitting the same exact URL with a different valid `expires_at` creates an independent mapping with HTTP 201 and does not modify the original mapping."
+    },
+    {
+      "item_id": "AC-013",
+      "lineage_id": "9653f52a-7aab-51b6-9599-4bd823ca7ebb",
+      "text": "Submitting an expiration for a URL that already has a non-expiring mapping, or omitting expiration for a URL that has an expiring mapping, creates an independent mapping with HTTP 201."
+    },
+    {
+      "item_id": "AC-014",
+      "lineage_id": "ed8a0994-2856-59e5-814e-a6d490733ce2",
+      "text": "An expired mapping is not returned as a duplicate; a request with otherwise matching, currently valid URL and expiration identity can create a new mapping with HTTP 201."
+    },
+    {
+      "item_id": "AC-015",
+      "lineage_id": "b1753630-f277-5442-bab8-b0f4dfc5aade",
+      "text": "No supported request can add, remove, extend, or shorten the expiration of an existing mapping."
+    },
+    {
+      "item_id": "AC-016",
+      "lineage_id": "fa7ee2f6-9f3c-5d28-9317-a6cfe9c9ce8e",
+      "text": "A non-expiring mapping continues to redirect with HTTP 302 throughout the process lifetime and increments `redirect_count` exactly once per successful redirect."
+    },
+    {
+      "item_id": "AC-017",
+      "lineage_id": "18ad11f2-f668-58c1-a027-6306cc6e9899",
+      "text": "Unknown codes continue to return the existing JSON HTTP 404 response and do not mutate known mappings."
+    },
+    {
+      "item_id": "AC-018",
+      "lineage_id": "6df4414b-458d-582f-8b5f-ba21375f061b",
+      "text": "Deterministic tests cover expiration validation and redirect behavior immediately before, exactly at, and immediately after the expiration boundary."
+    },
+    {
+      "item_id": "AC-019",
+      "lineage_id": "a1a79260-e7db-58d7-810d-432070637474",
+      "text": "Existing tests for destination validation, exact URL preservation, collision retry, mapping isolation, non-expiring deduplication, process reset, malformed JSON, content type, unsupported methods, unknown codes, and standard-library-only imports continue to pass."
+    },
+    {
+      "item_id": "AC-020",
+      "lineage_id": "e7b1d290-b57d-58ec-b88c-071690297e14",
+      "text": "README.md documents the `expires_at` request contract, validation error, response shapes, boundary semantics, HTTP 410 behavior, analytics availability, deduplication identity, immutability, retention, and process-local lifecycle."
+    }
+  ],
+  "risks": [
+    {
+      "item_id": "RISK-001",
+      "lineage_id": "162d4feb-e1ce-5c6a-a433-dc21ec001d68",
+      "text": "Direct use of wall-clock time can cause surprising behavior if the system clock moves backward or forward and can make tests flaky unless time is controllable."
+    },
+    {
+      "item_id": "RISK-002",
+      "lineage_id": "817327fc-48ca-5076-9759-0ae767dd6608",
+      "text": "Validation and duplicate lookup performed using different time samples could produce inconsistent results near the expiration boundary."
+    },
+    {
+      "item_id": "RISK-003",
+      "lineage_id": "be0c699d-9fd1-5763-893d-e87d867d89ba",
+      "text": "The current URL-only deduplication index cannot support the required URL-plus-expiration identity or exclusion of expired matches without modification."
+    },
+    {
+      "item_id": "RISK-004",
+      "lineage_id": "92397bba-9540-5d49-a2cb-d082f28a5811",
+      "text": "Retaining all expired mappings until restart can cause unbounded memory growth in a long-running process."
+    },
+    {
+      "item_id": "RISK-005",
+      "lineage_id": "8e204381-d406-5684-ac33-621c7a5c8970",
+      "text": "Adding `expires_at` unconditionally to serialized mappings would break the explicitly required four-field compatibility for non-expiring mappings."
+    },
+    {
+      "item_id": "RISK-006",
+      "lineage_id": "c597eeec-a8a0-5b6d-9a54-e4232ed4b1a3",
+      "text": "A non-atomic expiration check and counter update could allow a redirect count increment at or after expiration."
+    },
+    {
+      "item_id": "RISK-007",
+      "lineage_id": "77ebc8cf-fa39-53bc-b619-50f30ca82e90",
+      "text": "Permissive datetime parsing could accidentally accept offsets, fractional seconds, alternate forms, or values outside the required canonical syntax."
+    },
+    {
+      "item_id": "RISK-008",
+      "lineage_id": "8c5aae73-37fb-5430-a170-faf829491c85",
+      "text": "If invalid-expiration validation does not precede duplicate handling, a request containing a now-expired timestamp could incorrectly return an old mapping instead of the required HTTP 400 error."
+    },
+    {
+      "item_id": "RISK-009",
+      "lineage_id": "3f6dd92c-59a2-5597-ac7b-ae058d55a819",
+      "text": "Using a single exception path for unknown and expired codes could return the wrong HTTP status or error payload and could make expired analytics unavailable."
+    }
+  ],
+  "ambiguities": [],
+  "brownfield_impact": {
+    "baseline_id": "BROWNFIELD-BASELINE-7F9512BE12C39736CF51",
+    "codebase_context_id": "BROWNFIELD-CONTEXT-62F25B99F8B923E9A0E7",
+    "impacted_modules": [
+      {
+        "target": "state_engine.py",
+        "reason": "Mapping, _Entry, and MappingStore require optional immutable expiration state, strict timestamp validation support, composite deduplication, expiration-aware redirects, and an expired-state outcome while preserving non-expiring snapshots."
+      },
+      {
+        "target": "server.py",
+        "reason": "POST /api/urls must pass and report optional expiration input, redirect handling must emit the defined HTTP 410 response, and serialization must conditionally include `expires_at` only for expiring mappings."
+      }
+    ],
+    "impacted_services": [
+      {
+        "target": "Local standard-library HTTP service",
+        "reason": "The service gains UTC time-dependent expiration behavior while retaining its local, process-only, dependency-free operating model."
+      }
+    ],
+    "impacted_apis": [
+      {
+        "target": "POST /api/urls",
+        "reason": "The creation request gains optional `expires_at`, strict validation and error semantics, URL-plus-expiration deduplication, and conditional response representation."
+      },
+      {
+        "target": "GET /{code}",
+        "reason": "A known expiring code must be checked atomically against current UTC time before redirect counting and must return HTTP 410 at or after expiration."
+      },
+      {
+        "target": "GET /api/urls/{code}",
+        "reason": "Analytics must remain accessible for expired mappings and conditionally expose their stored `expires_at` value."
+      },
+      {
+        "target": "Mapping JSON representation",
+        "reason": "Expiring mappings add canonical `expires_at`, while non-expiring mappings must retain exactly the existing four fields."
+      }
+    ],
+    "impacted_state": [
+      {
+        "target": "Mapping and _Entry",
+        "reason": "Both domain storage and public snapshots need an optional immutable expiration value without changing non-expiring serialization."
+      },
+      {
+        "target": "MappingStore._code_by_url",
+        "reason": "The current exact-URL-to-single-code index cannot represent multiple mappings for one URL with different expiration values or exclude expired mappings from deduplication."
+      },
+      {
+        "target": "MappingStore.create_or_get",
+        "reason": "Creation must validate expiration against current UTC time, use URL-plus-expiration identity, ignore expired duplicate candidates, and avoid modifying existing mappings."
+      },
+      {
+        "target": "MappingStore.record_redirect",
+        "reason": "It must check expiration and increment the counter as one locked operation, returning a distinguishable expired outcome without mutation."
+      },
+      {
+        "target": "MappingStore.get_mapping",
+        "reason": "It must continue returning snapshots for expired mappings because analytics remains available."
+      },
+      {
+        "target": "Process-local mapping lifecycle",
+        "reason": "Expired entries become a retained state category that remains in memory until the store is discarded at process restart."
+      }
+    ],
+    "impacted_flows": [
+      {
+        "target": "URL creation flow",
+        "reason": "The flow must distinguish omitted expiration from supplied valid or invalid expiration and apply strict future-time validation before state mutation."
+      },
+      {
+        "target": "Duplicate creation flow",
+        "reason": "Identity changes from URL alone to exact URL plus optional expiration, and expired mappings cannot satisfy duplicate lookup."
+      },
+      {
+        "target": "Redirect flow",
+        "reason": "A known mapping now requires an atomic time comparison before either returning HTTP 302 and counting or returning HTTP 410 without counting."
+      },
+      {
+        "target": "Analytics flow",
+        "reason": "Analytics must return expired mappings normally and include expiration metadata only when present."
+      },
+      {
+        "target": "Service restart flow",
+        "reason": "All mappings, including retained expired entries and expiration metadata, continue to disappear when the process-local store is replaced."
+      }
+    ],
+    "impacted_tests": [
+      {
+        "target": "tests/test_url_shortener.py::APITestCase",
+        "reason": "API tests must cover strict accepted and rejected timestamp forms, exact error payloads, conditional response fields, HTTP 410 behavior, missing Location, unchanged counts, analytics after expiration, and composite deduplication."
+      },
+      {
+        "target": "tests/test_url_shortener.py::MappingStoreTestCase",
+        "reason": "Store tests must cover immutable expiration state, deterministic boundary comparisons, atomic redirect behavior, composite identity, exclusion of expired duplicates, retention, and non-expiring regressions."
+      },
+      {
+        "target": "Existing exact-key response assertions",
+        "reason": "Current tests require exactly four mapping fields, which must remain valid for non-expiring mappings while new assertions are scoped to expiring mappings."
+      },
+      {
+        "target": "tests/test_url_shortener.py::ImportConstraintTestCase",
+        "reason": "Any datetime and clock support must remain standard-library-only and preserve the test's complete authoritative Python-file inventory."
+      }
+    ],
+    "impacted_documentation": [
+      {
+        "target": "README.md minimal API usage",
+        "reason": "Creation examples and response contracts must document optional canonical `expires_at` and the unchanged non-expiring shape."
+      },
+      {
+        "target": "README.md redirect and analytics behavior",
+        "reason": "Documentation must describe the exact expiration boundary, HTTP 410 payload, absent Location header, unchanged count, and continued analytics availability."
+      },
+      {
+        "target": "README.md in-memory lifecycle",
+        "reason": "The current claim that all mappings remain available without expiration must distinguish permanent non-expiring mappings from retained but non-redirectable expired mappings."
+      },
+      {
+        "target": "README.md significant prototype limitations",
+        "reason": "The statement that expiration is unsupported becomes inaccurate, while lack of persistence, background cleanup, and multi-process sharing remains applicable."
+      }
+    ],
+    "architectural_implications": [
+      {
+        "target": "Time dependency in MappingStore",
+        "reason": "Creation validation and redirect behavior now depend on current UTC time, making a consistently sampled and test-controllable time source important."
+      },
+      {
+        "target": "Composite mapping identity",
+        "reason": "The one-mapping-per-exact-URL model becomes one mapping per exact URL and optional expiration identity, with expired candidates excluded."
+      },
+      {
+        "target": "Expired domain outcome",
+        "reason": "The domain currently distinguishes only known and unknown codes; redirect handling now requires a distinguishable expired result while analytics still treats the mapping as known."
+      },
+      {
+        "target": "Conditional public representation",
+        "reason": "The mapping model needs expiration metadata, but serialization must omit the field entirely for non-expiring mappings to preserve compatibility."
+      },
+      {
+        "target": "Retention without cleanup",
+        "reason": "Expiration is enforced on access while entries remain resident; no database, scheduler, background task, or lazy deletion is introduced."
+      }
+    ],
+    "preserved_behaviors": [
+      {
+        "target": "Non-expiring creation and deduplication",
+        "reason": "Requests containing only `url` continue to create with HTTP 201 and return the same exact-URL non-expiring mapping with HTTP 200 on repetition."
+      },
+      {
+        "target": "Non-expiring mapping representation",
+        "reason": "The requirement explicitly preserves exactly `code`, `short_url`, `url`, and `redirect_count` with no added expiration field."
+      },
+      {
+        "target": "Non-expiring redirect and analytics lifecycle",
+        "reason": "Such mappings continue redirecting, counting successful redirects, and remaining available for the lifetime of the running process."
+      },
+      {
+        "target": "Exact destination URL preservation and validation",
+        "reason": "Expiration does not change the existing syntactic HTTP/HTTPS validation or exact submitted-string behavior."
+      },
+      {
+        "target": "Eight-character code generation and collision retry",
+        "reason": "The requested change does not alter code format or collision handling."
+      },
+      {
+        "target": "Unknown-code behavior",
+        "reason": "Genuinely unknown redirect and analytics requests continue using the existing JSON HTTP 404 contract."
+      },
+      {
+        "target": "Local in-memory operation",
+        "reason": "No persistence, database, external service, credentials, background cleanup, or multi-process sharing is introduced."
+      },
+      {
+        "target": "Existing HTTP handling outside expiration",
+        "reason": "Content-type enforcement, malformed JSON handling, unsupported methods, path routing, and the existing JSON error envelope remain unchanged."
+      }
+    ]
+  }
+}

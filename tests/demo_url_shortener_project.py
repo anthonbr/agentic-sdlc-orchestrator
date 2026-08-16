@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from agentic_sdlc.task_execution_contracts import (
     ArtifactMaterializationProposal,
     ArtifactOutput,
@@ -475,6 +477,29 @@ A known code returns `302 Found`; an unknown code returns `404 Not Found`.
 - The orchestrator does not execute this generated source or its tests. Execution
   commands above are manual reviewer/development actions against the exported copy.
 """
+
+
+DETERMINISTIC_PROJECT_FILES = (
+    ("README.md", GENERATED_README),
+    ("pyproject.toml", PYPROJECT),
+    ("src/url_shortener/__init__.py", PACKAGE_INIT),
+    ("src/url_shortener/app.py", APP),
+    ("src/url_shortener/service.py", SERVICE),
+    ("tests/test_service.py", TESTS),
+)
+
+
+def write_deterministic_project(
+    root: Path,
+    files: tuple[tuple[str, str], ...] = DETERMINISTIC_PROJECT_FILES,
+) -> Path:
+    """Write one isolated deterministic project fixture for regression tests."""
+
+    for relative_path, contents in files:
+        destination = root / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(contents, encoding="utf-8")
+    return root
 
 
 def deterministic_demo_result(

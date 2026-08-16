@@ -218,29 +218,27 @@ def test_zero_denominators_are_undefined_and_derivation_is_deterministic() -> No
     assert first.rollback_frequency.value is None
 
 
-def test_reviewer_artifact_is_byte_stable_and_reports_three_independent_runs(
+def test_reviewer_artifact_is_byte_stable_and_reports_two_curated_runs(
     tmp_path: Path,
 ) -> None:
     first = tmp_path / "first.json"
     second = tmp_path / "second.json"
 
-    write_reliability_metrics_artifact(REPOSITORY_ROOT / "artifacts", first)
-    write_reliability_metrics_artifact(REPOSITORY_ROOT / "artifacts", second)
+    write_reliability_metrics_artifact(REPOSITORY_ROOT / "sample_output", first)
+    write_reliability_metrics_artifact(REPOSITORY_ROOT / "sample_output", second)
 
     assert first.read_bytes() == second.read_bytes()
     artifact = json.loads(first.read_text())
     assert artifact["schema_version"] == "reliability-metrics-v1"
     assert [run["scenario"] for run in artifact["runs"]] == [
-        "greenfield",
-        "brownfield",
-        "ambiguous requirement",
+        "V17 greenfield",
+        "V18 brownfield",
     ]
     assert [run["evidence_root"] for run in artifact["runs"]] == [
-        "artifacts/demo-run/",
-        "artifacts/brownfield-demo-run/",
-        "artifacts/ambiguity-demo-run/",
+        "sample_output/url-shortener-v17/sdlc-artifacts/",
+        "sample_output/url-shortener-v18-expiration/sdlc-artifacts/",
     ]
-    assert len(artifact["runs"]) == 3
+    assert len(artifact["runs"]) == 2
     assert "generated_at" not in artifact
     for run in artifact["runs"]:
         assert run["metrics"]["end_to_end_latency"]["status"] == "NOT_MEASURED"

@@ -1,0 +1,61 @@
+{
+  "schema_version": "sdlc-artifact-manifest-v1",
+  "run_id": "run-d897f8e0fc6541d8b3399f573d5bb625",
+  "project_name": "url-shortener-v17",
+  "workflow_status": "success",
+  "project_delivery_policy": "RUNNABLE_PROJECT",
+  "exit_gate_passed": true,
+  "bundle_sha256": "fa841961277b596ae42e9ed2857dc26b7f35b02dea41020072e310940f732f2b",
+  "files": [
+    {
+      "path": "approved_requirement_spec.json",
+      "sha256": "9c2cdb892fb1d967055573b9ab9754ad1bbf1f58e3212823cd583fd1407c5e37",
+      "size_bytes": 20828
+    },
+    {
+      "path": "engineering_artifacts.json",
+      "sha256": "14244d92b5d6c927209d26030e2b64e7d45745258630eaf4ff570adbf595af9d",
+      "size_bytes": 44154
+    },
+    {
+      "path": "requirement_analysis.md",
+      "sha256": "6de9e78796042a63acd88dc069d03372ebb966f761f62ce0f4fd51f5ca2e50e1",
+      "size_bytes": 22588
+    },
+    {
+      "path": "requirements.json",
+      "sha256": "735a3bc881eef5287b2eae30bd7dd9b754f7c30892c804d9b285289ac242b98e",
+      "size_bytes": 5899
+    },
+    {
+      "path": "summary.md",
+      "sha256": "9c80ce423e1c5b181a32195804362d029a1051ac3af64fc76a311c6485e62b14",
+      "size_bytes": 4031
+    },
+    {
+      "path": "task_execution.json",
+      "sha256": "f0ba0140f22ec0bcdb603929084e00f9693b138d24fbb6eed5691ba498bb8350",
+      "size_bytes": 224325
+    },
+    {
+      "path": "task_graph.json",
+      "sha256": "e34361abc9bc7d6018077d6b12eb2a0a79e2d8c08885127615fc44bb123d4f93",
+      "size_bytes": 10254
+    },
+    {
+      "path": "task_graph.md",
+      "sha256": "c6d7667eb2f27eb6f787ef1dc846f0716dff4b2dc85cb6eef69cb60097b164e7",
+      "size_bytes": 6798
+    },
+    {
+      "path": "workflow_diagram.png",
+      "sha256": "29ba9dcf3c9ae71ed8c1b0b244090afcc5ef7198be861d2f02c2814127dd2349",
+      "size_bytes": 154985
+    },
+    {
+      "path": "workspace_execution.json",
+      "sha256": "7ea0b106ae4d26543387a1c22e62663985919077f4b31545cbc9cd33eff179a6",
+      "size_bytes": 246290
+    }
+  ]
+}

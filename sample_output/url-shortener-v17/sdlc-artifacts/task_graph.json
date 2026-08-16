@@ -1,0 +1,374 @@
+{
+  "graph_id": "GRAPH-D6958E385AA3-V001",
+  "lineage_id": "53a0d2a9-fd9e-5aa6-935f-dbaa21e126ea",
+  "version": 1,
+  "requirement_spec_id": "SPEC-6471362867F4-V001",
+  "requirement_spec_version": 1,
+  "supersedes_graph_id": null,
+  "created_at": "2026-08-15T00:46:27.858837+00:00",
+  "content_hash": "d6958e385aa3d673e993d85ef1c592fefae77447f828aacebc8b032002c824b8",
+  "tasks": [
+    {
+      "task_id": "TASK-001",
+      "lineage_id": "9d25de32-2bf0-5416-a7e5-f7cde72ab4a7",
+      "source_key": "contract_decisions",
+      "title": "Resolve API contract ambiguities",
+      "description": "Obtain human-approved decisions for unspecified error strings, JSON media-type parameters, request-body edge cases, method handling, collision exhaustion, concurrency expectations, and unusual URL components without changing the fixed routes, statuses, schemas, or syntactic validation boundaries.",
+      "task_type": "DESIGN",
+      "materialization_policy": "FORBIDDEN",
+      "depends_on": [],
+      "requirement_refs": [
+        "FR-001",
+        "FR-008",
+        "FR-009",
+        "FR-010",
+        "FR-011",
+        "FR-012",
+        "FR-013",
+        "FR-015",
+        "FR-017",
+        "NFR-002",
+        "NFR-007"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-011",
+        "AC-012",
+        "AC-013",
+        "AC-014",
+        "AC-015",
+        "AC-016",
+        "AC-017",
+        "AC-018",
+        "AC-019"
+      ],
+      "risk_refs": [
+        "RISK-001",
+        "RISK-002",
+        "RISK-003",
+        "RISK-005",
+        "RISK-006"
+      ],
+      "ambiguity_refs": [
+        "AMB-001",
+        "AMB-002",
+        "AMB-003",
+        "AMB-004",
+        "AMB-005",
+        "AMB-006",
+        "AMB-007"
+      ],
+      "expected_outputs": [
+        "Human-approved policy decisions for each unresolved ambiguity",
+        "API behavior boundaries suitable for implementation and behavioral testing"
+      ],
+      "deliverable_roles": [],
+      "required_validations": []
+    },
+    {
+      "task_id": "TASK-002",
+      "lineage_id": "e6424b5e-f3a8-5352-9d4e-02d69d5a3fc4",
+      "source_key": "state_engine",
+      "title": "Implement in-memory mapping engine",
+      "description": "Implement the Python 3.12 standard-library domain logic for exact URL preservation and duplicate detection, local syntactic URL validation, automatic eight-character code generation with collision retry, process-lifetime in-memory storage, and redirect-count updates.",
+      "task_type": "IMPLEMENTATION",
+      "materialization_policy": "REQUIRED",
+      "depends_on": [
+        "TASK-001"
+      ],
+      "requirement_refs": [
+        "FR-002",
+        "FR-003",
+        "FR-005",
+        "FR-006",
+        "FR-013",
+        "FR-014",
+        "FR-015",
+        "FR-016",
+        "FR-017",
+        "FR-018",
+        "FR-019",
+        "FR-020",
+        "NFR-001",
+        "NFR-002",
+        "NFR-004",
+        "NFR-006",
+        "CON-001",
+        "CON-002",
+        "CON-003",
+        "CON-004",
+        "CON-006",
+        "CON-007",
+        "CON-008",
+        "CON-009",
+        "CON-011",
+        "CON-012"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-003",
+        "AC-004",
+        "AC-005",
+        "AC-006",
+        "AC-008",
+        "AC-010",
+        "AC-016",
+        "AC-017",
+        "AC-018",
+        "AC-019",
+        "AC-020",
+        "AC-021"
+      ],
+      "risk_refs": [
+        "RISK-004",
+        "RISK-005",
+        "RISK-006",
+        "RISK-007",
+        "RISK-008"
+      ],
+      "ambiguity_refs": [],
+      "expected_outputs": [
+        "Standard-library in-memory mapping and analytics implementation",
+        "Exact-string URL validation and preservation logic",
+        "Collision-safe eight-character code generation",
+        "Process-lifetime redirect-count behavior with no persistence or expiration"
+      ],
+      "deliverable_roles": [],
+      "required_validations": [
+        {
+          "requirement_id": "TASK-002-VALIDATION-001",
+          "profile": "PYTHON_COMPILE"
+        }
+      ]
+    },
+    {
+      "task_id": "TASK-003",
+      "lineage_id": "9f8f0199-1cd9-5383-8696-7d1fa401d2c5",
+      "source_key": "http_service",
+      "title": "Implement runnable HTTP service",
+      "description": "Implement the local Python HTTP service and genuine launch entry point for creation, redirect, and analytics routes, including the specified success responses, common JSON errors, status codes, default short-URL representation, and unsupported-method handling.",
+      "task_type": "IMPLEMENTATION",
+      "materialization_policy": "REQUIRED",
+      "depends_on": [
+        "TASK-001",
+        "TASK-002"
+      ],
+      "requirement_refs": [
+        "FR-001",
+        "FR-002",
+        "FR-003",
+        "FR-004",
+        "FR-005",
+        "FR-006",
+        "FR-007",
+        "FR-008",
+        "FR-009",
+        "FR-010",
+        "FR-011",
+        "FR-012",
+        "FR-018",
+        "NFR-001",
+        "NFR-002",
+        "NFR-003",
+        "NFR-004",
+        "NFR-005",
+        "NFR-007",
+        "CON-001",
+        "CON-003",
+        "CON-004",
+        "CON-005",
+        "CON-008"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-001",
+        "AC-002",
+        "AC-004",
+        "AC-005",
+        "AC-007",
+        "AC-008",
+        "AC-009",
+        "AC-010",
+        "AC-011",
+        "AC-012",
+        "AC-013",
+        "AC-014",
+        "AC-015",
+        "AC-021"
+      ],
+      "risk_refs": [
+        "RISK-002",
+        "RISK-003",
+        "RISK-005"
+      ],
+      "ambiguity_refs": [],
+      "expected_outputs": [
+        "Launchable local Python 3.12 HTTP service entry point",
+        "POST creation, GET redirect, and GET analytics request handling",
+        "Specified JSON success and error representations with correct HTTP statuses",
+        "Local operation without authentication, third-party packages, databases, or external services"
+      ],
+      "deliverable_roles": [
+        "RUNNABLE_ENTRYPOINT"
+      ],
+      "required_validations": [
+        {
+          "requirement_id": "TASK-003-VALIDATION-001",
+          "profile": "PYTHON_COMPILE"
+        }
+      ]
+    },
+    {
+      "task_id": "TASK-004",
+      "lineage_id": "f337671b-efde-5578-b7ff-1be16847e156",
+      "source_key": "automated_tests",
+      "title": "Implement automated behavior tests",
+      "description": "Create standard-library-based automated tests under tests/ covering the complete API contract, mapping lifecycle, exact preservation, validation boundaries, errors, collision retry, count isolation, and process-lifetime storage behavior.",
+      "task_type": "TEST",
+      "materialization_policy": "REQUIRED",
+      "depends_on": [
+        "TASK-001",
+        "TASK-002",
+        "TASK-003"
+      ],
+      "requirement_refs": [
+        "FR-001",
+        "FR-002",
+        "FR-003",
+        "FR-004",
+        "FR-005",
+        "FR-006",
+        "FR-007",
+        "FR-008",
+        "FR-009",
+        "FR-010",
+        "FR-011",
+        "FR-012",
+        "FR-013",
+        "FR-014",
+        "FR-015",
+        "FR-016",
+        "FR-017",
+        "FR-018",
+        "FR-019",
+        "FR-020",
+        "FR-021",
+        "NFR-001",
+        "NFR-004",
+        "NFR-006",
+        "NFR-007",
+        "CON-001",
+        "CON-002",
+        "CON-004",
+        "CON-005",
+        "CON-006",
+        "CON-007",
+        "CON-008",
+        "CON-009",
+        "CON-010",
+        "CON-011",
+        "CON-012"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-002",
+        "AC-003",
+        "AC-004",
+        "AC-005",
+        "AC-006",
+        "AC-007",
+        "AC-008",
+        "AC-009",
+        "AC-010",
+        "AC-011",
+        "AC-012",
+        "AC-013",
+        "AC-014",
+        "AC-015",
+        "AC-016",
+        "AC-017",
+        "AC-018",
+        "AC-019",
+        "AC-020",
+        "AC-021",
+        "AC-022"
+      ],
+      "risk_refs": [
+        "RISK-001",
+        "RISK-002",
+        "RISK-003",
+        "RISK-004",
+        "RISK-005",
+        "RISK-006"
+      ],
+      "ambiguity_refs": [],
+      "expected_outputs": [
+        "Automated tests located under tests/",
+        "Standard-library test cases for creation, duplicates, redirects, analytics, counts, validation, malformed requests, media types, methods, collisions, and schemas",
+        "Verification that application and test imports remain within the Python standard library"
+      ],
+      "deliverable_roles": [
+        "AUTOMATED_TESTS"
+      ],
+      "required_validations": [
+        {
+          "requirement_id": "TASK-004-VALIDATION-001",
+          "profile": "PYTHON_PYTEST"
+        }
+      ]
+    },
+    {
+      "task_id": "TASK-005",
+      "lineage_id": "2d50222b-00dd-5895-9536-778c41f43d88",
+      "source_key": "run_guide",
+      "title": "Document local setup and usage",
+      "description": "Provide the root README.md with exact Python 3.12 setup, service start, automated test, and minimal API usage instructions, while making the local-only, dependency-free, in-memory lifecycle explicit.",
+      "task_type": "DOCUMENTATION",
+      "materialization_policy": "REQUIRED",
+      "depends_on": [
+        "TASK-003",
+        "TASK-004"
+      ],
+      "requirement_refs": [
+        "FR-018",
+        "FR-019",
+        "FR-020",
+        "FR-022",
+        "NFR-001",
+        "NFR-002",
+        "NFR-003",
+        "NFR-004",
+        "NFR-005",
+        "CON-001",
+        "CON-002",
+        "CON-003",
+        "CON-004",
+        "CON-005",
+        "CON-008",
+        "CON-009"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-001",
+        "AC-020",
+        "AC-021",
+        "AC-023"
+      ],
+      "risk_refs": [
+        "RISK-004",
+        "RISK-007",
+        "RISK-008"
+      ],
+      "ambiguity_refs": [],
+      "expected_outputs": [
+        "Root README.md",
+        "Exact local setup and service-start instructions",
+        "Exact automated-test instructions",
+        "Minimal creation, redirect, and analytics usage guidance",
+        "Clear description of in-memory reset behavior and absence of external dependencies"
+      ],
+      "deliverable_roles": [
+        "RUN_INSTRUCTIONS"
+      ],
+      "required_validations": []
+    }
+  ],
+  "delivery_policy": {
+    "mode": "RUNNABLE_PROJECT"
+  }
+}

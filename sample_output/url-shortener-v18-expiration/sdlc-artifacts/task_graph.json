@@ -1,0 +1,335 @@
+{
+  "graph_id": "GRAPH-5753BE08E77D-V001",
+  "lineage_id": "40ea5ec1-d31f-506e-91f2-5ceab1693d6a",
+  "version": 1,
+  "requirement_spec_id": "SPEC-BE94ADD07B4C-V001",
+  "requirement_spec_version": 1,
+  "supersedes_graph_id": null,
+  "created_at": "2026-08-15T05:49:59.194596+00:00",
+  "content_hash": "5753be08e77db19ba946d45707fe0a96c4b0841b96e35aa26e46d144dd4cf274",
+  "tasks": [
+    {
+      "task_id": "TASK-001",
+      "lineage_id": "55014734-08cc-5fe4-93b8-0ccc9ed994c5",
+      "source_key": "state_expiration_model",
+      "title": "Implement expiration-aware mapping state",
+      "description": "Incrementally update the existing in-memory state engine with strict canonical expiration validation, immutable optional expiration state, a test-controllable UTC time dependency, composite URL-and-expiration deduplication, retained expired entries, and atomic expiration-aware redirect outcomes. Preserve URL validation, code generation, collision handling, non-expiring behavior, and the existing process-local lock-based lifecycle.",
+      "task_type": "IMPLEMENTATION",
+      "materialization_policy": "REQUIRED",
+      "depends_on": [],
+      "requirement_refs": [
+        "FR-002",
+        "FR-003",
+        "FR-005",
+        "FR-006",
+        "FR-007",
+        "FR-009",
+        "FR-010",
+        "FR-011",
+        "FR-012",
+        "FR-013",
+        "FR-014",
+        "FR-018",
+        "NFR-001",
+        "NFR-002",
+        "NFR-003",
+        "NFR-004",
+        "NFR-005",
+        "CON-001",
+        "CON-002",
+        "CON-003",
+        "CON-004",
+        "CON-005",
+        "CON-006",
+        "CON-007",
+        "CON-008",
+        "CON-009",
+        "CON-010",
+        "CON-011"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-005",
+        "AC-006",
+        "AC-007",
+        "AC-008",
+        "AC-009",
+        "AC-010",
+        "AC-011",
+        "AC-012",
+        "AC-013",
+        "AC-014",
+        "AC-015",
+        "AC-016",
+        "AC-017"
+      ],
+      "risk_refs": [
+        "RISK-001",
+        "RISK-002",
+        "RISK-003",
+        "RISK-004",
+        "RISK-006",
+        "RISK-007",
+        "RISK-008",
+        "RISK-009"
+      ],
+      "ambiguity_refs": [],
+      "expected_outputs": [
+        "Updated state_engine.py with strict whole-second UTC expiration parsing and future-time validation",
+        "Optional immutable expiration data in mapping entries and public snapshots",
+        "Composite deduplication that distinguishes omitted expiration and excludes expired matches",
+        "Locked redirect handling that distinguishes unknown, active, and expired mappings without deleting state",
+        "Preserved eight-character code generation, URL validation, collision retry, and non-expiring lifecycle behavior"
+      ],
+      "deliverable_roles": [],
+      "required_validations": [
+        {
+          "requirement_id": "TASK-001-VALIDATION-001",
+          "profile": "PYTHON_COMPILE"
+        }
+      ]
+    },
+    {
+      "task_id": "TASK-002",
+      "lineage_id": "46a19908-ff4b-5127-91bb-cb4b208b6150",
+      "source_key": "api_expiration_contract",
+      "title": "Integrate expiration into the HTTP API",
+      "description": "Incrementally update the existing HTTP service to distinguish omitted expiration from supplied values, pass expiration through creation, return the exact invalid-expiration and expired-URL contracts, conditionally serialize expiration only for expiring mappings, and preserve all unaffected routing and API behavior. Retain server.py as the genuine runnable service entry point.",
+      "task_type": "IMPLEMENTATION",
+      "materialization_policy": "REQUIRED",
+      "depends_on": [
+        "TASK-001"
+      ],
+      "requirement_refs": [
+        "FR-001",
+        "FR-004",
+        "FR-007",
+        "FR-008",
+        "FR-009",
+        "FR-015",
+        "FR-016",
+        "FR-017",
+        "NFR-001",
+        "NFR-004",
+        "NFR-006",
+        "CON-001",
+        "CON-002",
+        "CON-003",
+        "CON-004",
+        "CON-005",
+        "CON-006",
+        "CON-008",
+        "CON-009",
+        "CON-010",
+        "CON-011"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-001",
+        "AC-002",
+        "AC-003",
+        "AC-004",
+        "AC-005",
+        "AC-006",
+        "AC-007",
+        "AC-008",
+        "AC-009",
+        "AC-011",
+        "AC-012",
+        "AC-013",
+        "AC-014",
+        "AC-015",
+        "AC-016",
+        "AC-017"
+      ],
+      "risk_refs": [
+        "RISK-005",
+        "RISK-007",
+        "RISK-008",
+        "RISK-009"
+      ],
+      "ambiguity_refs": [],
+      "expected_outputs": [
+        "Updated server.py POST handling for optional expires_at with omission distinguished from explicit null",
+        "Exact HTTP 400 invalid_expiration response without state mutation",
+        "Exact HTTP 410 expired_url response without a Location header",
+        "Conditional mapping serialization that adds expires_at only to expiring mappings",
+        "Preserved runnable Python 3.12 standard-library HTTP service entry point and unaffected HTTP contracts"
+      ],
+      "deliverable_roles": [
+        "RUNNABLE_ENTRYPOINT"
+      ],
+      "required_validations": [
+        {
+          "requirement_id": "TASK-002-VALIDATION-001",
+          "profile": "PYTHON_COMPILE"
+        }
+      ]
+    },
+    {
+      "task_id": "TASK-003",
+      "lineage_id": "0bb6032c-04db-5e33-8bfa-b102f1309dc5",
+      "source_key": "expiration_regression_tests",
+      "title": "Add expiration and compatibility regression tests",
+      "description": "Extend the existing test suite with deterministic store and HTTP tests for strict expiration validation, boundary behavior, atomic redirect counting, analytics retention, composite deduplication, immutability, and conditional representations. Retain and exercise baseline regression coverage, including standard-library-only imports and unaffected non-expiring behavior.",
+      "task_type": "TEST",
+      "materialization_policy": "REQUIRED",
+      "depends_on": [
+        "TASK-001",
+        "TASK-002"
+      ],
+      "requirement_refs": [
+        "FR-001",
+        "FR-002",
+        "FR-003",
+        "FR-004",
+        "FR-005",
+        "FR-006",
+        "FR-007",
+        "FR-008",
+        "FR-009",
+        "FR-010",
+        "FR-011",
+        "FR-012",
+        "FR-013",
+        "FR-014",
+        "FR-015",
+        "FR-016",
+        "FR-017",
+        "FR-018",
+        "NFR-001",
+        "NFR-002",
+        "NFR-003",
+        "NFR-004",
+        "NFR-005",
+        "NFR-006",
+        "CON-001",
+        "CON-002",
+        "CON-003",
+        "CON-004",
+        "CON-005",
+        "CON-006",
+        "CON-007",
+        "CON-008",
+        "CON-009",
+        "CON-010",
+        "CON-011"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-001",
+        "AC-002",
+        "AC-003",
+        "AC-004",
+        "AC-005",
+        "AC-006",
+        "AC-007",
+        "AC-008",
+        "AC-009",
+        "AC-010",
+        "AC-011",
+        "AC-012",
+        "AC-013",
+        "AC-014",
+        "AC-015",
+        "AC-016",
+        "AC-017",
+        "AC-018",
+        "AC-019"
+      ],
+      "risk_refs": [
+        "RISK-001",
+        "RISK-002",
+        "RISK-003",
+        "RISK-005",
+        "RISK-006",
+        "RISK-007",
+        "RISK-008",
+        "RISK-009"
+      ],
+      "ambiguity_refs": [],
+      "expected_outputs": [
+        "Updated tests/test_url_shortener.py with deterministic current-time control",
+        "Store tests immediately before, exactly at, and immediately after expiration",
+        "API tests for accepted and rejected timestamp forms and exact error payloads",
+        "Tests for HTTP 302 versus HTTP 410 headers, bodies, analytics, and redirect counts",
+        "Tests for expiration-aware deduplication, independent mappings, retention, and immutability",
+        "Passing baseline regressions for URL handling, collisions, isolation, reset, malformed requests, routing, unknown codes, and standard-library-only imports"
+      ],
+      "deliverable_roles": [
+        "AUTOMATED_TESTS"
+      ],
+      "required_validations": [
+        {
+          "requirement_id": "TASK-003-VALIDATION-001",
+          "profile": "PYTHON_PYTEST"
+        }
+      ]
+    },
+    {
+      "task_id": "TASK-004",
+      "lineage_id": "b7f70699-3ccb-5eb2-bef1-a01bbcfd2474",
+      "source_key": "expiration_docs",
+      "title": "Update run and API documentation",
+      "description": "Update the root README.md while preserving its exact setup, run, test, and minimal usage guidance. Document the optional expiration request contract, conditional response schemas, exact validation and HTTP 410 errors, boundary and counting semantics, analytics availability, composite deduplication, immutability, retention, and unchanged process-local lifecycle.",
+      "task_type": "DOCUMENTATION",
+      "materialization_policy": "REQUIRED",
+      "depends_on": [
+        "TASK-002",
+        "TASK-003"
+      ],
+      "requirement_refs": [
+        "FR-001",
+        "FR-002",
+        "FR-003",
+        "FR-004",
+        "FR-005",
+        "FR-006",
+        "FR-007",
+        "FR-008",
+        "FR-009",
+        "FR-010",
+        "FR-011",
+        "FR-012",
+        "FR-013",
+        "FR-014",
+        "FR-015",
+        "FR-016",
+        "FR-017",
+        "FR-018",
+        "NFR-001",
+        "NFR-004",
+        "NFR-005",
+        "NFR-006",
+        "CON-002",
+        "CON-003",
+        "CON-004",
+        "CON-005",
+        "CON-006",
+        "CON-007",
+        "CON-008",
+        "CON-011"
+      ],
+      "acceptance_criteria_refs": [
+        "AC-020"
+      ],
+      "risk_refs": [
+        "RISK-004",
+        "RISK-005"
+      ],
+      "ambiguity_refs": [],
+      "expected_outputs": [
+        "Updated root README.md with exact Python 3.12 setup, service run, automated test, and minimal API usage instructions",
+        "Creation examples for both non-expiring and expiring mappings",
+        "Documented canonical expires_at syntax and exact invalid_expiration response",
+        "Documented expiration boundary, HTTP 410 response, absent Location header, and unchanged redirect count",
+        "Documented expired analytics availability, deduplication identity, immutability, retention, and process-reset lifecycle",
+        "Corrected prototype limitations without introducing persistence, cleanup, external services, or multi-process coordination"
+      ],
+      "deliverable_roles": [
+        "RUN_INSTRUCTIONS"
+      ],
+      "required_validations": []
+    }
+  ],
+  "delivery_policy": {
+    "mode": "RUNNABLE_PROJECT"
+  }
+}
