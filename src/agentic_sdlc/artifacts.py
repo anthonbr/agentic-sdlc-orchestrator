@@ -39,12 +39,16 @@ LEGACY_ARTIFACT_FILENAMES = (
 RELIABILITY_METRICS_FILENAME = "reliability_metrics.json"
 RELIABILITY_METRICS_SCHEMA_VERSION = "reliability-metrics-v1"
 RELIABILITY_SCENARIOS = (
-    ("greenfield", "demo-run", "artifacts/demo-run/"),
-    ("brownfield", "brownfield-demo-run", "artifacts/brownfield-demo-run/"),
+    ("greenfield", "demo-run", "sample_output/demo-run/"),
+    (
+        "brownfield",
+        "brownfield-demo-run",
+        "sample_output/brownfield-demo-run/",
+    ),
     (
         "ambiguous requirement",
         "ambiguity-demo-run",
-        "artifacts/ambiguity-demo-run/",
+        "sample_output/ambiguity-demo-run/",
     ),
 )
 

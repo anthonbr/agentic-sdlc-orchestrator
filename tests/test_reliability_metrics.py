@@ -224,8 +224,8 @@ def test_reviewer_artifact_is_byte_stable_and_reports_three_independent_runs(
     first = tmp_path / "first.json"
     second = tmp_path / "second.json"
 
-    write_reliability_metrics_artifact(REPOSITORY_ROOT / "artifacts", first)
-    write_reliability_metrics_artifact(REPOSITORY_ROOT / "artifacts", second)
+    write_reliability_metrics_artifact(REPOSITORY_ROOT / "sample_output", first)
+    write_reliability_metrics_artifact(REPOSITORY_ROOT / "sample_output", second)
 
     assert first.read_bytes() == second.read_bytes()
     artifact = json.loads(first.read_text())
@@ -236,9 +236,9 @@ def test_reviewer_artifact_is_byte_stable_and_reports_three_independent_runs(
         "ambiguous requirement",
     ]
     assert [run["evidence_root"] for run in artifact["runs"]] == [
-        "artifacts/demo-run/",
-        "artifacts/brownfield-demo-run/",
-        "artifacts/ambiguity-demo-run/",
+        "sample_output/demo-run/",
+        "sample_output/brownfield-demo-run/",
+        "sample_output/ambiguity-demo-run/",
     ]
     assert len(artifact["runs"]) == 3
     assert "generated_at" not in artifact

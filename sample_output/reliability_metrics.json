@@ -3,7 +3,7 @@
   "runs": [
     {
       "scenario": "greenfield",
-      "evidence_root": "artifacts/demo-run/",
+      "evidence_root": "sample_output/demo-run/",
       "metrics": {
         "terminal_run_status": "SUCCEEDED",
         "task_count": 5,
@@ -55,7 +55,7 @@
     },
     {
       "scenario": "brownfield",
-      "evidence_root": "artifacts/brownfield-demo-run/",
+      "evidence_root": "sample_output/brownfield-demo-run/",
       "metrics": {
         "terminal_run_status": "SUCCEEDED",
         "task_count": 5,
@@ -107,7 +107,7 @@
     },
     {
       "scenario": "ambiguous requirement",
-      "evidence_root": "artifacts/ambiguity-demo-run/",
+      "evidence_root": "sample_output/ambiguity-demo-run/",
       "metrics": {
         "terminal_run_status": "SUCCEEDED",
         "task_count": 4,

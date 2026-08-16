@@ -41,7 +41,7 @@ from tests.demo_url_shortener_project import (
 
 
 BROWNFIELD_RUN_ID = "deterministic-v05-brownfield-analytics-demo"
-BROWNFIELD_SOURCE_LABEL = "artifacts/demo-run/generated-project"
+BROWNFIELD_SOURCE_LABEL = "sample_output/demo-run/generated-project"
 BROWNFIELD_SOURCE_PATHS = (
     "README.md",
     "pyproject.toml",

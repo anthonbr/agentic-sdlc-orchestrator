@@ -45,7 +45,7 @@ from tests.demo_ambiguity_scenario import (
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
 BROWNFIELD_PROJECT = (
-    REPOSITORY_ROOT / "artifacts/brownfield-demo-run/enhanced-project"
+    REPOSITORY_ROOT / "sample_output/brownfield-demo-run/enhanced-project"
 )
 
 

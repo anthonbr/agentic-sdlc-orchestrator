@@ -57,7 +57,7 @@ from tests.demo_brownfield_scenario import (
 
 
 AMBIGUITY_RUN_ID = "deterministic-v06-ambiguity-expiration-demo"
-AMBIGUITY_SOURCE_LABEL = "artifacts/brownfield-demo-run/enhanced-project"
+AMBIGUITY_SOURCE_LABEL = "sample_output/brownfield-demo-run/enhanced-project"
 AMBIGUITY_RAW_REQUIREMENT = (
     "Enhance the URL shortener so shortened URLs automatically expire after a "
     "period of time."
@@ -1167,9 +1167,11 @@ def main() -> None:
     output_dir = (
         Path(sys.argv[1]).resolve()
         if len(sys.argv) > 1
-        else repository_root / "artifacts/ambiguity-demo-run"
+        else repository_root / "sample_output/ambiguity-demo-run"
     )
-    source_root = repository_root / "artifacts/brownfield-demo-run/enhanced-project"
+    source_root = (
+        repository_root / "sample_output/brownfield-demo-run/enhanced-project"
+    )
     with tempfile.TemporaryDirectory(prefix="agentic-sdlc-ambiguity-") as temporary:
         run_ambiguity_demo(
             Path(temporary),

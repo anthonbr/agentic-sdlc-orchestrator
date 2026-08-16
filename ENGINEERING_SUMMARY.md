@@ -22,9 +22,9 @@ The checked-in scenarios expose both the governed records and independently runn
 
 | Scenario | Engineering behavior demonstrated | Reviewer evidence and runnable product | Verified product tests |
 | --- | --- | --- | ---: |
-| Greenfield | Approved planning, bounded parallel execution, one governed retry, and transactional creation of a six-file URL shortener | [`artifacts/demo-run/`](artifacts/demo-run/) and [`generated-project/`](artifacts/demo-run/generated-project/) | 11 passed |
-| Brownfield | Bounded reasoning over an existing six-file codebase, parallel task reasoning, and four serialized, preimage-checked `MODIFY` transactions | [`artifacts/brownfield-demo-run/`](artifacts/brownfield-demo-run/) and [`enhanced-project/`](artifacts/brownfield-demo-run/enhanced-project/) | 18 passed |
-| Ambiguous requirement | Planning blocked until a human clarification establishes new requirement authority, followed by governed expiration work | [`artifacts/ambiguity-demo-run/`](artifacts/ambiguity-demo-run/) and [`expiration-project/`](artifacts/ambiguity-demo-run/expiration-project/) | 20 passed |
+| Greenfield | Approved planning, bounded parallel execution, one governed retry, and transactional creation of a six-file URL shortener | [`sample_output/demo-run/`](sample_output/demo-run/) and [`generated-project/`](sample_output/demo-run/generated-project/) | 11 passed |
+| Brownfield | Bounded reasoning over an existing six-file codebase, parallel task reasoning, and four serialized, preimage-checked `MODIFY` transactions | [`sample_output/brownfield-demo-run/`](sample_output/brownfield-demo-run/) and [`enhanced-project/`](sample_output/brownfield-demo-run/enhanced-project/) | 18 passed |
+| Ambiguous requirement | Planning blocked until a human clarification establishes new requirement authority, followed by governed expiration work | [`sample_output/ambiguity-demo-run/`](sample_output/ambiguity-demo-run/) and [`expiration-project/`](sample_output/ambiguity-demo-run/expiration-project/) | 20 passed |
 
 The ambiguity scenario begins with a request to make shortened URLs expire “after a period of time.” Revision 0 records unresolved TTL, timing, expiration-response, scope, and persistence decisions. Deterministic policy marks it `BLOCKED`; the reviewer can only request changes or reject, the planner receives zero calls, and no approved specification or TaskGraph exists. A human `REQUEST_CHANGES` decision supplies fixed 24-hour, in-memory semantics and 404 behavior. Immutable Revision 1 becomes `READY`, is approved, produces the authoritative specification, and then produces the first authorized TaskGraph.
 
@@ -79,8 +79,9 @@ closed without a host-pytest fallback.
 
 Each reviewer bundle retains the approved specification, requirement decisions, TaskGraph, execution attempts/results, engineering artifacts, workspace mutation records, and summary needed to inspect the demonstrated path. Within a run, frozen records and additive histories provide immutable-by-contract evidence. The default LangGraph checkpoint is process-local, and exported JSON and Markdown are ordinary files, not a tamper-evident durable event store. The evidence is therefore strong for deterministic reconstruction and review within the prototype's trust model, but it is not a claim of production proof or durable audit infrastructure.
 
-Artifact ownership is explicit: `artifacts/` remains curated checked-in evaluator
-evidence, live CLI evidence is isolated by the governed identity under
+Artifact ownership is explicit: `sample_output/` remains curated checked-in
+reviewer material rather than live or authoritative execution history. Live CLI
+and Streamlit evidence is isolated by the governed identity under
 `runs/<run-id>/sdlc-artifacts/`, and successful durable delivery packages are
 published under `projects/`. A deterministic terminal manifest indexes the live
 bundle's actual relative files, sizes, and SHA-256 values without claiming signing
@@ -103,7 +104,7 @@ Reliability behavior is fail-closed and bounded. Task execution permits at most 
 
 For eligible mutation failures, the runtime restores owned targets in reverse order, verifies rollback against the prior snapshot, and records either `ROLLED_BACK` or `ROLLBACK_FAILED`. Inability to prove restoration is not accepted as success: workspace integrity becomes `UNPROVABLE`, unsettled work is aborted, and the control graph takes a hard safe stop.
 
-[`artifacts/reliability_metrics.json`](artifacts/reliability_metrics.json) is a deterministic, read-only projection over the three scenarios' retained execution and workspace evidence. It reports supported structural measures such as task and attempt outcomes, retry frequency, mutation outcomes, rollback counts, and safe-stop status. MTTR and end-to-end latency are both `NOT_MEASURED` because the evidence model does not retain authoritative incident-to-recovery or elapsed-time boundaries. File timestamps are not substituted for missing telemetry.
+[`sample_output/reliability_metrics.json`](sample_output/reliability_metrics.json) is a deterministic, read-only projection over the three scenarios' retained execution and workspace evidence. It reports supported structural measures such as task and attempt outcomes, retry frequency, mutation outcomes, rollback counts, and safe-stop status. MTTR and end-to-end latency are both `NOT_MEASURED` because the evidence model does not retain authoritative incident-to-recovery or elapsed-time boundaries. File timestamps are not substituted for missing telemetry.
 
 ## 7. Security and Change-Control Guardrails
 
@@ -150,14 +151,14 @@ MTTR and end-to-end latency remain unmeasured. These are deliberate evidence bou
 | Fast repository entry point | [README.md](README.md) |
 | Detailed architecture and control mechanics | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Engineering rationale and readiness | [ENGINEERING_SUMMARY.md](ENGINEERING_SUMMARY.md) |
-| Greenfield reviewer bundle | [`artifacts/demo-run/`](artifacts/demo-run/) |
-| Greenfield runnable product | [`artifacts/demo-run/generated-project/`](artifacts/demo-run/generated-project/) |
-| Brownfield reviewer bundle | [`artifacts/brownfield-demo-run/`](artifacts/brownfield-demo-run/) |
-| Brownfield runnable product | [`artifacts/brownfield-demo-run/enhanced-project/`](artifacts/brownfield-demo-run/enhanced-project/) |
-| Ambiguity reviewer bundle | [`artifacts/ambiguity-demo-run/`](artifacts/ambiguity-demo-run/) |
-| Ambiguity authority transition | [`artifacts/ambiguity-demo-run/ambiguity_resolution.json`](artifacts/ambiguity-demo-run/ambiguity_resolution.json) |
-| Ambiguity runnable product | [`artifacts/ambiguity-demo-run/expiration-project/`](artifacts/ambiguity-demo-run/expiration-project/) |
-| Cross-scenario reliability projection | [`artifacts/reliability_metrics.json`](artifacts/reliability_metrics.json) |
+| Greenfield reviewer bundle | [`sample_output/demo-run/`](sample_output/demo-run/) |
+| Greenfield runnable product | [`sample_output/demo-run/generated-project/`](sample_output/demo-run/generated-project/) |
+| Brownfield reviewer bundle | [`sample_output/brownfield-demo-run/`](sample_output/brownfield-demo-run/) |
+| Brownfield runnable product | [`sample_output/brownfield-demo-run/enhanced-project/`](sample_output/brownfield-demo-run/enhanced-project/) |
+| Ambiguity reviewer bundle | [`sample_output/ambiguity-demo-run/`](sample_output/ambiguity-demo-run/) |
+| Ambiguity authority transition | [`sample_output/ambiguity-demo-run/ambiguity_resolution.json`](sample_output/ambiguity-demo-run/ambiguity_resolution.json) |
+| Ambiguity runnable product | [`sample_output/ambiguity-demo-run/expiration-project/`](sample_output/ambiguity-demo-run/expiration-project/) |
+| Cross-scenario reliability projection | [`sample_output/reliability_metrics.json`](sample_output/reliability_metrics.json) |
 
 The most efficient review path is each bundle's `summary.md`, followed by its requirement analysis, approved specification, TaskGraph, task-execution evidence, and workspace-execution evidence where a claim needs deeper verification.
 

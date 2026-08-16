@@ -53,7 +53,7 @@ from tests.demo_brownfield_scenario import (
 
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
-GREENFIELD_PROJECT = REPOSITORY_ROOT / "artifacts/demo-run/generated-project"
+GREENFIELD_PROJECT = REPOSITORY_ROOT / "sample_output/demo-run/generated-project"
 FIXED_TIME = datetime.fromisoformat("2026-08-10T12:00:00+00:00")
 
 

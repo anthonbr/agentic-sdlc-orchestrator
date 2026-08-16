@@ -180,23 +180,26 @@ For the quickest evaluation path, use these documents and retained evidence:
 | --- | --- |
 | Evaluate and judge: engineering approach, rationale, evidence, decisions, risks, trade-offs, assumptions, limitations, and readiness | [Engineering summary](ENGINEERING_SUMMARY.md) |
 | Inspect and verify: detailed architecture, authority model, orchestration, TaskGraph execution, mutation/rollback, and reliability mechanics | [Architecture](ARCHITECTURE.md) |
-| Inspect cross-scenario reliability evidence | [`artifacts/reliability_metrics.json`](artifacts/reliability_metrics.json) |
+| Inspect cross-scenario reliability evidence | [`sample_output/reliability_metrics.json`](sample_output/reliability_metrics.json) |
 
 | Scenario | Reviewer bundle | Runnable product | Verified product validation |
 | --- | --- | --- | --- |
-| Greenfield | [`artifacts/demo-run/`](artifacts/demo-run/) | [`generated-project/`](artifacts/demo-run/generated-project/) | 11 tests passed |
-| Brownfield | [`artifacts/brownfield-demo-run/`](artifacts/brownfield-demo-run/) | [`enhanced-project/`](artifacts/brownfield-demo-run/enhanced-project/) | 18 tests passed |
-| Ambiguous requirement | [`artifacts/ambiguity-demo-run/`](artifacts/ambiguity-demo-run/) | [`expiration-project/`](artifacts/ambiguity-demo-run/expiration-project/) | 20 tests passed |
+| Greenfield | [`sample_output/demo-run/`](sample_output/demo-run/) | [`generated-project/`](sample_output/demo-run/generated-project/) | 11 tests passed |
+| Brownfield | [`sample_output/brownfield-demo-run/`](sample_output/brownfield-demo-run/) | [`enhanced-project/`](sample_output/brownfield-demo-run/enhanced-project/) | 18 tests passed |
+| Ambiguous requirement | [`sample_output/ambiguity-demo-run/`](sample_output/ambiguity-demo-run/) | [`expiration-project/`](sample_output/ambiguity-demo-run/expiration-project/) | 20 tests passed |
 
-The `artifacts/` tree is curated, checked-in evaluator/reference evidence. Normal
-live CLI runs do not rewrite it: per-run SDLC evidence is generated under the
-ignored `runs/` tree, while successful durable delivery packages remain under the
-separate ignored `projects/` tree. Each successful package contains an
-application-controlled, verified `sdlc-artifacts/` copy of its retained run
-evidence. In Git ownership terms, `artifacts/` is tracked curated evidence,
-`projects/` is ignored durable generated output, and `runs/` is ignored live-run
-output. `.gitignore` prevents new untracked files from being added implicitly; it
-does not retroactively untrack files that are already committed.
+Repository storage and evidence ownership are intentionally distinct:
+
+| Location | Purpose and ownership |
+| --- | --- |
+| `sample_output/` | Git-tracked, curated representative output for repository reviewers. It is reference material, not a live runtime destination or authoritative execution history; its frozen scenarios need not come from the latest execution. Normal CLI and Streamlit runs must never write here. |
+| `runs/<run-id>/sdlc-artifacts/` | Ignored, application-owned live execution history and the authoritative retained evidence for that governed run. |
+| `projects/<project-name>/` | Ignored, durable generated or brownfield-evolved product publication. |
+| `projects/<project-name>/sdlc-artifacts/` | Application-controlled, manifest-verified evidence copy published with a successful product; the original run evidence remains retained under `runs/`. |
+
+Renaming the checked-in sample tree does not change execution authority, evidence
+authority, runtime storage, or publication semantics. `.gitignore` continues to
+ignore `runs/` and `projects/`; it does not ignore tracked `sample_output/`.
 
 The orchestrator materializes runnable application code and tests in an isolated
 workspace, but deliberately does not execute generated code as part of its exit
@@ -919,12 +922,12 @@ and validation/mutation evidence is in `task_execution.json` and
 
 | Scenario | Demonstrates | Reviewer evidence | Runnable product |
 | --- | --- | --- | --- |
-| Greenfield | Governed planning and transactional creation of a URL shortener | [`artifacts/demo-run/`](artifacts/demo-run/), especially [`summary.md`](artifacts/demo-run/summary.md) and [`task_graph.md`](artifacts/demo-run/task_graph.md) | [`generated-project/`](artifacts/demo-run/generated-project/) |
-| Brownfield | Bounded repository reasoning and a governed analytics enhancement | [`artifacts/brownfield-demo-run/`](artifacts/brownfield-demo-run/), especially [`summary.md`](artifacts/brownfield-demo-run/summary.md) and [`workspace_seed.json`](artifacts/brownfield-demo-run/workspace_seed.json) | [`enhanced-project/`](artifacts/brownfield-demo-run/enhanced-project/) |
-| Ambiguous | Planning blocked pending human clarification, revised authority, then governed expiration work | [`artifacts/ambiguity-demo-run/`](artifacts/ambiguity-demo-run/), especially [`summary.md`](artifacts/ambiguity-demo-run/summary.md) and [`ambiguity_resolution.json`](artifacts/ambiguity-demo-run/ambiguity_resolution.json) | [`expiration-project/`](artifacts/ambiguity-demo-run/expiration-project/) |
+| Greenfield | Governed planning and transactional creation of a URL shortener | [`sample_output/demo-run/`](sample_output/demo-run/), especially [`summary.md`](sample_output/demo-run/summary.md) and [`task_graph.md`](sample_output/demo-run/task_graph.md) | [`generated-project/`](sample_output/demo-run/generated-project/) |
+| Brownfield | Bounded repository reasoning and a governed analytics enhancement | [`sample_output/brownfield-demo-run/`](sample_output/brownfield-demo-run/), especially [`summary.md`](sample_output/brownfield-demo-run/summary.md) and [`workspace_seed.json`](sample_output/brownfield-demo-run/workspace_seed.json) | [`enhanced-project/`](sample_output/brownfield-demo-run/enhanced-project/) |
+| Ambiguous | Planning blocked pending human clarification, revised authority, then governed expiration work | [`sample_output/ambiguity-demo-run/`](sample_output/ambiguity-demo-run/), especially [`summary.md`](sample_output/ambiguity-demo-run/summary.md) and [`ambiguity_resolution.json`](sample_output/ambiguity-demo-run/ambiguity_resolution.json) | [`expiration-project/`](sample_output/ambiguity-demo-run/expiration-project/) |
 
 Deterministic per-run reliability metrics for these scenarios are indexed in
-[`artifacts/reliability_metrics.json`](artifacts/reliability_metrics.json). They
+[`sample_output/reliability_metrics.json`](sample_output/reliability_metrics.json). They
 summarize existing immutable execution and mutation evidence. MTTR and end-to-end
 latency are explicitly `NOT_MEASURED` because the deterministic evidence does not
 preserve authoritative elapsed-time boundaries.
@@ -946,7 +949,7 @@ These deterministic checks use scripted clients and require no API key or networ
 .venv/bin/pytest -q tests/test_brownfield_demo.py
 
 # Ambiguity checked-in regeneration and complete scenario checks
-.venv/bin/python -m tests.demo_ambiguity_scenario artifacts/ambiguity-demo-run
+.venv/bin/python -m tests.demo_ambiguity_scenario sample_output/ambiguity-demo-run
 .venv/bin/pytest -q tests/test_ambiguity_demo.py
 ```
 
@@ -1111,7 +1114,7 @@ materialization/change-set validations, conflict evidence, mutation results,
 task-attempt exit decisions, and final project-readiness evidence;
 `engineering_artifacts.json` contains immutable
 application-canonicalized outputs, including failed-validation output for audit.
-The checked-in `artifacts/demo-run/` snapshot is generated network-free through the
+The checked-in `sample_output/demo-run/` snapshot is generated network-free through the
 actual governed workflow using scripted requirement analysis, task planning, and a
 concurrency-safe deterministic task executor with a fixed demonstration timestamp.
 It includes an actual two-task executor wave, one controlled retryable local
@@ -1120,7 +1123,7 @@ materialization, and authoritative snapshot progression without a provider call.
 The materialized outputs form a real dependency-free Python URL-shortener project:
 
 ```text
-artifacts/demo-run/generated-project/
+sample_output/demo-run/generated-project/
 ├── pyproject.toml
 ├── README.md
 ├── src/url_shortener/
@@ -1156,7 +1159,7 @@ Reviewers and development tooling may still validate the exported copy manually,
 outside workflow authority:
 
 ```bash
-cd artifacts/demo-run/generated-project
+cd sample_output/demo-run/generated-project
 PYTHONPATH=src python -m unittest discover -s tests -v
 PYTHONPATH=src python -m url_shortener.app
 ```
@@ -1165,18 +1168,18 @@ The generated application uses the standard library, process-local in-memory
 storage, a thin WSGI HTTP adapter, and executable `unittest` coverage. A live run's
 `runs/<run-id>/sdlc-artifacts/workflow_diagram.png` documents the static LangGraph
 control plane, not the per-run engineering TaskGraph; the existing copy under
-`artifacts/` remains curated reference evidence.
+`sample_output/` remains curated reference evidence.
 
 ### Deterministic governed brownfield analytics demo
 
-`artifacts/brownfield-demo-run/` is a separate network-free scenario that treats
+`sample_output/brownfield-demo-run/` is a separate network-free scenario that treats
 the six-file greenfield reviewer export as an approved pre-existing codebase. A
 narrow bootstrap helper copies only an explicit manifest of regular files into a
 new, empty, factory-created isolated workspace without following symlinks. It
 records the logical source root, source and seeded SHA-256 values, and the derived
 authoritative baseline snapshot. This bootstrap is scenario preparation before the
 governed session begins; it is not an agent-authored change set and never modifies
-`artifacts/demo-run/generated-project/`.
+`sample_output/demo-run/generated-project/`.
 
 The approved five-task graph first runs a `FORBIDDEN` impact analysis against five
 explicit repository files. Parallel REQUIRED implementation tasks then modify the
@@ -1194,7 +1197,7 @@ preimages, verified postimages, and authoritative snapshot progression.
 execution, workspace, artifact, and summary files retain full lineage.
 
 After verified success, deterministic demo tooling exports the final six-file state
-to `artifacts/brownfield-demo-run/enhanced-project/`. That reviewer copy matches the
+to `sample_output/brownfield-demo-run/enhanced-project/`. That reviewer copy matches the
 final authoritative snapshot; `pyproject.toml` and `src/url_shortener/__init__.py`
 remain byte-identical to the greenfield baseline. Generated tests and analytics
 smoke checks are executed only manually by development/evaluation tooling, never by
@@ -1204,7 +1207,7 @@ repository-copy capability.
 
 ### Deterministic governed ambiguity-resolution demo
 
-`artifacts/ambiguity-demo-run/` is the third network-free reviewer scenario. It
+`sample_output/ambiguity-demo-run/` is the third network-free reviewer scenario. It
 seeds the verified V0.5 brownfield analytics export, then submits the intentionally
 underspecified requirement: “Enhance the URL shortener so shortened URLs
 automatically expire after a period of time.” Scripted Revision 0 records six
@@ -1234,7 +1237,7 @@ Regenerate and inspect the evidence without an API key or network access:
 ```bash
 .venv/bin/python -m tests.demo_ambiguity_scenario
 .venv/bin/pytest -q tests/test_ambiguity_demo.py
-cd artifacts/ambiguity-demo-run/expiration-project
+cd sample_output/ambiguity-demo-run/expiration-project
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
