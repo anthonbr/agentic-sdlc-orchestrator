@@ -15,6 +15,11 @@ from agentic_sdlc.reliability_metrics import (
 )
 from agentic_sdlc.state import ApprovalEvent, TaskGraphData, WorkflowState
 from agentic_sdlc.task_execution import TaskGraphExecutionState
+from agentic_sdlc.traceability_artifacts import (
+    REQUIREMENT_TRACEABILITY_JSON_FILENAME,
+    REQUIREMENT_TRACEABILITY_MARKDOWN_FILENAME,
+    write_requirement_traceability_artifacts,
+)
 from agentic_sdlc.workspace_integration_contracts import TaskAttemptExitDecision
 from agentic_sdlc.workspace_mutation import WorkspaceMutationResult
 
@@ -29,6 +34,8 @@ ARTIFACT_FILENAMES = (
     "workspace_execution.json",
     "engineering_artifacts.json",
     "summary.md",
+    REQUIREMENT_TRACEABILITY_JSON_FILENAME,
+    REQUIREMENT_TRACEABILITY_MARKDOWN_FILENAME,
 )
 LEGACY_ARTIFACT_FILENAMES = (
     "architecture.md",
@@ -116,6 +123,8 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
     paths["summary.md"].write_text(
         _summary_markdown(state, generated), encoding="utf-8"
     )
+    if is_success:
+        write_requirement_traceability_artifacts(state, output_dir)
     return [paths[filename] for filename in generated]
 
 

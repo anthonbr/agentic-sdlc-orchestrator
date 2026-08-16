@@ -172,6 +172,30 @@ syntax/bytecode validity only. Pytest validation provisions governed dependencie
 and executes generated tests inside a disposable container; neither profile grants
 Git promotion, CI/CD, deployment, or arbitrary-command authority.
 
+For a terminal run, Streamlit now presents requirement-to-code traceability as a
+deterministic, read-only projection over that existing authority. Each approved
+FR, NFR, CON, and AC item retains its explicit TaskGraph references and any exact
+final-attempt artifact, validated materialization target, governed validation, and
+immutable evidence joins. `VERIFIED`, `UNVERIFIED`, and `NOT_IMPLEMENTED` are
+conservative derived display statuses, not workflow decisions. Missing joins are
+shown as gaps rather than inferred from task titles, logical artifact names,
+filenames, test prose, or semantic similarity. Streamlit explains the three
+statuses in plain language, shows files changed and validation performed first,
+and retains the exact artifact, request, attempt, mutation, snapshot, policy, and
+validation identifiers under technical evidence. It gains no execution, mutation,
+approval, validation, or publication authority.
+
+For a successful terminal run, the application serializes that same projection
+before publication as `requirement_traceability.json` and
+`requirement_traceability.md` under `runs/<run-id>/sdlc-artifacts/`. Both files say
+explicitly that they are deterministic derived, non-authoritative reports. The
+normal manifest binds their hashes and sizes, and verified publication copies them
+with the rest of the evidence into `projects/<project-name>/sdlc-artifacts/`.
+Because the reports are created before export, they record readiness and the final
+authoritative workspace snapshot but do not claim that publication has already
+succeeded. Existing governed records remain the authority, and missing links stay
+missing in both formats.
+
 ## Evaluator guide
 
 For the quickest evaluation path, use these documents and retained evidence:
@@ -1143,15 +1167,24 @@ contains the bounded brownfield impact analysis; task, mutation, validation,
 readiness, and publication evidence remains in the normal artifact set. V18 does
 not overwrite V17.
 
-Both copied products are runnable from their curated roots without changing their
-source:
+Both copied products require Python 3.12+ and are runnable from their curated
+roots without changing their source. The compatibility requirement does not imply
+an executable literally named `python3.12`:
 
 ```bash
 cd sample_output/url-shortener-v17
-python3.12 -m unittest discover -s tests -p 'test_*.py'
+python3 --version
+python3 -m venv .venv
+source .venv/bin/activate
+python -m unittest discover -s tests -p 'test_*.py'
+deactivate
 
 cd ../url-shortener-v18-expiration
-python3.12 -m unittest discover -s tests -p 'test_*.py'
+python3 --version
+python3 -m venv .venv
+source .venv/bin/activate
+python -m unittest discover -s tests -p 'test_*.py'
+deactivate
 ```
 
 The observed suites pass 13 and 20 tests respectively. Each copied product and its

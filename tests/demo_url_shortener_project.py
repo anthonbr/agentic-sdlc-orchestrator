@@ -431,9 +431,22 @@ Storage is deliberately in-memory and is lost when the process exits. URL
 expiration remains unresolved by the approved specification and is not
 implemented.
 
-## Run
+## Requirements
 
-Python 3.11 or newer is required. No third-party runtime dependency is needed.
+Python 3.11+ is required. No third-party runtime dependency is needed.
+
+## Setup
+
+```bash
+python3 --version
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+No package installation is required. After activation, use `python` for the
+application and test commands below.
+
+## Run
 
 ```bash
 PYTHONPATH=src python -m url_shortener.app
