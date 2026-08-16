@@ -24,6 +24,16 @@ from agentic_sdlc.brownfield_context import (
     BrownfieldCodebaseContextError,
     build_brownfield_codebase_context,
 )
+from agentic_sdlc.clarification_draft import (
+    ClarificationDraftRequest,
+    ClarificationDraftResult,
+    clarification_draft_context_identity,
+)
+from agentic_sdlc.human_governance_history import (
+    HUMAN_GOVERNANCE_HISTORY_FILENAME,
+    HumanGovernanceHistoryError,
+    write_human_governance_history,
+)
 from agentic_sdlc.project_export import (
     ProjectNameError,
     ProjectExportContractError,
@@ -35,6 +45,14 @@ from agentic_sdlc.project_export import (
 from agentic_sdlc.run_artifacts import (
     LiveRunArtifactBundle,
     write_sdlc_artifact_manifest,
+)
+from agentic_sdlc.run_events import (
+    RunEventDraft,
+    RunEventError,
+    RunEventLog,
+    build_authoritative_run_event_drafts,
+    build_clarification_draft_generated_event,
+    build_clarification_draft_requested_event,
 )
 from agentic_sdlc.state import ApprovalDecision, ApprovalResponse, WorkflowState
 from agentic_sdlc.task_execution_progress import (
@@ -191,6 +209,7 @@ class WorkflowFactory(Protocol):
 
 RunIdFactory = Callable[[str], str]
 WorkspaceRuntimeFactory = Callable[[], GovernedWorkspaceRuntime]
+RunEventLogFactory = Callable[[LiveRunArtifactBundle], RunEventLog]
 
 
 class WorkflowDiagramWriter(Protocol):
@@ -210,6 +229,7 @@ class _GovernedRunContext:
     workflow: CompiledStateGraph
     workspace_runtime: GovernedWorkspaceRuntime
     artifact_bundle: LiveRunArtifactBundle
+    event_log: RunEventLog
     progress_reporter: TaskExecutionProgressReporter
     requested_project_name: str | None
     workflow_state: WorkflowState
@@ -243,6 +263,7 @@ class GovernedRunService:
         workflow_diagram_writer: WorkflowDiagramWriter | None = None,
         project_exporter: ProjectExporter | None = None,
         published_project_catalog: PublishedProjectCatalog | None = None,
+        run_event_log_factory: RunEventLogFactory | None = None,
     ) -> None:
         self._repository_root = Path(repository_root).resolve()
         self._workflow_factory = workflow_factory or build_workflow
@@ -258,6 +279,7 @@ class GovernedRunService:
             published_project_catalog
             or PublishedProjectCatalog(self._repository_root)
         )
+        self._run_event_log_factory = run_event_log_factory or RunEventLog
         self._runs: dict[str, _GovernedRunContext] = {}
         self._runs_lock = Lock()
 
@@ -327,6 +349,7 @@ class GovernedRunService:
             workflow=workflow,
             workspace_runtime=workspace_runtime,
             artifact_bundle=artifact_bundle,
+            event_log=self._run_event_log_factory(artifact_bundle),
             progress_reporter=active_reporter,
             requested_project_name=request.requested_project_name,
             workflow_state=initial_state,
@@ -487,7 +510,88 @@ class GovernedRunService:
 
         context = self._context_for(run_id)
         with context.lock:
+            self._reconcile_run_events_locked(context)
             return _snapshot_from_context(context)
+
+    def record_clarification_draft_requested(
+        self,
+        request: ClarificationDraftRequest,
+        *,
+        generation_id: str,
+        context_identity: str,
+        model_name: str,
+    ) -> bool:
+        """Observe a current human assistance request without gaining authority."""
+
+        context = self._context_for(request.run_id)
+        with context.lock:
+            if not _clarification_context_is_current(
+                context,
+                request,
+                context_identity=context_identity,
+            ):
+                return False
+            try:
+                draft = build_clarification_draft_requested_event(
+                    request,
+                    generation_id=generation_id,
+                    context_identity=context_identity,
+                    model_name=model_name,
+                )
+            except (TypeError, ValueError) as error:
+                _append_warning_once(
+                    context,
+                    _event_warning("clarification request", error),
+                )
+                return False
+            self._append_run_event_locked(context, draft)
+            # Audit persistence is observational. A storage failure must not turn
+            # optional assistance into workflow or UI authority.
+            return True
+
+    def record_clarification_draft_generated(
+        self,
+        request: ClarificationDraftRequest,
+        result: ClarificationDraftResult,
+        *,
+        generation_id: str,
+        context_identity: str,
+        model_name: str,
+    ) -> bool:
+        """Observe one current AI draft becoming available for human review."""
+
+        context = self._context_for(request.run_id)
+        with context.lock:
+            if not _clarification_context_is_current(
+                context,
+                request,
+                context_identity=context_identity,
+            ):
+                return False
+            try:
+                requested = build_clarification_draft_requested_event(
+                    request,
+                    generation_id=generation_id,
+                    context_identity=context_identity,
+                    model_name=model_name,
+                )
+                generated = build_clarification_draft_generated_event(
+                    request,
+                    result,
+                    generation_id=generation_id,
+                    context_identity=context_identity,
+                    model_name=model_name,
+                )
+            except (TypeError, ValueError) as error:
+                _append_warning_once(
+                    context,
+                    _event_warning("clarification generation", error),
+                )
+                return False
+            if not self._append_run_event_locked(context, requested):
+                return True
+            self._append_run_event_locked(context, generated)
+            return True
 
     def _context_for(self, run_id: str) -> _GovernedRunContext:
         with self._runs_lock:
@@ -524,6 +628,7 @@ class GovernedRunService:
                 context.gate_token = None
         try:
             with context.lock:
+                self._reconcile_run_events_locked(context)
                 self._finalize_terminal_run(context)
         finally:
             with context.lock:
@@ -538,6 +643,7 @@ class GovernedRunService:
 
         workflow_status = state.get("workflow_status", "unknown")
         if workflow_status in {"success", "safe_stopped"}:
+            self._write_human_governance_history_locked(context)
             try:
                 context.manifest_path = write_sdlc_artifact_manifest(
                     state,
@@ -570,6 +676,57 @@ class GovernedRunService:
 
         context.terminal_finalized = True
 
+    def _reconcile_run_events_locked(self, context: _GovernedRunContext) -> None:
+        """Repair reconstructible observations from authoritative state."""
+
+        try:
+            drafts = build_authoritative_run_event_drafts(context.workflow_state)
+        except (TypeError, ValueError, RunEventError) as error:
+            _append_warning_once(
+                context,
+                _event_warning("semantic run-event reconciliation", error),
+            )
+            return
+        for draft in drafts:
+            if not self._append_run_event_locked(context, draft):
+                return
+
+    def _append_run_event_locked(
+        self,
+        context: _GovernedRunContext,
+        draft: RunEventDraft,
+    ) -> bool:
+        try:
+            context.event_log.append(draft)
+        except (OSError, RunEventError, TypeError, ValueError) as error:
+            _append_warning_once(
+                context,
+                _event_warning("semantic run-event append", error),
+            )
+            return False
+        return True
+
+    def _write_human_governance_history_locked(
+        self,
+        context: _GovernedRunContext,
+    ) -> None:
+        path = (
+            context.artifact_bundle.artifact_dir
+            / HUMAN_GOVERNANCE_HISTORY_FILENAME
+        )
+        try:
+            write_human_governance_history(
+                context.workflow_state,
+                context.event_log,
+                context.artifact_bundle.artifact_dir,
+            )
+        except (HumanGovernanceHistoryError, OSError, RunEventError) as error:
+            path.unlink(missing_ok=True)
+            _append_warning_once(
+                context,
+                _event_warning("human governance history", error),
+            )
+
 
 def write_workflow_diagram(
     output_path: Path,
@@ -587,6 +744,50 @@ def write_workflow_diagram(
 
 def _default_run_id(command: str) -> str:
     return f"{command}-{uuid4().hex}"
+
+
+def _clarification_context_is_current(
+    context: _GovernedRunContext,
+    request: ClarificationDraftRequest,
+    *,
+    context_identity: str,
+) -> bool:
+    """Fail closed unless assistance still belongs to the active analysis gate."""
+
+    if context.executing or context.terminal_finalized:
+        return False
+    try:
+        gate = _human_gate_from_state(
+            context.workflow_state,
+            gate_token=context.gate_token,
+        )
+    except GovernedRunLifecycleError:
+        return False
+    if (
+        gate is None
+        or gate.stage != "requirement_analysis_review"
+        or gate.gate_token != request.gate_token
+        or request.analysis_revision
+        != context.workflow_state.get("requirement_analysis_revision_count")
+        or clarification_draft_context_identity(request) != context_identity
+    ):
+        return False
+    current_analysis = context.workflow_state.get("requirement_analysis")
+    current_readiness = context.workflow_state.get("requirement_planning_readiness")
+    return (
+        request.requirement_analysis.model_dump(mode="json") == current_analysis
+        and request.planning_readiness.model_dump(mode="json") == current_readiness
+    )
+
+
+def _event_warning(label: str, error: Exception) -> str:
+    detail = str(error).splitlines()[0] or type(error).__name__
+    return f"{label} was not fully retained: {detail}"
+
+
+def _append_warning_once(context: _GovernedRunContext, warning: str) -> None:
+    if warning not in context.warnings:
+        context.warnings.append(warning)
 
 
 def _snapshot_from_context(context: _GovernedRunContext) -> GovernedRunSnapshot:

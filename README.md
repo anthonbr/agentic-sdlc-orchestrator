@@ -74,6 +74,9 @@ projects/<project-name>/
     ├── task_execution.json
     ├── workspace_execution.json
     ├── engineering_artifacts.json
+    ├── requirement_traceability.json
+    ├── requirement_traceability.md
+    ├── human_governance_history.md
     ├── workflow_diagram.png
     └── summary.md
 ```
@@ -196,6 +199,22 @@ authoritative workspace snapshot but do not claim that publication has already
 succeeded. Existing governed records remain the authority, and missing links stay
 missing in both formats.
 
+Each governed application run also retains a semantic operational audit stream at
+`runs/<run-id>/run-events.jsonl`. Its append order records meaningful human input,
+human governance decisions, explicitly non-authoritative AI clarification
+assistance, and automated consequences such as verified brownfield provenance.
+It does not record generic UI interaction, reconstruct workflow state, or grant
+authority. Human decisions and feedback remain authoritative in the governed
+state histories; AI-generated clarification remains a draft for human review.
+
+At terminal finalization, the application renders
+`human_governance_history.md` from the validated event stream and those existing
+authoritative histories. This evaluator-oriented report is derived and
+non-authoritative. Unlike the live append-only JSONL, it is included in the normal
+artifact manifest and copied through verified project publication. Audit logging
+failure cannot roll back an accepted governance transition; later inspection can
+idempotently reconcile events that are reconstructible from authoritative state.
+
 ## Evaluator guide
 
 For the quickest evaluation path, use these documents and retained evidence:
@@ -217,6 +236,7 @@ Repository storage and evidence ownership are intentionally distinct:
 | Location | Purpose and ownership |
 | --- | --- |
 | `sample_output/` | Git-tracked, curated representative output for repository reviewers. It is reference material, not a live runtime destination or authoritative execution history; its frozen scenarios need not come from the latest execution. Normal CLI and Streamlit runs must never write here. |
+| `runs/<run-id>/run-events.jsonl` | Ignored, application-owned append-only semantic operational audit stream. Sequence establishes per-run chronology. It is observational, not workflow authority, and intentionally remains outside the frozen artifact manifest. |
 | `runs/<run-id>/sdlc-artifacts/` | Ignored, application-owned live execution history and the authoritative retained evidence for that governed run. |
 | `projects/<project-name>/` | Ignored, durable generated or brownfield-evolved product publication. |
 | `projects/<project-name>/sdlc-artifacts/` | Application-controlled, manifest-verified evidence copy published with a successful product; the original run evidence remains retained under `runs/`. |
@@ -1090,6 +1110,7 @@ bundle. A successful run is written under:
 ```text
 runs/
 └── demo-<uuid>/
+    ├── run-events.jsonl
     └── sdlc-artifacts/
         ├── manifest.json
         ├── requirements.json
@@ -1100,6 +1121,9 @@ runs/
         ├── task_execution.json
         ├── workspace_execution.json
         ├── engineering_artifacts.json
+        ├── requirement_traceability.json
+        ├── requirement_traceability.md
+        ├── human_governance_history.md
         ├── workflow_diagram.png
         └── summary.md
 ```
@@ -1110,6 +1134,10 @@ the workflow diagram when rendering succeeded. Diagram failure remains non-fatal
 and produces no placeholder file. The deterministic manifest binds the governed
 run ID and terminal metadata to sorted bundle-relative file paths, byte sizes, and
 SHA-256 hashes; it is an integrity index, not a signature or tamper-proof store.
+The sibling `run-events.jsonl` is an append-only operational audit record and is
+intentionally not manifest-bound. The derived `human_governance_history.md` report
+inside `sdlc-artifacts/` is manifest-bound and published through the normal
+verified evidence-copy path.
 For a successful run, the independently retained run bundle is copied during
 controlled staging into the durable package:
 

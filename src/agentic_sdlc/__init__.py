@@ -17,6 +17,13 @@ from agentic_sdlc.requirement_analysis import (
     RequirementPlanningReadiness,
 )
 from agentic_sdlc.requirement_spec import ApprovedRequirementSpec
+from agentic_sdlc.run_events import (
+    RunEvent,
+    RunEventActor,
+    RunEventAuthority,
+    RunEventLog,
+    RunEventType,
+)
 from agentic_sdlc.state import demo_input
 from agentic_sdlc.task_graph import ProposedTaskGraph, TaskGraph
 from agentic_sdlc.traceability import (
@@ -41,6 +48,11 @@ __all__ = [
     "RequirementAnalysis",
     "RequirementPlanningReadiness",
     "RequirementTraceabilityProjection",
+    "RunEvent",
+    "RunEventActor",
+    "RunEventAuthority",
+    "RunEventLog",
+    "RunEventType",
     "TaskGraph",
     "TraceabilityStatus",
     "UnknownGovernedRunError",

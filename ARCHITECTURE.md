@@ -348,6 +348,52 @@ is installed. A generation failure remains visible through the existing required
 terminal-artifact failure path, so no manifest or publication treats a partial
 report set as valid.
 
+### Semantic run events and human governance history
+
+The application lifecycle records a deliberately small semantic audit stream at
+`runs/<run-id>/run-events.jsonl`. Each canonical JSON line carries a stable event
+identity, per-run sequence, UTC recording time, actor, authority classification,
+stage, correlation identifiers, bounded data, and evidence references. Sequence,
+not timestamp, establishes chronology. The process-local append layer validates
+the complete existing stream, rejects malformed or conflicting records, assigns
+monotonic sequences, and treats an identical semantic replay as an idempotent
+no-op. It provides thread safety for the current application and background
+clarification model; it does not claim distributed or cross-process ordering.
+
+This stream observes authority rather than creating it. Requirement Analysis and
+TaskGraph decisions are reconciled from the authoritative review histories after
+the governed transition succeeds. A failed append therefore cannot revoke a
+human decision; later inspection or lifecycle advancement can repair a missing
+reconstructible event without replaying the workflow. The initial vocabulary is
+limited to accepted requirement submission, brownfield baseline selection and
+verification, Requirement Analysis and TaskGraph review decisions, and AI
+clarification request/generation. Task attempts, validation, rollback,
+publication, performance, and generic UI telemetry are intentionally absent.
+
+Actor and authority are separate. Human submission or baseline selection is
+`HUMAN_INPUT`; an authoritative review decision is `HUMAN_GOVERNANCE`; an AI
+clarification request/draft is `NON_AUTHORITATIVE_ASSISTANCE`; and verified
+brownfield provenance is an `AUTOMATED_CONSEQUENCE`. The AI draft stores only
+bounded generation/context metadata and a digest, cannot resume the workflow, and
+cannot approve, request changes, create a revision, or authorize execution.
+Human feedback remains in the authoritative review history; the event references
+it by presence, digest, and review correlation rather than creating a competing
+copy.
+
+At terminal application finalization,
+`runs/<run-id>/sdlc-artifacts/human_governance_history.md` is rendered
+deterministically from the validated sequence plus structured authoritative
+state. It labels itself derived and non-authoritative, dereferences exact human
+feedback for evaluator readability, and describes only consequences supported by
+approved specification, TaskGraph, revision, or safe-stop evidence. Brownfield
+impact analysis is described as part of Requirement Analysis governance, not as
+an invented independent approval gate. The existing manifest binds this Markdown
+report and verified publication copies it normally. The live sibling
+`run-events.jsonl` deliberately stays outside the frozen manifest so later event
+families can append without invalidating retained artifact integrity. Neither file
+is read to decide approval, resume permission, requirement or TaskGraph authority,
+validation, mutation, or publication.
+
 The repository separates storage and evidence ownership. `sample_output/` is
 Git-tracked, curated reviewer/reference material; it may preserve frozen scenarios,
 is not authoritative execution history, and is never a CLI or Streamlit runtime

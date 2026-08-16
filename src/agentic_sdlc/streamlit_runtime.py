@@ -97,6 +97,28 @@ class GovernedRunLifecycle(Protocol):
     ) -> GovernedRunSnapshot: ...
 
 
+class ClarificationDraftEventRecorder(Protocol):
+    """Presentation-neutral observation seam with no governed-run authority."""
+
+    def record_clarification_draft_requested(
+        self,
+        request: ClarificationDraftRequest,
+        *,
+        generation_id: str,
+        context_identity: str,
+        model_name: str,
+    ) -> bool: ...
+
+    def record_clarification_draft_generated(
+        self,
+        request: ClarificationDraftRequest,
+        result: ClarificationDraftResult,
+        *,
+        generation_id: str,
+        context_identity: str,
+        model_name: str,
+    ) -> bool: ...
+
 class BackgroundExecutor(Protocol):
     """Small executor seam for deterministic runtime tests."""
 
@@ -112,12 +134,18 @@ class BackgroundExecutor(Protocol):
 class ClarificationDraftBackgroundRuntime:
     """Run optional clarification assistance off-thread without workflow authority."""
 
-    def __init__(self, *, executor: BackgroundExecutor | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        executor: BackgroundExecutor | None = None,
+        event_recorder: ClarificationDraftEventRecorder | None = None,
+    ) -> None:
         self._executor = executor or ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="agentic-sdlc-clarification",
         )
         self._owns_executor = executor is None
+        self._event_recorder = event_recorder
         self._lock = Lock()
         self._future: Future[Any] | None = None
         self._generation_id: str | None = None
@@ -125,6 +153,8 @@ class ClarificationDraftBackgroundRuntime:
         self._known_generation_ids: set[str] = set()
         self._result: ClarificationDraftResult | None = None
         self._error_message: str | None = None
+        self._request: ClarificationDraftRequest | None = None
+        self._model_name: str | None = None
 
     def schedule(
         self,
@@ -147,11 +177,28 @@ class ClarificationDraftBackgroundRuntime:
                 return False
             if self._future is not None:
                 return False
+            if self._event_recorder is not None:
+                try:
+                    current = self._event_recorder.record_clarification_draft_requested(
+                        request,
+                        generation_id=generation_id,
+                        context_identity=context_identity,
+                        model_name=drafter.model_name,
+                    )
+                except Exception:
+                    # Observation cannot acquire veto authority over optional
+                    # clarification assistance. The production recorder retains
+                    # storage failures as run warnings.
+                    current = True
+                if not current:
+                    return False
             self._known_generation_ids.add(generation_id)
             self._generation_id = generation_id
             self._context_identity = context_identity
             self._result = None
             self._error_message = None
+            self._request = request.model_copy(deep=True)
+            self._model_name = drafter.model_name
             self._future = self._executor.submit(
                 drafter.draft,
                 request.model_copy(deep=True),
@@ -209,16 +256,41 @@ class ClarificationDraftBackgroundRuntime:
                 f"({type(error).__name__}). Review the local server logs and retry."
             )
         else:
-            self._result = result
+            retain_result = True
+            if (
+                self._event_recorder is not None
+                and self._request is not None
+                and self._generation_id is not None
+                and self._context_identity is not None
+                and self._model_name is not None
+            ):
+                try:
+                    retain_result = (
+                        self._event_recorder.record_clarification_draft_generated(
+                            self._request,
+                            result,
+                            generation_id=self._generation_id,
+                            context_identity=self._context_identity,
+                            model_name=self._model_name,
+                        )
+                    )
+                except Exception:
+                    # As above, audit observation cannot invalidate a valid draft.
+                    retain_result = True
+            self._result = result if retain_result else None
             self._error_message = None
         finally:
             self._future = None
+            self._request = None
+            self._model_name = None
 
     def _clear_completed_locked(self) -> None:
         self._generation_id = None
         self._context_identity = None
         self._result = None
         self._error_message = None
+        self._request = None
+        self._model_name = None
 
     @staticmethod
     def _require_identity(value: str, label: str) -> None:
@@ -266,6 +338,7 @@ class StreamlitRunRuntime:
         *,
         executor: BackgroundExecutor | None = None,
         clarification_executor: BackgroundExecutor | None = None,
+        clarification_event_recorder: ClarificationDraftEventRecorder | None = None,
         progress_collector: StreamlitExecutionProgressCollector | None = None,
         clock: Callable[[], float] = monotonic,
     ) -> None:
@@ -276,7 +349,8 @@ class StreamlitRunRuntime:
         )
         self._owns_executor = executor is None
         self._clarification_drafts = ClarificationDraftBackgroundRuntime(
-            executor=clarification_executor
+            executor=clarification_executor,
+            event_recorder=clarification_event_recorder,
         )
         self._progress_collector = (
             progress_collector or StreamlitExecutionProgressCollector()
@@ -298,7 +372,8 @@ class StreamlitRunRuntime:
     def for_repository(cls, repository_root: Path) -> StreamlitRunRuntime:
         """Create the production runtime with one real governed run service."""
 
-        return cls(GovernedRunService(repository_root=repository_root))
+        service = GovernedRunService(repository_root=repository_root)
+        return cls(service, clarification_event_recorder=service)
 
     def schedule_start(
         self,

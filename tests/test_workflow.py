@@ -14,6 +14,9 @@ from pydantic import ValidationError
 from pytest import CaptureFixture, MonkeyPatch, raises
 
 from agentic_sdlc.artifacts import ARTIFACT_FILENAMES
+from agentic_sdlc.human_governance_history import (
+    HUMAN_GOVERNANCE_HISTORY_FILENAME,
+)
 from agentic_sdlc.llm import (
     FakeRequirementAnalysisClient,
     FakeTaskPlanningClient,
@@ -1620,7 +1623,11 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
     assert manifest["project_delivery_policy"] == "RUNNABLE_PROJECT"
     assert manifest["exit_gate_passed"] is True
     assert [record["path"] for record in manifest["files"]] == sorted(
-        (*ARTIFACT_FILENAMES, "workflow_diagram.png")
+        (
+            *ARTIFACT_FILENAMES,
+            HUMAN_GOVERNANCE_HISTORY_FILENAME,
+            "workflow_diagram.png",
+        )
     )
     assert "manifest.json" not in {
         record["path"] for record in manifest["files"]
@@ -1635,6 +1642,7 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
     packaged_dir = tmp_path / "projects" / "url-shortener" / "sdlc-artifacts"
     assert {path.name for path in packaged_dir.iterdir()} == {
         *ARTIFACT_FILENAMES,
+        HUMAN_GOVERNANCE_HISTORY_FILENAME,
         "manifest.json",
         "workflow_diagram.png",
     }
@@ -2075,6 +2083,7 @@ def test_cli_rejected_run_does_not_create_a_durable_project(
     manifest = json.loads((artifact_dir / "manifest.json").read_text())
     assert manifest["workflow_status"] == "safe_stopped"
     assert [record["path"] for record in manifest["files"]] == [
+        HUMAN_GOVERNANCE_HISTORY_FILENAME,
         "requirement_analysis.md",
         "requirements.json",
         "summary.md",
