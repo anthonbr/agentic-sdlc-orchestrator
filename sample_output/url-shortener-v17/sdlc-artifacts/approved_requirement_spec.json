@@ -1,0 +1,425 @@
+{
+  "spec_id": "SPEC-6471362867F4-V001",
+  "lineage_id": "c0466a39-1569-5c19-97f6-234f19e3c1da",
+  "version": 1,
+  "supersedes_spec_id": null,
+  "source_analysis_revision": 1,
+  "created_at": "2026-08-15T00:45:43.362953+00:00",
+  "content_hash": "6471362867f4d0c29797377f9c076296431acf36021899051f03bf2cb82ddcce",
+  "normalized_problem_statement": "Create a greenfield, local-only URL shortener prototype in Python 3.12 using only the Python standard library for both application code and tests. The service must expose the specified JSON API to create or retrieve mappings, redirect eight-character short codes to exact original URLs, and count successful redirects. Mappings and counts remain in memory for the process lifetime, never expire while that process is running, and are lost on restart. Include automated tests under tests/ and a README with local run and test instructions.",
+  "requirement_type": "greenfield",
+  "assumptions": [
+    "Each application start begins with an empty in-memory data set, and all mappings and counts are discarded when the process stops or restarts.",
+    "Exact duplicate detection compares the preserved submitted URL strings; semantically equivalent but textually different URLs are treated as different URLs.",
+    "The default short-URL host and port are used in API representations even though alternative runtime binding configuration is not specified.",
+    "Expiration metadata, expiration checks, and expiration-specific responses are outside scope because URLs do not expire during the process lifetime.",
+    "Custom aliases, persistence, authentication, deployment integration, destination safety checks, and asynchronous processing remain outside scope."
+  ],
+  "functional_requirements": [
+    {
+      "item_id": "FR-001",
+      "lineage_id": "58ebde36-d756-58d5-adfd-bff3b0dfdb83",
+      "text": "Provide `POST /api/urls` for URL creation, accepting `Content-Type: application/json` with a JSON body of the form `{\"url\":\"https://example.com/path\"}`."
+    },
+    {
+      "item_id": "FR-002",
+      "lineage_id": "4c6c114f-c2fd-5da1-aa4a-18ae537839d9",
+      "text": "For a valid URL not already stored, generate a unique eight-character code and return `201 Created` with `code`, `short_url`, `url`, and `redirect_count` fields, where `redirect_count` is initially zero."
+    },
+    {
+      "item_id": "FR-003",
+      "lineage_id": "df60650c-2a2b-5568-b8c3-6dad10e79b4b",
+      "text": "For repeated submission of the exact same accepted URL string, return the existing mapping with `200 OK`, the same code, and its current redirect count rather than creating another mapping."
+    },
+    {
+      "item_id": "FR-004",
+      "lineage_id": "90ac448e-c9ac-5741-b3c2-05edb6375fed",
+      "text": "Provide `GET /{code}` to resolve an existing short code using `302 Found` and redirect to the exact original URL."
+    },
+    {
+      "item_id": "FR-005",
+      "lineage_id": "9ceadf72-fdee-5eb1-967b-6b73aefe3df5",
+      "text": "Increment a mapping's redirect count exactly once for each `GET /{code}` request that returns `302 Found`."
+    },
+    {
+      "item_id": "FR-006",
+      "lineage_id": "e86d5020-ebe3-5d95-8366-73352b3edf61",
+      "text": "Do not increment redirect counts for unknown codes, creation requests, analytics requests, malformed requests, or other errors."
+    },
+    {
+      "item_id": "FR-007",
+      "lineage_id": "3727e85e-4521-57fa-afdf-87dc75c83e7f",
+      "text": "Provide `GET /api/urls/{code}` as the analytics endpoint, returning `200 OK` with `code`, `short_url`, `url`, and `redirect_count`."
+    },
+    {
+      "item_id": "FR-008",
+      "lineage_id": "361eea1e-46dc-504d-b492-d1d3faeb34bd",
+      "text": "Return `404 Not Found` for unknown redirect or analytics codes using the common JSON error representation."
+    },
+    {
+      "item_id": "FR-009",
+      "lineage_id": "8fc3a63b-9a32-53c6-bfa7-a2b3e56367c3",
+      "text": "Return JSON errors in the form `{\"error\":{\"code\":\"...\",\"message\":\"...\"}}`."
+    },
+    {
+      "item_id": "FR-010",
+      "lineage_id": "a4b4636a-0e47-5600-8825-936e14444c45",
+      "text": "Return `400 Bad Request` for malformed JSON, malformed request representations, or invalid URL input."
+    },
+    {
+      "item_id": "FR-011",
+      "lineage_id": "1c12807f-dd18-5d94-a1de-93bd175c4447",
+      "text": "Return `415 Unsupported Media Type` when the creation request does not use the required JSON media type."
+    },
+    {
+      "item_id": "FR-012",
+      "lineage_id": "b0ac0c41-7a42-5b58-bd38-02453b09d5f1",
+      "text": "Return `405 Method Not Allowed` for unsupported HTTP methods."
+    },
+    {
+      "item_id": "FR-013",
+      "lineage_id": "3c1c2b6b-672d-5658-87e2-0c25d7c9c651",
+      "text": "Accept only absolute `http` or `https` URLs with a nonempty host, no whitespace or control characters, and, when a port is present, a syntactically valid numeric port from 1 through 65535."
+    },
+    {
+      "item_id": "FR-014",
+      "lineage_id": "04f28899-8c4a-517b-b743-ea8e51eb2a72",
+      "text": "Preserve each accepted original URL exactly as submitted and use that exact value for responses, duplicate detection, and redirects."
+    },
+    {
+      "item_id": "FR-015",
+      "lineage_id": "783f0111-e8e5-5270-a771-552d8ab92f0b",
+      "text": "Perform only local syntactic URL validation; do not perform DNS, reachability, reputation, or blocklist checks."
+    },
+    {
+      "item_id": "FR-016",
+      "lineage_id": "39986551-46ff-585c-8902-ab548dfe4f6b",
+      "text": "Generate codes automatically as eight ASCII alphanumeric characters selected from `A-Z`, `a-z`, and `0-9`."
+    },
+    {
+      "item_id": "FR-017",
+      "lineage_id": "c8178550-c7c7-5e98-85ea-4ed38dc76306",
+      "text": "On a generated-code collision, retain the existing mapping unchanged and retry until a nonconflicting code is generated."
+    },
+    {
+      "item_id": "FR-018",
+      "lineage_id": "2582b4b3-ef90-5bcc-bbd1-2211924a1184",
+      "text": "Represent short URLs by default as `http://127.0.0.1:8000/{code}`."
+    },
+    {
+      "item_id": "FR-019",
+      "lineage_id": "9be3c13f-4dec-5cbb-b0a7-79d1e1c36ca9",
+      "text": "Keep mappings and analytics counts available without expiration until the running process stops or restarts."
+    },
+    {
+      "item_id": "FR-020",
+      "lineage_id": "e4617c23-ec62-50e7-a7b7-cf2f491c22bd",
+      "text": "Store mappings and analytics only in application memory."
+    },
+    {
+      "item_id": "FR-021",
+      "lineage_id": "f4e63d18-115a-5926-82a6-8a810d9e16e9",
+      "text": "Provide automated tests under tests/ using only Python standard-library testing facilities."
+    },
+    {
+      "item_id": "FR-022",
+      "lineage_id": "d6e83c3a-00e5-5ba2-b17c-366af22fa3e3",
+      "text": "Provide a README with simple commands or instructions for locally starting the service and running its tests."
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "item_id": "NFR-001",
+      "lineage_id": "01cc36aa-08f3-5fcc-ba9b-1112861c23da",
+      "text": "The application and tests must run on Python 3.12."
+    },
+    {
+      "item_id": "NFR-002",
+      "lineage_id": "990bc74c-2e8e-5c6a-a827-264b129a1f5c",
+      "text": "The project must remain intentionally small and simple for demonstration purposes."
+    },
+    {
+      "item_id": "NFR-003",
+      "lineage_id": "0ddf59af-7549-580d-87bc-b3b43f83e4a2",
+      "text": "The service must run locally with no infrastructure other than Python."
+    },
+    {
+      "item_id": "NFR-004",
+      "lineage_id": "9d938475-80fc-5440-b5c7-8c08dca74326",
+      "text": "The implementation must use only Python standard-library packages, including for tests."
+    },
+    {
+      "item_id": "NFR-005",
+      "lineage_id": "49c0dbf4-a338-52b7-b53c-e9b885065304",
+      "text": "The service must not require authentication or API keys."
+    },
+    {
+      "item_id": "NFR-006",
+      "lineage_id": "8a4187e5-2f8a-5887-8d05-46313e5c52b5",
+      "text": "Redirect counts and collision handling must remain correct for the lifetime of the local process."
+    },
+    {
+      "item_id": "NFR-007",
+      "lineage_id": "8ed7a18a-0c4b-55d9-a827-97096f4e2003",
+      "text": "API responses must use the specified HTTP status codes and JSON representations."
+    }
+  ],
+  "constraints": [
+    {
+      "item_id": "CON-001",
+      "lineage_id": "e499854e-03b7-5cfe-9023-ec18c1f9f5f1",
+      "text": "Use only the Python standard library for application code and tests; no third-party dependencies are permitted."
+    },
+    {
+      "item_id": "CON-002",
+      "lineage_id": "2f7c1f1a-4dec-5031-9a7a-d63b6291aa88",
+      "text": "Use in-memory storage only; no persistence is required or permitted."
+    },
+    {
+      "item_id": "CON-003",
+      "lineage_id": "e25945de-f996-5200-acf0-9bb40213e130",
+      "text": "Do not use PostgreSQL or any other external database."
+    },
+    {
+      "item_id": "CON-004",
+      "lineage_id": "6b207311-950e-5596-af54-82c2eca00b4f",
+      "text": "Do not use external services, cloud resources, deployment adapters, DNS services, blocklist services, or background jobs."
+    },
+    {
+      "item_id": "CON-005",
+      "lineage_id": "11fcb33a-4be4-5104-bc8e-b21c04566371",
+      "text": "Do not implement authentication or API-key requirements."
+    },
+    {
+      "item_id": "CON-006",
+      "lineage_id": "946eb96a-5713-59aa-a1f2-c57655303ac7",
+      "text": "Generate aliases automatically; custom aliases are out of scope."
+    },
+    {
+      "item_id": "CON-007",
+      "lineage_id": "c95f8284-39a7-5118-b404-60d2ee794137",
+      "text": "Codes must contain exactly eight characters from ASCII letters and digits."
+    },
+    {
+      "item_id": "CON-008",
+      "lineage_id": "bbe56841-8f6b-54c2-8244-df150549cf04",
+      "text": "Use `http://127.0.0.1:8000/{code}` as the default short-URL form."
+    },
+    {
+      "item_id": "CON-009",
+      "lineage_id": "8a37c5b5-1b22-5253-b832-c2811929e116",
+      "text": "Shortened URLs must not expire while the process is running and must cease to be available after process termination or restart."
+    },
+    {
+      "item_id": "CON-010",
+      "lineage_id": "f42f09c4-9520-5659-86ed-45f5b88f7b2a",
+      "text": "Place automated tests under tests/."
+    },
+    {
+      "item_id": "CON-011",
+      "lineage_id": "5af4d377-cd42-5bf1-8ed8-aad2aa6ccc51",
+      "text": "URL validation must be local and syntactic only."
+    },
+    {
+      "item_id": "CON-012",
+      "lineage_id": "18f61e55-ad16-5a11-a448-0a3e02bdb3df",
+      "text": "Accepted original URL strings must be preserved exactly."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "item_id": "AC-001",
+      "lineage_id": "6471b822-829c-5a60-8f76-8bb0d8eee491",
+      "text": "On Python 3.12, the documented command starts the service locally without installing third-party packages or requiring a database, external service, cloud resource, credential, or other infrastructure."
+    },
+    {
+      "item_id": "AC-002",
+      "lineage_id": "1260b965-5754-571f-980c-576da44dc104",
+      "text": "A `POST /api/urls` request with `Content-Type: application/json` and body `{\"url\":\"https://example.com/path\"}` creates a new mapping and returns `201 Created` with JSON fields `code`, `short_url`, `url`, and `redirect_count`."
+    },
+    {
+      "item_id": "AC-003",
+      "lineage_id": "24104815-9b48-5881-86ef-3a601b5ea194",
+      "text": "A newly generated `code` is exactly eight characters long and every character belongs to `A-Z`, `a-z`, or `0-9`."
+    },
+    {
+      "item_id": "AC-004",
+      "lineage_id": "ea4b2c7a-4317-5cde-8208-8e6f151ebff7",
+      "text": "For a new mapping, `redirect_count` is `0`, `url` exactly equals the submitted URL string, and `short_url` equals `http://127.0.0.1:8000/{code}`."
+    },
+    {
+      "item_id": "AC-005",
+      "lineage_id": "7b2dd002-6a0e-5159-888a-b9afbb4a2890",
+      "text": "Submitting the exact same accepted URL again returns `200 OK` with the original code and short URL, preserves its current redirect count, and does not create an additional mapping."
+    },
+    {
+      "item_id": "AC-006",
+      "lineage_id": "2ed906dd-fcc5-5046-927c-1ad92ef44ebf",
+      "text": "Submitting a textually different URL creates or resolves a mapping independently, even if it could be considered semantically equivalent to an existing URL."
+    },
+    {
+      "item_id": "AC-007",
+      "lineage_id": "58f08298-4ccc-5782-b1a4-dbc1fd40d776",
+      "text": "`GET /{code}` for an existing mapping returns `302 Found` with the redirect target equal to the exact preserved original URL."
+    },
+    {
+      "item_id": "AC-008",
+      "lineage_id": "e61abfee-e989-5ab8-bdf5-378391c4266b",
+      "text": "Each `GET /{code}` that returns 302 increments only that mapping's redirect count by exactly one."
+    },
+    {
+      "item_id": "AC-009",
+      "lineage_id": "0445c86c-92b6-561d-8144-238123a46a6d",
+      "text": "`GET /api/urls/{code}` for an existing mapping returns `200 OK` with its `code`, `short_url`, exact original `url`, and current `redirect_count`, without changing that count."
+    },
+    {
+      "item_id": "AC-010",
+      "lineage_id": "f9909c3b-e1ca-5a6c-8547-edacb7cc736e",
+      "text": "Creation and analytics requests do not increment redirect counts."
+    },
+    {
+      "item_id": "AC-011",
+      "lineage_id": "1ac43d86-dd51-5af5-907e-05b6d8d37997",
+      "text": "An unknown code requested through either the redirect route or analytics route returns `404 Not Found`, follows the common JSON error schema, and does not change any redirect count."
+    },
+    {
+      "item_id": "AC-012",
+      "lineage_id": "eccb65b5-8e46-5665-9c25-b00f22640421",
+      "text": "Malformed JSON, a missing or invalid URL value, or a URL failing the specified validation rules returns `400 Bad Request` using the common JSON error schema and creates no mapping."
+    },
+    {
+      "item_id": "AC-013",
+      "lineage_id": "53eb5428-c3f7-5a7f-bf19-9e788f61ae37",
+      "text": "A creation request with an unsupported media type returns `415 Unsupported Media Type` using the common JSON error schema and creates no mapping."
+    },
+    {
+      "item_id": "AC-014",
+      "lineage_id": "c32b017e-34d7-58db-95df-4b1201bdf238",
+      "text": "An unsupported HTTP method returns `405 Method Not Allowed` using the common JSON error schema."
+    },
+    {
+      "item_id": "AC-015",
+      "lineage_id": "d9e683e9-31a1-5d60-b556-213e883cdf01",
+      "text": "Every JSON error response has the structure `{\"error\":{\"code\":\"...\",\"message\":\"...\"}}` with string values for both nested fields."
+    },
+    {
+      "item_id": "AC-016",
+      "lineage_id": "934ee8da-d001-5c2f-8c47-24e6a8c06196",
+      "text": "Absolute `http` and `https` URLs with a nonempty host, no whitespace or control characters, and an optional port in the range 1 through 65535 are accepted."
+    },
+    {
+      "item_id": "AC-017",
+      "lineage_id": "87f67af4-c77b-5c26-b04e-45d369441be9",
+      "text": "URLs using another scheme, lacking a host, containing whitespace or control characters, containing a malformed port, or specifying a port outside 1 through 65535 are rejected with 400."
+    },
+    {
+      "item_id": "AC-018",
+      "lineage_id": "5a64ac46-9a18-5f6f-bb9e-e06c94af41cc",
+      "text": "URL validation does not make DNS, reachability, reputation, blocklist, or other external-service requests."
+    },
+    {
+      "item_id": "AC-019",
+      "lineage_id": "86f9cebc-ca5a-5d0d-8994-7c71b5303945",
+      "text": "If generated code selection collides with an existing code, the existing mapping remains unchanged and generation is retried until a free code is selected."
+    },
+    {
+      "item_id": "AC-020",
+      "lineage_id": "8fae4172-38f0-50ac-a0be-dec17e9ce577",
+      "text": "Mappings and counts remain available for the duration of the process without time-based expiration and are absent after a fresh restart."
+    },
+    {
+      "item_id": "AC-021",
+      "lineage_id": "b14ede67-7e6a-5599-af16-a9eefe84424f",
+      "text": "Application and test code import no non-standard-library package."
+    },
+    {
+      "item_id": "AC-022",
+      "lineage_id": "34b15b65-a9cd-5fea-bc27-0bfb6282632d",
+      "text": "Automated tests exist under tests/ and cover new creation, exact duplicate submission, redirection, unknown codes, analytics retrieval, redirect-count rules, URL validation, malformed input, unsupported media types and methods, collision handling, and response schemas."
+    },
+    {
+      "item_id": "AC-023",
+      "lineage_id": "53a411dd-606a-5974-bbe8-16fe63f0d889",
+      "text": "The README contains clear local instructions for starting the service and executing the standard-library-based automated tests."
+    }
+  ],
+  "risks": [
+    {
+      "item_id": "RISK-001",
+      "lineage_id": "e261593f-0c1f-5141-b1be-f50e4839d3e3",
+      "text": "The remaining unspecified URL-component rules may cause differences between implementation behavior and reviewer expectations for unusual but syntactically plausible URLs."
+    },
+    {
+      "item_id": "RISK-002",
+      "lineage_id": "60ea9142-7fcb-5d79-a2d6-2b97cefcb06a",
+      "text": "Unspecified error code strings and messages may cause contract or test mismatches despite the common JSON structure being defined."
+    },
+    {
+      "item_id": "RISK-003",
+      "lineage_id": "a8671e53-6484-5362-aefc-1bf5791f63b6",
+      "text": "Content-Type parameter handling may be implemented more strictly or permissively than expected."
+    },
+    {
+      "item_id": "RISK-004",
+      "lineage_id": "19a77527-c37d-53bd-b70d-74eb86638329",
+      "text": "In-memory state is lost on every restart and cannot be shared consistently across multiple processes."
+    },
+    {
+      "item_id": "RISK-005",
+      "lineage_id": "ee341e7c-a822-5144-a1b4-af9ff196e98b",
+      "text": "Concurrent requests could cause duplicate mappings, collision races, or lost redirect increments unless shared state access is made safe."
+    },
+    {
+      "item_id": "RISK-006",
+      "lineage_id": "122b4dcc-df65-5446-9192-5651c361b822",
+      "text": "Unbounded collision retries could theoretically fail to terminate if randomness is defective or the code space becomes unavailable, although exhaustion is impractical for a small prototype."
+    },
+    {
+      "item_id": "RISK-007",
+      "lineage_id": "3bf9979b-830f-5fd0-8002-821adf323a5c",
+      "text": "Because destination validation is intentionally syntactic and local, the service can redirect to unreachable, unsafe, private-network, or otherwise undesirable HTTP destinations."
+    },
+    {
+      "item_id": "RISK-008",
+      "lineage_id": "83a59b05-9b09-508a-91a2-c0be32f108d3",
+      "text": "Preserving URLs exactly may retain sensitive information embedded in query strings or user-information components if clients submit such URLs."
+    }
+  ],
+  "ambiguities": [
+    {
+      "item_id": "AMB-001",
+      "lineage_id": "8405903f-1152-5c5a-a84e-3d0320798d8b",
+      "text": "The exact string values and wording for error `code` and `message` fields are not specified, although their JSON structure and associated HTTP statuses are fixed."
+    },
+    {
+      "item_id": "AMB-002",
+      "lineage_id": "93e95d7a-84c3-5df5-806d-07111933cc6c",
+      "text": "It is unspecified whether `Content-Type: application/json` parameters such as `charset=utf-8` are accepted or must result in 415."
+    },
+    {
+      "item_id": "AMB-003",
+      "lineage_id": "89ca2537-16f2-5aae-a955-4a25e1acea82",
+      "text": "The required behavior for otherwise valid JSON containing extra fields, a non-object top-level value, or an `url` value that is not a string is not fully specified beyond malformed or invalid input returning 400."
+    },
+    {
+      "item_id": "AMB-004",
+      "lineage_id": "0b6ceca5-5e81-5edf-8cb5-fe97c81da3e0",
+      "text": "The `405 Method Not Allowed` requirement does not specify whether an `Allow` response header is required or which methods must be advertised for each route."
+    },
+    {
+      "item_id": "AMB-005",
+      "lineage_id": "0aec4a78-3787-5f87-a804-ff3c884b006c",
+      "text": "Behavior after repeated code-generation collisions or an inability to generate a free code is not specified."
+    },
+    {
+      "item_id": "AMB-006",
+      "lineage_id": "d381b616-0864-58fb-a0ac-f8ceaaa40445",
+      "text": "Concurrency expectations and whether the prototype must support simultaneous requests without lost counts or duplicate mappings are not explicitly defined."
+    },
+    {
+      "item_id": "AMB-007",
+      "lineage_id": "8cd435f6-9841-50f3-a28f-fbb2d9a4c54c",
+      "text": "The requirements do not state whether URL components such as user information, fragments, internationalized hostnames, or IPv6 literals are accepted when they otherwise satisfy the stated syntactic rules."
+    }
+  ]
+}

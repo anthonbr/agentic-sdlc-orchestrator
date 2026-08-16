@@ -689,7 +689,7 @@
           </li>
           <li>
             <span class="quick-review-num">4</span>
-            <span><strong><a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/tree/main/sample_output/demo-run" target="_blank" rel="noopener">Inspect the evidence bundle</a></strong>Follow the greenfield requirement, approvals, TaskGraph, execution, workspace, and summary records.</span>
+            <span><strong><a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/tree/main/sample_output/url-shortener-v17" target="_blank" rel="noopener">Inspect the V17 evidence bundle</a></strong>Follow the greenfield requirement, approvals, TaskGraph, execution, workspace, and publication records.</span>
           </li>
           <li>
             <span class="quick-review-num">5</span>
@@ -714,7 +714,7 @@
         </div>
         <div class="prose">
           <p><strong>The build.</strong> <span class="badge badge-accent">agentic-sdlc-orchestrator</span> is a Python/LangGraph application that treats a software requirement as something that has to earn its way through a governed lifecycle, not something an agent just executes. A stable control graph owns routing, retries, human interrupts, and the exit gate. A separate, per-run <span class="mono">TaskGraph</span> represents the actual engineering work &mdash; and that graph is data, not new LangGraph nodes, so the control plane stays reviewable while every requirement produces different work underneath it.</p>
-          <p>All three required scenarios exist as checked-in, reproducible evidence bundles, each pairing a governed decision record with a runnable product: <span class="badge badge-good">11 tests passing</span> (greenfield), <span class="badge badge-good">18 tests passing</span> (brownfield), <span class="badge badge-good">20 tests passing</span> (ambiguity). The orchestrator itself carries <span class="badge badge-good">565 passing tests</span> of its own.</p>
+          <p>The checked-in evaluator material now shows one real publication lineage: <span class="badge badge-good">13 tests passing</span> for the V17 greenfield baseline and <span class="badge badge-good">20 tests passing</span> for its V18 brownfield expiration evolution. Ambiguity governance remains implemented and is demonstrated interactively through the live requirement-review workflow rather than through a third frozen sample.</p>
         </div>
       </div>
     </div>
@@ -841,39 +841,39 @@
     <div class="wrap">
       <div class="section-head reveal">
         <span class="kicker">04 — Reviewer scenarios</span>
-        <h2>Three scenarios, each checked in and reproducible.</h2>
-        <p>Every scenario is network-free to regenerate and inspect &mdash; no API key required to verify the governed evidence or run the resulting product's tests.</p>
+        <h2>V17 to V18 lineage, plus live ambiguity governance.</h2>
+        <p>The two checked-in publications preserve their real manifest-bound evidence. Requirement ambiguity and readiness are demonstrated interactively and remain covered by deterministic regression tests.</p>
       </div>
 
       <div class="scen-grid reveal" style="display:grid; grid-template-columns:repeat(3,1fr); gap:20px;">
 
         <div class="scen-card">
           <span class="badge badge-good">Greenfield</span>
-          <h3>Build from nothing</h3>
-          <p>The built-in URL-shortener requirement runs through the full governed lifecycle from a blank, factory-created workspace: analysis, human approval, planning, a second human approval, then a bounded parallel execution wave &mdash; including one deliberately injected retryable failure that recovers on its next attempt &mdash; that transactionally creates a six-file Python project.</p>
+          <h3>V17: governed creation</h3>
+          <p>The V17 URL-shortener publication runs through requirement revision and approval, TaskGraph governance, isolated-workspace creation, fixed compile and pytest validation, project readiness, and manifest-controlled publication. Its four application files remain paired with the retained governed evidence.</p>
           <div class="scen-meta">
-            <span class="mono">11 tests passed</span>
-            <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/tree/main/sample_output/demo-run" target="_blank" rel="noopener">sample_output/demo-run →</a>
+            <span class="mono">13 tests passed</span>
+            <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/tree/main/sample_output/url-shortener-v17" target="_blank" rel="noopener">sample_output/url-shortener-v17 →</a>
           </div>
         </div>
 
         <div class="scen-card">
           <span class="badge badge-accent">Brownfield</span>
-          <h3>Reason about existing code</h3>
-          <p>The greenfield output becomes the starting repository. A <span class="mono">FORBIDDEN</span>-materialization task performs impact analysis against five named files first; parallel <span class="mono">REQUIRED</span> tasks then modify the service and HTTP adapter to add analytics, followed by a wave that updates tests and docs against the real resulting code &mdash; four validated <span class="mono">MODIFY</span> transactions, zero accidental creates or deletes.</p>
+          <h3>V18: evolve the V17 baseline</h3>
+          <p>The successful V17 publication is selected and integrity-verified as the brownfield baseline. V18 adds optional absolute UTC expiration through bounded impact analysis, four governed <span class="mono">MODIFY</span> transactions, fixed validation, and a separate publication without overwriting V17.</p>
           <div class="scen-meta">
-            <span class="mono">18 tests passed</span>
-            <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/tree/main/sample_output/brownfield-demo-run" target="_blank" rel="noopener">sample_output/brownfield-demo-run →</a>
+            <span class="mono">20 tests passed</span>
+            <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/tree/main/sample_output/url-shortener-v18-expiration" target="_blank" rel="noopener">sample_output/url-shortener-v18-expiration →</a>
           </div>
         </div>
 
         <div class="scen-card" id="ambiguity-scenario">
           <span class="badge badge-gate">Ambiguous</span>
           <h3>Block until clarified</h3>
-          <p>The requirement "expire shortened URLs after a period of time" leaves six real product decisions unresolved. The analysis correctly comes back <span class="mono">BLOCKED</span> &mdash; the planner receives zero calls and no TaskGraph exists yet. A human supplies a fixed 24-hour, creation-based policy; only <em>that</em> revision reaches planning and governed execution.</p>
+          <p>Requirement Analysis exposes ambiguities and deterministic <span class="mono">BLOCKED</span>/<span class="mono">READY</span> planning readiness. Human clarification creates a new immutable authority revision before downstream planning. Evaluators demonstrate this in the live CLI or Streamlit workflow; no third frozen sample is implied.</p>
           <div class="scen-meta">
-            <span class="mono">20 tests passed</span>
-            <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/tree/main/sample_output/ambiguity-demo-run" target="_blank" rel="noopener">sample_output/ambiguity-demo-run →</a>
+            <span class="mono">Live evaluator demonstration</span>
+            <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/tests/test_ambiguity_demo.py" target="_blank" rel="noopener">deterministic regression coverage →</a>
           </div>
         </div>
 
@@ -920,7 +920,7 @@
         </div>
         <div class="crit-row">
           <div><strong>Modular, testable, reliable, secure, scalable code</strong></div>
-          <div>565 orchestrator tests; strict path policy; transactional filesystem mutation with preimage/postimage verification and rollback.</div>
+          <div>756 orchestrator tests; strict path policy; transactional filesystem mutation with preimage/postimage verification and rollback.</div>
         </div>
         <div class="crit-row">
           <div><strong>Engineering judgment</strong></div>

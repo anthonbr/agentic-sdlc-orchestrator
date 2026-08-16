@@ -35,13 +35,16 @@ from agentic_sdlc.workspace_seeding import WorkspaceSeedResult
 from tests.demo_url_shortener_project import (
     APP as GREENFIELD_APP,
     GENERATED_README as GREENFIELD_README,
+    PACKAGE_INIT as GREENFIELD_PACKAGE_INIT,
+    PYPROJECT as GREENFIELD_PYPROJECT,
     SERVICE as GREENFIELD_SERVICE,
     TESTS as GREENFIELD_TESTS,
+    write_deterministic_project,
 )
 
 
 BROWNFIELD_RUN_ID = "deterministic-v05-brownfield-analytics-demo"
-BROWNFIELD_SOURCE_LABEL = "sample_output/demo-run/generated-project"
+BROWNFIELD_SOURCE_LABEL = "temporary-fixture/greenfield-project"
 BROWNFIELD_SOURCE_PATHS = (
     "README.md",
     "pyproject.toml",
@@ -380,6 +383,25 @@ ANALYTICS_README = _replace_once(
   remain outside this prototype.
 """,
 )
+
+
+DETERMINISTIC_BROWNFIELD_PROJECT_FILES = (
+    ("README.md", ANALYTICS_README),
+    ("pyproject.toml", GREENFIELD_PYPROJECT),
+    ("src/url_shortener/__init__.py", GREENFIELD_PACKAGE_INIT),
+    ("src/url_shortener/app.py", ANALYTICS_APP),
+    ("src/url_shortener/service.py", ANALYTICS_SERVICE),
+    ("tests/test_service.py", ANALYTICS_TESTS),
+)
+
+
+def write_deterministic_brownfield_project(root: Path) -> Path:
+    """Write an isolated brownfield baseline for deterministic regression tests."""
+
+    return write_deterministic_project(
+        root,
+        files=DETERMINISTIC_BROWNFIELD_PROJECT_FILES,
+    )
 
 
 class BrownfieldRepositoryContextPathProvider:

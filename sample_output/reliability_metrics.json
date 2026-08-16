@@ -2,60 +2,8 @@
   "schema_version": "reliability-metrics-v1",
   "runs": [
     {
-      "scenario": "greenfield",
-      "evidence_root": "sample_output/demo-run/",
-      "metrics": {
-        "terminal_run_status": "SUCCEEDED",
-        "task_count": 5,
-        "attempted_task_count": 5,
-        "successful_task_count": 5,
-        "failed_task_count": 0,
-        "aborted_task_count": 0,
-        "blocked_task_count": 0,
-        "task_attempt_count": 6,
-        "successful_attempt_count": 5,
-        "retry_count": 1,
-        "failed_attempt_count": 0,
-        "safe_stopped_attempt_count": 0,
-        "task_success_rate": {
-          "numerator": 5,
-          "denominator": 5,
-          "value": "1.0000"
-        },
-        "attempt_success_rate": {
-          "numerator": 5,
-          "denominator": 6,
-          "value": "0.8333"
-        },
-        "retry_frequency": {
-          "numerator": 1,
-          "denominator": 6,
-          "value": "0.1667"
-        },
-        "mutation_transaction_count": 3,
-        "applied_mutation_count": 3,
-        "rollback_attempt_count": 0,
-        "rollback_success_count": 0,
-        "rollback_failure_count": 0,
-        "rollback_frequency": {
-          "numerator": 0,
-          "denominator": 3,
-          "value": "0.0000"
-        },
-        "safe_stop_count": 0,
-        "end_to_end_latency": {
-          "status": "NOT_MEASURED",
-          "reason": "The current audit evidence does not retain authoritative elapsed-time boundaries suitable for defensible end-to-end latency measurement."
-        },
-        "mttr": {
-          "status": "NOT_MEASURED",
-          "reason": "Recovery events are tracked structurally, but authoritative incident-to-recovery duration boundaries are not retained."
-        }
-      }
-    },
-    {
-      "scenario": "brownfield",
-      "evidence_root": "sample_output/brownfield-demo-run/",
+      "scenario": "V17 greenfield",
+      "evidence_root": "sample_output/url-shortener-v17/sdlc-artifacts/",
       "metrics": {
         "terminal_run_status": "SUCCEEDED",
         "task_count": 5,
@@ -106,8 +54,8 @@
       }
     },
     {
-      "scenario": "ambiguous requirement",
-      "evidence_root": "sample_output/ambiguity-demo-run/",
+      "scenario": "V18 brownfield",
+      "evidence_root": "sample_output/url-shortener-v18-expiration/sdlc-artifacts/",
       "metrics": {
         "terminal_run_status": "SUCCEEDED",
         "task_count": 4,
@@ -136,14 +84,14 @@
           "denominator": 4,
           "value": "0.0000"
         },
-        "mutation_transaction_count": 3,
-        "applied_mutation_count": 3,
+        "mutation_transaction_count": 4,
+        "applied_mutation_count": 4,
         "rollback_attempt_count": 0,
         "rollback_success_count": 0,
         "rollback_failure_count": 0,
         "rollback_frequency": {
           "numerator": 0,
-          "denominator": 3,
+          "denominator": 4,
           "value": "0.0000"
         },
         "safe_stop_count": 0,

@@ -18,19 +18,19 @@ Authority flows downstream from the human-approved requirement analysis into a c
 
 ## 3. Reviewer Scenarios
 
-The checked-in scenarios expose both the governed records and independently runnable product outcomes.
+The checked-in samples expose one coherent publication lineage plus an interactive ambiguity demonstration.
 
 | Scenario | Engineering behavior demonstrated | Reviewer evidence and runnable product | Verified product tests |
 | --- | --- | --- | ---: |
-| Greenfield | Approved planning, bounded parallel execution, one governed retry, and transactional creation of a six-file URL shortener | [`sample_output/demo-run/`](sample_output/demo-run/) and [`generated-project/`](sample_output/demo-run/generated-project/) | 11 passed |
-| Brownfield | Bounded reasoning over an existing six-file codebase, parallel task reasoning, and four serialized, preimage-checked `MODIFY` transactions | [`sample_output/brownfield-demo-run/`](sample_output/brownfield-demo-run/) and [`enhanced-project/`](sample_output/brownfield-demo-run/enhanced-project/) | 18 passed |
-| Ambiguous requirement | Planning blocked until a human clarification establishes new requirement authority, followed by governed expiration work | [`sample_output/ambiguity-demo-run/`](sample_output/ambiguity-demo-run/) and [`expiration-project/`](sample_output/ambiguity-demo-run/expiration-project/) | 20 passed |
+| V17 greenfield | Approved requirement revision, governed planning and validation, transactional creation, and verified publication of a four-file URL shortener | [`sample_output/url-shortener-v17/`](sample_output/url-shortener-v17/) with its manifest-bound [`sdlc-artifacts/`](sample_output/url-shortener-v17/sdlc-artifacts/) | 13 passed |
+| V18 brownfield | Baseline selection and integrity, bounded codebase impact analysis, four preimage-checked `MODIFY` transactions, governed validation, and separate publication | [`sample_output/url-shortener-v18-expiration/`](sample_output/url-shortener-v18-expiration/) with V17 lineage in [`workspace_execution.json`](sample_output/url-shortener-v18-expiration/sdlc-artifacts/workspace_execution.json) | 20 passed |
+| Ambiguous requirement | Requirement Analysis exposes ambiguities and blocks planning until human clarification establishes new downstream authority | Demonstrated interactively through the live CLI/Streamlit workflow; deterministic regression coverage remains in [`tests/test_ambiguity_demo.py`](tests/test_ambiguity_demo.py) | Live demonstration |
 
-The ambiguity scenario begins with a request to make shortened URLs expire “after a period of time.” Revision 0 records unresolved TTL, timing, expiration-response, scope, and persistence decisions. Deterministic policy marks it `BLOCKED`; the reviewer can only request changes or reject, the planner receives zero calls, and no approved specification or TaskGraph exists. A human `REQUEST_CHANGES` decision supplies fixed 24-hour, in-memory semantics and 404 behavior. Immutable Revision 1 becomes `READY`, is approved, produces the authoritative specification, and then produces the first authorized TaskGraph.
+The live ambiguity demonstration begins with an underspecified requirement. Requirement Analysis exposes the unresolved product decisions, and deterministic policy marks planning readiness `BLOCKED`; the reviewer can only request changes or reject, and no approved specification or TaskGraph exists. Human clarification creates an immutable revised analysis. Only a `READY`, approved revision produces the authoritative specification and the first authorized TaskGraph.
 
 That sequence demonstrates the governed requirements-to-planning boundary, not replacement of a Revision 0 plan—there was no such plan. Separate tests demonstrate stale-source protection: if an already-created TaskGraph no longer matches the current specification identity/version, execution stops before workspace initialization or before the next dispatch and mutation. A replacement must be regenerated, deterministically validated, and governed again; the running graph is not edited in place.
 
-The greenfield and brownfield bundles are retained V0.5 snapshots. Their historical analysis fields predate the V0.6 ambiguity gate, so the ambiguity bundle—not those frozen fields—is the reviewer evidence for current `BLOCKED` behavior.
+The curated V18 evidence identifies `url-shortener-v17` as its selected baseline and binds V17's originating run ID, publication bundle hash, source snapshot, verified seed, and governed baseline snapshot. V17 remains a distinct unchanged publication; V18 does not overwrite it. The copied evidence retains its original `runs/...` and `projects/...` paths because those values record the real execution and publication.
 
 ## 4. Important Engineering Decisions
 
@@ -54,7 +54,7 @@ Together, these decisions favor bounded blast radius, reproducibility, and revie
 
 Validation is intentionally split between the orchestrator and the products it creates or enhances.
 
-The current orchestrator checkpoint completed with **704 tests passed** and five opt-in Docker integration tests skipped by the ordinary deterministic run. The suite uses scripted model adapters and deterministic executors, so control behavior can be exercised without API credentials or network variability. It covers structured-output parsing, deterministic requirement and project readiness, both human approval loops, canonical identities, specification and TaskGraph lineage, approved validation profiles, disposable candidate postimages, fixed-profile execution evidence and success gating, application-required final-snapshot validation, bounded validation diagnostics and retries, Docker lifecycle and dependency policy, DAG and deliverable-role coverage, sequential and fan-out/fan-in scheduling, true bounded overlap, live progress and heartbeat ordering, retry exhaustion, stale-source rejection, artifact filtering, conflict reconciliation, isolated workspace containment, preimage and postimage checks, rollback, rollback failure, hard safe stops, exit-gate completeness, live run-evidence ownership and manifest integrity, verified composite non-overwriting project publication, and reliability derivation. Fault injection verifies failure paths rather than inferring them from positive demonstrations. The five repository-owned Docker smoke tests also passed separately against the fixed image.
+The current orchestrator checkpoint completed with **756 tests passed** and five opt-in Docker integration tests skipped by the ordinary deterministic run. The suite uses scripted model adapters and deterministic executors, so control behavior can be exercised without API credentials or network variability. It covers structured-output parsing, deterministic requirement and project readiness, both human approval loops, canonical identities, specification and TaskGraph lineage, approved validation profiles, disposable candidate postimages, fixed-profile execution evidence and success gating, application-required final-snapshot validation, bounded validation diagnostics and retries, Docker lifecycle and dependency policy, DAG and deliverable-role coverage, sequential and fan-out/fan-in scheduling, true bounded overlap, live progress and heartbeat ordering, retry exhaustion, stale-source rejection, artifact filtering, conflict reconciliation, isolated workspace containment, preimage and postimage checks, rollback, rollback failure, hard safe stops, exit-gate completeness, live run-evidence ownership and manifest integrity, verified composite non-overwriting project publication, and reliability derivation. Fault injection verifies failure paths rather than inferring them from positive demonstrations. The five repository-owned Docker smoke tests also passed separately against the fixed image.
 
 Generated-product behavioral validation remains a separate governed layer. V0.13
 introduced the fixed `PYTHON_COMPILE` profile. V0.14 adds the human-approved
@@ -64,9 +64,9 @@ fixed compile or Docker/pip/pytest argv, retains bounded immutable provisioning 
 execution evidence, proves disposable-container cleanup, and blocks success without
 an exact PASS. Compilation remains syntax-only. Pytest proves only that the
 recorded generated test suite passed in its recorded provisioned container; it does
-not prove benchmarks, deployment, production readiness, or performance. The exported greenfield,
-brownfield, and expiration products are dependency-free, independently runnable
-URL-shortener projects whose suites completed with 11, 18, and 20 passing tests
+not prove benchmarks, deployment, production readiness, or performance. The curated
+V17 greenfield and V18 brownfield products are dependency-free, independently
+runnable URL-shortener projects whose suites completed with 13 and 20 passing tests
 respectively. Those product checks were performed separately and confer no Git,
 CI/CD, release, or deployment authority.
 
@@ -104,7 +104,7 @@ Reliability behavior is fail-closed and bounded. Task execution permits at most 
 
 For eligible mutation failures, the runtime restores owned targets in reverse order, verifies rollback against the prior snapshot, and records either `ROLLED_BACK` or `ROLLBACK_FAILED`. Inability to prove restoration is not accepted as success: workspace integrity becomes `UNPROVABLE`, unsettled work is aborted, and the control graph takes a hard safe stop.
 
-[`sample_output/reliability_metrics.json`](sample_output/reliability_metrics.json) is a deterministic, read-only projection over the three scenarios' retained execution and workspace evidence. It reports supported structural measures such as task and attempt outcomes, retry frequency, mutation outcomes, rollback counts, and safe-stop status. MTTR and end-to-end latency are both `NOT_MEASURED` because the evidence model does not retain authoritative incident-to-recovery or elapsed-time boundaries. File timestamps are not substituted for missing telemetry.
+[`sample_output/reliability_metrics.json`](sample_output/reliability_metrics.json) is a deterministic, read-only projection over the curated V17 and V18 execution and workspace evidence. It reports supported structural measures such as task and attempt outcomes, retry frequency, mutation outcomes, rollback counts, and safe-stop status. MTTR and end-to-end latency are both `NOT_MEASURED` because the evidence model does not retain authoritative incident-to-recovery or elapsed-time boundaries. File timestamps are not substituted for missing telemetry.
 
 ## 7. Security and Change-Control Guardrails
 
@@ -151,19 +151,17 @@ MTTR and end-to-end latency remain unmeasured. These are deliberate evidence bou
 | Fast repository entry point | [README.md](README.md) |
 | Detailed architecture and control mechanics | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Engineering rationale and readiness | [ENGINEERING_SUMMARY.md](ENGINEERING_SUMMARY.md) |
-| Greenfield reviewer bundle | [`sample_output/demo-run/`](sample_output/demo-run/) |
-| Greenfield runnable product | [`sample_output/demo-run/generated-project/`](sample_output/demo-run/generated-project/) |
-| Brownfield reviewer bundle | [`sample_output/brownfield-demo-run/`](sample_output/brownfield-demo-run/) |
-| Brownfield runnable product | [`sample_output/brownfield-demo-run/enhanced-project/`](sample_output/brownfield-demo-run/enhanced-project/) |
-| Ambiguity reviewer bundle | [`sample_output/ambiguity-demo-run/`](sample_output/ambiguity-demo-run/) |
-| Ambiguity authority transition | [`sample_output/ambiguity-demo-run/ambiguity_resolution.json`](sample_output/ambiguity-demo-run/ambiguity_resolution.json) |
-| Ambiguity runnable product | [`sample_output/ambiguity-demo-run/expiration-project/`](sample_output/ambiguity-demo-run/expiration-project/) |
-| Cross-scenario reliability projection | [`sample_output/reliability_metrics.json`](sample_output/reliability_metrics.json) |
+| V17 greenfield publication and evidence | [`sample_output/url-shortener-v17/`](sample_output/url-shortener-v17/) |
+| V18 brownfield publication and evidence | [`sample_output/url-shortener-v18-expiration/`](sample_output/url-shortener-v18-expiration/) |
+| V18 baseline identity and integrity | [`workspace_execution.json`](sample_output/url-shortener-v18-expiration/sdlc-artifacts/workspace_execution.json) |
+| V18 impact analysis and revised authority | [`approved_requirement_spec.json`](sample_output/url-shortener-v18-expiration/sdlc-artifacts/approved_requirement_spec.json) |
+| Interactive ambiguity regression coverage | [`tests/test_ambiguity_demo.py`](tests/test_ambiguity_demo.py) |
+| Curated reliability projection | [`sample_output/reliability_metrics.json`](sample_output/reliability_metrics.json) |
 
 The most efficient review path is each bundle's `summary.md`, followed by its requirement analysis, approved specification, TaskGraph, task-execution evidence, and workspace-execution evidence where a claim needs deeper verification.
 
 ## 12. Final Readiness
 
-The repository demonstrates a controlled-autonomy lifecycle from deterministic intake and governed requirement authority through validated planning, bounded dependency-aware execution, fixed-profile governed validation, transactional isolated-workspace mutation, runnable-project readiness, exit evaluation, verified composite project publication, and independently retained evidence. The current checkpoints are 704 passing orchestrator tests (plus five separately passed opt-in Docker integration tests) and independently runnable generated products with 11, 18, and 20 passing tests.
+The repository demonstrates a controlled-autonomy lifecycle from deterministic intake and governed requirement authority through validated planning, bounded dependency-aware execution, fixed-profile governed validation, transactional isolated-workspace mutation, runnable-project readiness, exit evaluation, verified composite project publication, and independently retained evidence. The current checkpoints are 756 passing orchestrator tests (plus five separately passed opt-in Docker integration tests) and independently runnable V17 and V18 products with 13 and 20 passing tests.
 
 This describes the implemented prototype, not autonomous Git, release, or production deployment. Its authority boundaries, failure behavior, trade-offs, and unmeasured reliability dimensions are explicit, and the checked-in evidence provides concrete paths for independent verification.

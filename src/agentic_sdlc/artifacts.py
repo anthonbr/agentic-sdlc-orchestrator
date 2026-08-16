@@ -39,16 +39,15 @@ LEGACY_ARTIFACT_FILENAMES = (
 RELIABILITY_METRICS_FILENAME = "reliability_metrics.json"
 RELIABILITY_METRICS_SCHEMA_VERSION = "reliability-metrics-v1"
 RELIABILITY_SCENARIOS = (
-    ("greenfield", "demo-run", "sample_output/demo-run/"),
     (
-        "brownfield",
-        "brownfield-demo-run",
-        "sample_output/brownfield-demo-run/",
+        "V17 greenfield",
+        "url-shortener-v17/sdlc-artifacts",
+        "sample_output/url-shortener-v17/sdlc-artifacts/",
     ),
     (
-        "ambiguous requirement",
-        "ambiguity-demo-run",
-        "sample_output/ambiguity-demo-run/",
+        "V18 brownfield",
+        "url-shortener-v18-expiration/sdlc-artifacts",
+        "sample_output/url-shortener-v18-expiration/sdlc-artifacts/",
     ),
 )
 
@@ -123,7 +122,7 @@ def write_artifacts(state: WorkflowState, output_dir: Path) -> list[Path]:
 def write_reliability_metrics_artifact(
     artifacts_dir: Path, output_path: Path | None = None
 ) -> Path:
-    """Write a deterministic index of independent checked-in scenario metrics."""
+    """Write a deterministic index of curated checked-in scenario metrics."""
 
     runs = tuple(
         ScenarioReliabilityMetrics(

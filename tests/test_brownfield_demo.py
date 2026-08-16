@@ -50,10 +50,9 @@ from tests.demo_brownfield_scenario import (
     export_verified_brownfield_workspace,
     write_brownfield_review_artifacts,
 )
+from tests.demo_url_shortener_project import write_deterministic_project
 
 
-REPOSITORY_ROOT = Path(__file__).parents[1]
-GREENFIELD_PROJECT = REPOSITORY_ROOT / "sample_output/demo-run/generated-project"
 FIXED_TIME = datetime.fromisoformat("2026-08-10T12:00:00+00:00")
 
 
@@ -83,12 +82,13 @@ def _run_brownfield(
     monkeypatch.setattr(nodes, "datetime", FixedDateTime)
 
     tmp_path.mkdir(parents=True, exist_ok=True)
-    source_before = _project_bytes(GREENFIELD_PROJECT)
+    greenfield_project = write_deterministic_project(tmp_path / "greenfield-project")
+    source_before = _project_bytes(greenfield_project)
     runtime = GovernedWorkspaceRuntime(parent_directory=tmp_path)
     workspace = runtime.establish_workspace_for_run(run_id)
     seed_result, seed_snapshot = seed_isolated_workspace_from_approved_files(
         workspace,
-        source_root=GREENFIELD_PROJECT,
+        source_root=greenfield_project,
         source_root_label=BROWNFIELD_SOURCE_LABEL,
         relative_paths=BROWNFIELD_SOURCE_PATHS,
     )
@@ -133,7 +133,7 @@ def _run_brownfield(
             final_snapshot,
         )
         write_brownfield_review_artifacts(artifact_dir, state, seed_result)
-    assert _project_bytes(GREENFIELD_PROJECT) == source_before
+    assert _project_bytes(greenfield_project) == source_before
     assert seed_snapshot.snapshot_id == seed_result.baseline_snapshot_id
     return state, seed_result, executor, runtime
 
@@ -359,7 +359,8 @@ def test_final_workspace_and_export_match_expected_six_file_state(
     for path in BROWNFIELD_IMPACTED_PATHS:
         assert final_hashes[path] != baseline_hashes[path]
     assert _project_hashes(artifact_dir / "enhanced-project") == final_hashes
-    assert _project_hashes(GREENFIELD_PROJECT) == baseline_hashes
+    expected_baseline = write_deterministic_project(tmp_path / "expected-baseline")
+    assert _project_hashes(expected_baseline) == baseline_hashes
     assert (artifact_dir / "enhanced-project/src/url_shortener/service.py").read_text() == (
         ANALYTICS_SERVICE
     )

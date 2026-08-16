@@ -53,11 +53,12 @@ from tests.demo_brownfield_scenario import (
     ANALYTICS_TESTS,
     BROWNFIELD_SOURCE_PATHS,
     export_verified_brownfield_workspace,
+    write_deterministic_brownfield_project,
 )
 
 
 AMBIGUITY_RUN_ID = "deterministic-v06-ambiguity-expiration-demo"
-AMBIGUITY_SOURCE_LABEL = "sample_output/brownfield-demo-run/enhanced-project"
+AMBIGUITY_SOURCE_LABEL = "temporary-fixture/brownfield-project"
 AMBIGUITY_RAW_REQUIREMENT = (
     "Enhance the URL shortener so shortened URLs automatically expire after a "
     "period of time."
@@ -1161,20 +1162,20 @@ def _project_bytes(root: Path) -> dict[str, bytes]:
 
 
 def main() -> None:
-    """Regenerate checked-in reviewer evidence from deterministic adapters."""
+    """Generate deterministic ambiguity evidence at an explicit output path."""
 
-    repository_root = Path(__file__).parents[1]
-    output_dir = (
-        Path(sys.argv[1]).resolve()
-        if len(sys.argv) > 1
-        else repository_root / "sample_output/ambiguity-demo-run"
-    )
-    source_root = (
-        repository_root / "sample_output/brownfield-demo-run/enhanced-project"
-    )
+    if len(sys.argv) != 2:
+        raise SystemExit(
+            "usage: python -m tests.demo_ambiguity_scenario OUTPUT_DIRECTORY"
+        )
+    output_dir = Path(sys.argv[1]).resolve()
     with tempfile.TemporaryDirectory(prefix="agentic-sdlc-ambiguity-") as temporary:
+        temporary_root = Path(temporary)
+        source_root = write_deterministic_brownfield_project(
+            temporary_root / "brownfield-project"
+        )
         run_ambiguity_demo(
-            Path(temporary),
+            temporary_root / "workspaces",
             source_root=source_root,
             artifact_dir=output_dir,
         )
