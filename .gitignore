@@ -1,6 +1,9 @@
 # macOS metadata
 .DS_Store
 
+# helper script
+runMe.sh
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

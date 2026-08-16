@@ -142,7 +142,7 @@ routing. Return only the requested structured task proposal.
 """
 
 
-TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.7"
+TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.8"
 
 TASK_EXECUTION_SYSTEM_PROMPT = """\
 Execute exactly one approved software-engineering task using only the bounded
@@ -158,6 +158,13 @@ RUN_INSTRUCTIONS requires a materializable DOCUMENTATION artifact targeting the
 root README.md with concrete setup, run, test, minimal usage, and significant
 prototype-limitation guidance. Portable, project-owned setup and run instructions
 must remain primary; the project must not depend on the orchestrator environment.
+For Python projects, state the approved compatibility requirement separately from
+the interpreter command, such as "Python 3.12+" or the approved compatible range.
+Never turn that requirement into a minor-version executable name such as
+python3.12, and do not make pyenv a dependency. Portable instructions must show
+explicit virtual-environment setup with `python3 --version`,
+`python3 -m venv .venv`, and `source .venv/bin/activate`; after activation, use
+`python` for application and test commands.
 When the project is Python and supplied project context supports using the
 orchestrator's Python environment, the root README.md should additionally include
 an optional local-development example for the case where the published project

@@ -69,6 +69,7 @@ from agentic_sdlc.workspace_integration_contracts import (
     build_repository_context,
     build_workspace_bound_task_execution_request,
 )
+from tests.demo_url_shortener_project import GENERATED_README
 
 
 FIXED_TIME = "2026-08-09T12:00:00+00:00"
@@ -213,7 +214,7 @@ def _bound(request: TaskExecutionRequest) -> WorkspaceBoundTaskExecutionRequest:
 def test_execution_prompt_preserves_authority_boundary() -> None:
     prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
 
-    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.7"
+    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.8"
     assert "exactly one approved software-engineering task" in prompt
     assert "declare success" in prompt
     assert "change the approved task" in prompt
@@ -267,6 +268,29 @@ def test_run_instructions_keep_portable_commands_primary_and_local_reuse_optiona
     assert "optional and layout-dependent" in prompt
     assert "project is copied or moved elsewhere" in prompt
     assert "do not add this interpreter example for non-python projects" in prompt
+
+
+def test_python_run_instructions_separate_compatibility_from_executable_name(
+) -> None:
+    prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
+
+    assert 'such as "python 3.12+" or the approved compatible range' in prompt
+    assert "never turn that requirement into a minor-version executable name" in prompt
+    assert "do not make pyenv a dependency" in prompt
+    assert "`python3 --version`" in prompt
+    assert "`python3 -m venv .venv`" in prompt
+    assert "`source .venv/bin/activate`" in prompt
+    assert "after activation, use `python`" in prompt
+
+    assert "Python 3.11+ is required" in GENERATED_README
+    assert "python3 --version" in GENERATED_README
+    assert "python3 -m venv .venv" in GENERATED_README
+    assert "source .venv/bin/activate" in GENERATED_README
+    assert "PYTHONPATH=src python -m url_shortener.app" in GENERATED_README
+    assert "PYTHONPATH=src python -m unittest" in GENERATED_README
+    assert "python3.11" not in GENERATED_README
+    assert "python3.12" not in GENERATED_README
+    assert "pyenv" not in GENERATED_README.casefold()
 
 
 def test_engineering_obligations_and_meta_instructions_have_distinct_authority() -> None:

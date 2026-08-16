@@ -1013,20 +1013,67 @@ def required_validation_execution_status(
             verified_count=0,
             verified=False,
         )
-    if execution is None or run_id is None:
-        return RequiredValidationExecutionStatus(
-            required=True,
-            required_count=len(requirements),
-            verified_count=0,
-            verified=False,
-        )
+    verified_evidence = verified_required_validation_execution_evidence(
+        graph,
+        execution,
+        run_id=run_id,
+        bound_requests=bound_requests,
+        evidence=evidence,
+        provisioning_evidence=provisioning_evidence,
+        snapshots=snapshots,
+        change_sets=change_sets,
+        exit_decisions=exit_decisions,
+    )
+    python_compile_verified_count = sum(
+        item.profile is ValidationExecutionProfile.PYTHON_COMPILE
+        for item in verified_evidence
+    )
+    python_pytest_verified_count = sum(
+        item.profile is ValidationExecutionProfile.PYTHON_PYTEST
+        for item in verified_evidence
+    )
+    verified_count = len(verified_evidence)
+    return RequiredValidationExecutionStatus(
+        required=True,
+        required_count=len(requirements),
+        verified_count=verified_count,
+        verified=verified_count == len(requirements),
+        python_compile_verified_count=python_compile_verified_count,
+        python_pytest_verified_count=python_pytest_verified_count,
+        dependency_provisioning_verified_count=python_pytest_verified_count,
+    )
 
+
+def verified_required_validation_execution_evidence(
+    graph: TaskGraph | None,
+    execution: TaskGraphExecutionState | None,
+    *,
+    run_id: str | None = None,
+    bound_requests: tuple[WorkspaceBoundTaskExecutionRequest, ...] = (),
+    evidence: tuple[TaskValidationExecutionEvidence, ...] = (),
+    provisioning_evidence: tuple[TaskValidationProvisioningEvidence, ...] = (),
+    snapshots: tuple[WorkspaceSnapshot, ...] = (),
+    change_sets: tuple[WorkspaceChangeSet, ...] = (),
+    exit_decisions: tuple[TaskAttemptExitDecision, ...] = (),
+) -> tuple[TaskValidationExecutionEvidence, ...]:
+    """Select only exact governed PASS evidence accepted for final attempts.
+
+    This read-only selector is the record-level counterpart to
+    :func:`required_validation_execution_status`.  Both use the same graph,
+    request, attempt, workspace, policy, provisioning, identity, and task-exit
+    correlations.
+    """
+
+    if graph is None or execution is None or run_id is None:
+        return ()
+    requirements = tuple(
+        (task, requirement)
+        for task in graph.tasks
+        for requirement in task.required_validations
+    )
     states = {item.task_id: item for item in execution.task_states}
     snapshots_by_id = {item.snapshot_id: item for item in snapshots}
-    verified_count = 0
-    python_compile_verified_count = 0
-    python_pytest_verified_count = 0
-    dependency_provisioning_verified_count = 0
+    verified: list[TaskValidationExecutionEvidence] = []
     for task, requirement in requirements:
         runtime = states.get(task.task_id)
         if runtime is None or runtime.status is not TaskExecutionStatus.SUCCEEDED:
@@ -1140,23 +1187,8 @@ def required_validation_execution_status(
         )
         if len(matching_exit) != 1 or not item.passed:
             continue
-        verified_count += 1
-        if requirement.profile is ValidationExecutionProfile.PYTHON_COMPILE:
-            python_compile_verified_count += 1
-        elif requirement.profile is ValidationExecutionProfile.PYTHON_PYTEST:
-            python_pytest_verified_count += 1
-            dependency_provisioning_verified_count += 1
-    return RequiredValidationExecutionStatus(
-        required=True,
-        required_count=len(requirements),
-        verified_count=verified_count,
-        verified=verified_count == len(requirements),
-        python_compile_verified_count=python_compile_verified_count,
-        python_pytest_verified_count=python_pytest_verified_count,
-        dependency_provisioning_verified_count=(
-            dependency_provisioning_verified_count
-        ),
-    )
+        verified.append(item)
+    return tuple(verified)
 
 
 def final_workspace_validation_execution_status(

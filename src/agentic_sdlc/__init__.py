@@ -19,6 +19,11 @@ from agentic_sdlc.requirement_analysis import (
 from agentic_sdlc.requirement_spec import ApprovedRequirementSpec
 from agentic_sdlc.state import demo_input
 from agentic_sdlc.task_graph import ProposedTaskGraph, TaskGraph
+from agentic_sdlc.traceability import (
+    RequirementTraceabilityProjection,
+    TraceabilityStatus,
+    build_requirement_traceability,
+)
 from agentic_sdlc.workflow import build_workflow, resume_workflow, run_workflow
 
 __all__ = [
@@ -35,8 +40,11 @@ __all__ = [
     "ProposedTaskGraph",
     "RequirementAnalysis",
     "RequirementPlanningReadiness",
+    "RequirementTraceabilityProjection",
     "TaskGraph",
+    "TraceabilityStatus",
     "UnknownGovernedRunError",
+    "build_requirement_traceability",
     "build_workflow",
     "demo_input",
     "resume_workflow",

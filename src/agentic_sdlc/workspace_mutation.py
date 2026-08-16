@@ -113,6 +113,16 @@ class WorkspaceMutationResult(BaseModel):
     issues: tuple[WorkspaceMutationIssue, ...]
 
 
+def workspace_mutation_result_identity_is_valid(
+    result: WorkspaceMutationResult,
+) -> bool:
+    """Return whether a mutation ID still binds its exact retained evidence."""
+
+    return result.mutation_id == _mutation_result_id(
+        _mutation_result_payload_from_result(result)
+    )
+
+
 @dataclass(slots=True)
 class _EvidenceState:
     change: WorkspaceFileChange
@@ -1175,6 +1185,32 @@ def _result(
         "file_evidence": file_evidence,
         "issues": canonical_issues,
     }
+    return WorkspaceMutationResult(
+        mutation_id=_mutation_result_id(payload),
+        **payload,
+    )
+
+
+def _mutation_result_payload_from_result(
+    result: WorkspaceMutationResult,
+) -> dict[str, object]:
+    return {
+        "workspace_id": result.workspace_id,
+        "change_set_id": result.change_set_id,
+        "base_snapshot_id": result.base_snapshot_id,
+        "task_id": result.task_id,
+        "request_id": result.request_id,
+        "attempt_id": result.attempt_id,
+        "pre_mutation_snapshot_id": result.pre_mutation_snapshot_id,
+        "post_mutation_snapshot_id": result.post_mutation_snapshot_id,
+        "rollback_snapshot_id": result.rollback_snapshot_id,
+        "status": result.status,
+        "file_evidence": result.file_evidence,
+        "issues": result.issues,
+    }
+
+
+def _mutation_result_id(payload: dict[str, object]) -> str:
     serializable = {
         key: (
             [item.model_dump(mode="json") for item in value]
@@ -1191,7 +1227,4 @@ def _result(
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
-    return WorkspaceMutationResult(
-        mutation_id=f"WORKSPACE-MUTATION-{digest[:12].upper()}",
-        **payload,
-    )
+    return f"WORKSPACE-MUTATION-{digest[:12].upper()}"

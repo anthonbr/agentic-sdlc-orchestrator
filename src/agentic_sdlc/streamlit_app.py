@@ -45,6 +45,16 @@ from agentic_sdlc.task_graph_presentation import (
     TaskGraphPresentationError,
     task_graph_mermaid,
 )
+from agentic_sdlc.traceability import (
+    RequirementTraceabilityProjection,
+    TraceabilityProjectionError,
+    TraceabilityRow,
+    TraceabilityStatus,
+    build_requirement_traceability,
+    traceability_row_evaluator_reason,
+    traceability_status_explanation,
+    traceability_status_heading,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -481,6 +491,7 @@ def _render_snapshot(
             ),
         )
         st.write(safe_stop_reason)
+        _render_terminal_traceability(snapshot)
         _render_run_context(snapshot, None)
         if execution_progress is not None:
             _render_engineering_execution(execution_progress)
@@ -490,6 +501,7 @@ def _render_snapshot(
         st.session_state[_UI_PHASE_KEY] = "succeeded"
         st.success("The governed workflow completed successfully.")
         _render_published_project(snapshot)
+        _render_terminal_traceability(snapshot)
         _render_run_context(snapshot, None)
         if execution_progress is not None:
             _render_engineering_execution(execution_progress)
@@ -501,6 +513,7 @@ def _render_snapshot(
         st.write(snapshot.application_error)
     for error in _string_sequence(snapshot.workflow_state.get("errors", ())):
         st.write(f"- {error}")
+    _render_terminal_traceability(snapshot)
     _render_run_context(snapshot, None)
     if execution_progress is not None:
         _render_engineering_execution(execution_progress)
@@ -652,6 +665,274 @@ def _render_published_project(snapshot: GovernedRunSnapshot) -> None:
             f"Baseline project {baseline_name} was preserved. The governed result "
             f"was published as the new project {export_result.project_name}."
         )
+
+
+def _render_terminal_traceability(snapshot: GovernedRunSnapshot) -> None:
+    """Build and render a read-only projection only when spec authority exists."""
+
+    if snapshot.workflow_state.get("approved_requirement_spec") is None:
+        return
+    try:
+        projection = build_requirement_traceability(
+            snapshot.workflow_state,
+            export_result=snapshot.export_result,
+        )
+    except TraceabilityProjectionError as error:
+        st.warning(f"Requirement traceability is unavailable: {error}")
+        return
+    _render_requirement_traceability(projection)
+
+
+def _render_requirement_traceability(
+    projection: RequirementTraceabilityProjection,
+) -> None:
+    """Render the presentation-neutral projection without acquiring authority."""
+
+    st.header("Requirement-to-Code Traceability")
+    st.caption(
+        "Deterministic read-only projection over existing governed state and "
+        "evidence. Statuses are derived; retained evidence remains authoritative."
+    )
+    st.subheader("Traceability status")
+    for status in TraceabilityStatus:
+        st.markdown(
+            f"**{status.value}** — {traceability_status_explanation(status)}"
+        )
+    _render_brownfield_traceability(projection)
+    st.dataframe(
+        [_traceability_table_row(row) for row in projection.rows],
+        hide_index=True,
+        width="stretch",
+    )
+    st.caption(
+        "Missing links remain visible and are not inferred from names, prose, or "
+        "semantic similarity."
+    )
+    for row in projection.rows:
+        _render_traceability_row_detail(row, projection)
+
+
+def _render_brownfield_traceability(
+    projection: RequirementTraceabilityProjection,
+) -> None:
+    lineage = projection.brownfield_lineage
+    if lineage is None:
+        return
+    with st.expander("Brownfield baseline → governed outcome lineage", expanded=True):
+        if not lineage.verified:
+            st.warning(
+                "Brownfield lineage could not be established from one exact "
+                "correlated authority chain."
+            )
+            for gap in lineage.gaps:
+                st.text(f"{gap.code.value}: {gap.detail}")
+            return
+        for index, step in enumerate(lineage.steps, start=1):
+            st.text(
+                f"{index}. [{step.basis.value}] {step.stage}: {step.identity}"
+            )
+            st.caption(step.detail)
+        st.caption(
+            "The approved impact analysis is traceable to the overall plan, but "
+            "individual impact findings are not yet traceable to specific tasks."
+        )
+        st.caption("Missing links are shown explicitly rather than inferred.")
+
+
+def _traceability_table_row(row: TraceabilityRow) -> dict[str, str]:
+    authority = row.authority_links[0]
+    tasks = _summarize_values(
+        tuple(link.task_id for link in row.task_links),
+        empty="No explicit task",
+    )
+    implementation = (
+        _summarize_values(
+            tuple(
+                f"{link.target_path} · {link.operation.value}"
+                for link in row.implementation_links
+            ),
+            separator="; ",
+            empty="",
+        )
+        or "No materialized implementation"
+    )
+    validation = (
+        _summarize_values(
+            tuple(
+                f"{link.profile.value} · PASS" for link in row.validation_links
+            ),
+            separator="; ",
+            empty="",
+        )
+        or "No qualifying governed validation"
+    )
+    evidence_parts = []
+    if row.artifact_links:
+        evidence_parts.append(f"{len(row.artifact_links)} artifact")
+    mutation_count = sum(
+        link.evidence_kind == "WORKSPACE_MUTATION" for link in row.evidence_links
+    )
+    if mutation_count:
+        evidence_parts.append(f"{mutation_count} mutation")
+    if row.validation_links:
+        evidence_parts.append(f"{len(row.validation_links)} validation")
+    return {
+        "Requirement / AC": f"{row.item_id} — {_compact_text(row.text)}",
+        "Spec": f"{authority.spec_id} V{authority.spec_version:03d}",
+        "Task": tasks,
+        "Implementation": implementation,
+        "Validation": validation,
+        "Evidence": " · ".join(evidence_parts) or "No final evidence link",
+        "Status": row.status.value,
+    }
+
+
+def _render_traceability_row_detail(
+    row: TraceabilityRow,
+    projection: RequirementTraceabilityProjection,
+) -> None:
+    with st.expander(f"{row.item_id} — {row.text} · {row.status.value}"):
+        authority = row.authority_links[0]
+        st.subheader("Traceability status")
+        status_heading = traceability_status_heading(row.status)
+        if row.status is TraceabilityStatus.VERIFIED:
+            st.success(status_heading)
+        elif row.status is TraceabilityStatus.UNVERIFIED:
+            st.warning(status_heading)
+        else:
+            st.info(status_heading)
+        st.write(traceability_row_evaluator_reason(row))
+
+        st.subheader("Authoritative requirement")
+        st.text(
+            f"{authority.spec_id} V{authority.spec_version:03d} · analysis revision "
+            f"{authority.source_analysis_revision}"
+        )
+
+        st.subheader("TaskGraph")
+        if row.task_links:
+            for link in row.task_links:
+                st.text(f"[{link.basis.value}] {link.task_id} — {link.title}")
+        else:
+            st.text("No approved TaskGraph task explicitly references this item.")
+
+        st.subheader("Generated artifact")
+        if row.artifact_links:
+            for link in row.artifact_links:
+                st.text(
+                    f"{link.artifact_type} · logical name: {link.logical_name}"
+                )
+        else:
+            st.text("No canonical final-attempt artifact is linked.")
+
+        st.subheader("Files changed")
+        if row.implementation_links:
+            for link in row.implementation_links:
+                st.text(
+                    f"{link.target_path} — {link.operation.value}"
+                )
+        else:
+            st.text("No final-authority materialized implementation target is linked.")
+
+        st.subheader("Validation performed")
+        if row.validation_links:
+            for link in row.validation_links:
+                st.text(
+                    f"{link.profile.value} — PASS through {link.task_id}"
+                )
+        else:
+            st.text("No qualifying governed execution evidence linked.")
+
+        final = projection.final_authority
+        st.subheader("Run completion evidence")
+        st.text(
+            f"Workflow {final.workflow_status} · exit gate "
+            f"{'passed' if final.exit_gate_passed else 'not passed'}"
+        )
+        st.text(
+            "Readiness: "
+            f"{final.readiness_validation_id or 'not established'} · "
+            f"{'PASS' if final.readiness_passed else 'not passed'}"
+        )
+        if final.publication_succeeded:
+            st.text(f"Published project: {final.publication_project_name}")
+        else:
+            st.text("No verified publication relationship is included.")
+
+        st.subheader("Missing links")
+        if row.gaps:
+            for gap in row.gaps:
+                st.text(f"  {gap.code.value}: {gap.detail}")
+        else:
+            st.text("None.")
+
+        st.subheader("Technical evidence")
+        st.text(
+            f"Authority [{authority.basis.value}] · item lineage "
+            f"{authority.item_lineage_id}"
+        )
+        for link in row.task_links:
+            st.text(f"Task [{link.basis.value}] · {link.task_id}")
+        for link in row.artifact_links:
+            st.text(
+                f"Artifact [{link.basis.value}] · {link.artifact_id} · "
+                f"request {link.request_id} · attempt {link.attempt_id}"
+            )
+        for link in row.implementation_links:
+            st.text(
+                f"Materialization [{link.basis.value}] · "
+                f"{link.materialization_validation_id} · artifact "
+                f"{link.artifact_id} · target {link.target_path} · change set "
+                f"{link.change_set_id} · mutation {link.mutation_id}"
+            )
+            st.caption(
+                "Preimage: "
+                f"{link.expected_preimage_hash or 'none'} · postimage: "
+                f"{link.observed_postimage_hash}"
+            )
+        for link in row.validation_links:
+            st.text(
+                f"Validation [{link.basis.value}] · "
+                f"{link.validation_requirement_id} · evidence {link.evidence_id} · "
+                f"policy {link.policy_id} {link.policy_version}"
+            )
+            if link.provisioning_evidence_ids:
+                st.caption(
+                    "Provisioning evidence: "
+                    + ", ".join(link.provisioning_evidence_ids)
+                )
+        for link in row.evidence_links:
+            st.text(
+                f"Evidence [{link.basis.value}] · {link.evidence_kind} · "
+                f"{link.evidence_id}"
+            )
+        st.text(
+            "Final workspace snapshot: "
+            f"{final.final_workspace_snapshot_id or 'not established'}"
+        )
+        st.caption(f"Projection reason: {row.status_reason}")
+
+
+def _compact_text(value: str, *, limit: int = 72) -> str:
+    compact = " ".join(value.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 1].rstrip() + "…"
+
+
+def _summarize_values(
+    values: Sequence[str],
+    *,
+    separator: str = ", ",
+    empty: str,
+    limit: int = 3,
+) -> str:
+    if not values:
+        return empty
+    visible = tuple(values[:limit])
+    remainder = len(values) - len(visible)
+    summary = separator.join(visible)
+    return f"{summary}{separator}+{remainder} more" if remainder else summary
 
 
 def _render_engineering_execution(

@@ -306,6 +306,48 @@ This is an evidence-completeness and workspace-integrity boundary, not general r
 
 Within a workflow run, frozen Pydantic contracts make canonical plan, execution, artifact, workspace, mutation, and final project-readiness records immutable by contract, while `operator.add` state reducers accumulate histories rather than replace them. Together they retain requirement analyses and human decisions, TaskGraph candidates and approvals, execution waves, requests, results, failures, recovery decisions, canonical engineering artifacts, bounded workspace requests, snapshots, materialization validations, change sets, conflicts, mutation results, task-attempt exit decisions, and role-to-final-snapshot readiness evidence. Deterministic UUIDv5 identifiers and content hashes bind specification, graph, task, attempt, request, artifact slot, content, references, and mutation evidence. Failed attempts remain audit evidence; only the final successful attempt's exactly validated artifact set can feed dependents. The default `InMemorySaver` checkpoint is process-local, and exported JSON/Markdown reviewer artifacts are ordinary files rather than a tamper-evident durable event store.
 
+The evaluator-facing requirement-to-code view is a presentation-neutral,
+side-effect-free projection over those records. It starts with each canonical FR,
+NFR, CON, and AC exactly once; follows only explicit TaskGraph references; derives
+artifact and target-path lineage through exact successful final-attempt,
+materialization, change-set, mutation, and exit-decision correlations; and reuses
+the governed validation predicate that already checks graph, task, request,
+attempt, workspace, policy, provisioning, evidence identity, and exit authority.
+Logical artifact names remain semantic metadata; implementation paths come only
+from validated workspace change sets. Compile and pytest evidence retain their
+distinct profiles. Application-required final-workspace validation remains
+run-level evidence and does not backfill an item as verified when no explicit
+covering-task validation relationship exists. Brownfield lineage through the final
+snapshot is shown only when baseline provenance, seeded snapshot, bounded codebase
+context, approved run-level impact analysis, new specification, TaskGraph, and
+final snapshot correlate exactly. The live post-export view adds publication only
+when that result is bound to the same final snapshot; individual
+impact-finding-to-task edges are not invented. The approved impact
+analysis is traceable to the overall plan, but individual impact findings are not
+yet traceable to specific tasks.
+
+`VERIFIED`, `UNVERIFIED`, and `NOT_IMPLEMENTED` are derived traceability statuses,
+not new execution or validation authority. Missing or malformed joins fail closed
+and remain visible. `VERIFIED` means implementation and successful governed
+validation are explicitly linked; `UNVERIFIED` means implementation exists but
+the item-specific validation chain is not proven, not that implementation or tests
+failed; `NOT_IMPLEMENTED` means no authoritative implementation outcome is
+traceable. The projection builder performs no LLM call, filesystem access,
+validation, mutation, resume, approval, or publication, and Streamlit renders it
+with plain-language first-level labels while retaining exact technical evidence.
+
+After a successful terminal state exists but before publication begins, the normal
+artifact writer deterministically serializes that same projection as
+`requirement_traceability.json` and `requirement_traceability.md`. The reports are
+marked derived and non-authoritative, describe final readiness/snapshot evidence,
+and deliberately make no publication-success claim. The existing manifest binds
+both files with the rest of `runs/<run-id>/sdlc-artifacts/`; the unchanged verified
+export pipeline copies the complete bundle to
+`projects/<project-name>/sdlc-artifacts/`. Rendering completes before either report
+is installed. A generation failure remains visible through the existing required
+terminal-artifact failure path, so no manifest or publication treats a partial
+report set as valid.
+
 The repository separates storage and evidence ownership. `sample_output/` is
 Git-tracked, curated reviewer/reference material; it may preserve frozen scenarios,
 is not authoritative execution history, and is never a CLI or Streamlit runtime
