@@ -52,6 +52,7 @@ from agentic_sdlc.task_execution_contracts import (
 )
 from agentic_sdlc.task_executor import (
     OpenAITaskExecutor,
+    TASK_EXECUTION_REASONING_EFFORT,
     TaskExecutorError,
     build_task_execution_input,
 )
@@ -532,7 +533,9 @@ def test_openai_executor_uses_one_structured_parse_and_returns_result() -> None:
 
     assert result is expected
     assert len(calls) == 1
+    assert TASK_EXECUTION_REASONING_EFFORT == "xhigh"
     assert calls[0]["model"] == "test-executor-model"
+    assert calls[0]["reasoning"] == {"effort": "xhigh"}
     assert calls[0]["text_format"] is TaskExecutionResult
     assert calls[0]["store"] is False
     assert calls[0]["input"][0]["content"] == TASK_EXECUTION_SYSTEM_PROMPT

@@ -757,8 +757,10 @@ WorkspaceBoundTaskExecutionRequest
 ```
 
 `OpenAITaskExecutor` makes one structured-output request using the existing
-`OPENAI_MODEL` configuration. Its fixed instructions and deterministic input are
-derived only from the authoritative request: approved global and task-scoped
+`OPENAI_MODEL` configuration and application-owned `xhigh` reasoning effort;
+other governed LLM stages retain their existing reasoning configuration. Its fixed
+instructions and deterministic input are derived only from the authoritative
+request: approved global and task-scoped
 requirement context, the canonical current task, accepted direct-dependency
 artifacts, exact workspace binding, bounded repository observations, and correlation
 IDs. Raw conversation history, unrelated requirements, unrelated tasks, arbitrary
