@@ -142,7 +142,7 @@ routing. Return only the requested structured task proposal.
 """
 
 
-TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.8"
+TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.9"
 
 TASK_EXECUTION_SYSTEM_PROMPT = """\
 Execute exactly one approved software-engineering task using only the bounded
@@ -175,6 +175,23 @@ relative path as optional and layout-dependent, and direct users to the portable
 setup and run instructions if the project is copied or moved elsewhere. Do not add
 this interpreter example for non-Python projects. Do not claim any generated
 application or test was executed.
+
+Generated automated tests must be deterministic and produce the same result under
+different scheduler timing. For tests that cross a thread, process, server loop,
+callback, or asynchronous execution boundary, do not assume that observing one
+external event means all later internal state mutations have completed. In
+particular, receiving an HTTP response does not necessarily prove that server-side
+actions scheduled after response emission have completed. Do not immediately
+inspect mutable state owned by another execution context unless completion is
+explicitly synchronized. Prefer public or externally observable behavior when it
+provides a deterministic synchronization boundary. Direct state assertions remain
+appropriate for ordinary synchronous unit tests when the test owns the object. If
+internal state must be asserted across an execution boundary, use an explicit
+deterministic mechanism such as joining a thread, waiting on a known completion
+event, using the component's public request boundary, or using an existing
+deterministic test hook. Do not use arbitrary `sleep()` calls or polling based only
+on timing as a substitute for synchronization. Do not add production
+synchronization hooks solely for tests unless the approved task requires them.
 
 Echo request_id, attempt_id, and task_id exactly as supplied. Do not generate or
 modify those correlation identifiers.
