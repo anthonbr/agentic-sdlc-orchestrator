@@ -666,13 +666,31 @@ class GovernedRunService:
                 # observational reconciliation before freezing derived evidence.
                 reconciliation = self._reconcile_run_events_locked(context)
             if not reconciliation.complete:
+                event_detail = (
+                    "; first unconfirmed event: "
+                    f"{reconciliation.incomplete_event_id}"
+                    if reconciliation.incomplete_event_id is not None
+                    else ""
+                )
                 self._fail_terminal_evidence_finalization(
                     context,
-                    reconciliation=reconciliation,
+                    reason=(
+                        "reconstructible semantic governance events were not "
+                        "completely retained "
+                        f"({reconciliation.confirmed_event_count}/"
+                        f"{reconciliation.expected_event_count} confirmed"
+                        f"{event_detail})."
+                    ),
                 )
                 context.terminal_finalized = True
                 return
-            self._write_human_governance_history_locked(context)
+            if not self._write_human_governance_history_locked(context):
+                self._fail_terminal_evidence_finalization(
+                    context,
+                    reason="Human Governance History could not be generated.",
+                )
+                context.terminal_finalized = True
+                return
             try:
                 context.manifest_path = write_sdlc_artifact_manifest(
                     state,
@@ -741,24 +759,16 @@ class GovernedRunService:
         self,
         context: _GovernedRunContext,
         *,
-        reconciliation: _RunEventReconciliationResult,
+        reason: str,
     ) -> None:
         report_path = (
             context.artifact_bundle.artifact_dir
             / HUMAN_GOVERNANCE_HISTORY_FILENAME
         )
         report_path.unlink(missing_ok=True)
-        event_detail = (
-            f"; first unconfirmed event: {reconciliation.incomplete_event_id}"
-            if reconciliation.incomplete_event_id is not None
-            else ""
-        )
-        context.application_error = (
-            "Terminal evidence finalization failed: reconstructible semantic "
-            "governance events were not completely retained "
-            f"({reconciliation.confirmed_event_count}/"
-            f"{reconciliation.expected_event_count} confirmed{event_detail})."
-        )
+        context.manifest_path = None
+        context.export_result = None
+        context.application_error = f"Terminal evidence finalization failed: {reason}"
 
     def _append_run_event_locked(
         self,
@@ -778,23 +788,30 @@ class GovernedRunService:
     def _write_human_governance_history_locked(
         self,
         context: _GovernedRunContext,
-    ) -> None:
+    ) -> bool:
         path = (
             context.artifact_bundle.artifact_dir
             / HUMAN_GOVERNANCE_HISTORY_FILENAME
         )
         try:
-            write_human_governance_history(
+            written_path = write_human_governance_history(
                 context.workflow_state,
                 context.event_log,
                 context.artifact_bundle.artifact_dir,
             )
+            if written_path != path or not path.is_file():
+                raise HumanGovernanceHistoryError(
+                    "Human Governance History was not materialized at its "
+                    "required artifact path."
+                )
         except (HumanGovernanceHistoryError, OSError, RunEventError) as error:
             path.unlink(missing_ok=True)
             _append_warning_once(
                 context,
                 _event_warning("human governance history", error),
             )
+            return False
+        return True
 
 
 def write_workflow_diagram(

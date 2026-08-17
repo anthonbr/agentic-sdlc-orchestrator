@@ -366,13 +366,15 @@ the governed transition succeeds. A failed append therefore cannot revoke a
 human decision; later inspection or lifecycle advancement can repair a missing
 reconstructible event without replaying the workflow. At terminal success or safe
 stop, the application retries incomplete reconciliation before rendering or
-freezing evidence. If reconstructible events remain unretained, workflow authority
-is preserved while application evidence finalization fails explicitly; no normal
-manifest or successful project publication proceeds. The initial vocabulary is
-limited to accepted requirement submission, brownfield baseline selection and
-verification, Requirement Analysis and TaskGraph review decisions, and AI
-clarification request/generation. Task attempts, validation, rollback,
-publication, performance, and generic UI telemetry are intentionally absent.
+freezing evidence. Reconstructible events must be retained and the derived Human
+Governance History must be successfully materialized. Failure of either step
+preserves workflow authority while application evidence finalization fails
+explicitly; no normal manifest or successful project publication proceeds. The
+initial vocabulary is limited to accepted requirement submission, brownfield
+baseline selection and verification, Requirement Analysis and TaskGraph review
+decisions, and AI clarification request/generation. Task attempts, validation,
+rollback, publication, performance, and generic UI telemetry are intentionally
+absent.
 
 Actor and authority are separate. Human submission or baseline selection is
 `HUMAN_INPUT`; an authoritative review decision is `HUMAN_GOVERNANCE`; an AI

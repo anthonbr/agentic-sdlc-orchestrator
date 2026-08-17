@@ -215,9 +215,10 @@ artifact manifest and copied through verified project publication. Audit logging
 failure cannot roll back an accepted governance transition; later inspection can
 idempotently reconcile events that are reconstructible from authoritative state.
 Before terminal evidence is frozen or published, those reconstructible events
-must be completely reconciled. If the terminal retry still cannot retain them,
-workflow authority remains intact but evidence finalization fails explicitly and
-no normal manifest or durable project publication is created.
+must be completely reconciled and the derived Human Governance History must be
+successfully generated. If either evidence step fails, workflow authority remains
+intact but evidence finalization fails explicitly and no normal manifest or
+durable project publication is created.
 
 ## Evaluator guide
 

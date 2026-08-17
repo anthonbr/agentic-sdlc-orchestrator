@@ -6,6 +6,9 @@ import hashlib
 import json
 from pathlib import Path
 
+from pytest import MonkeyPatch
+
+import agentic_sdlc.application as application_module
 from agentic_sdlc.application import (
     GovernedRunApplicationStatus,
     GovernedRunRequest,
@@ -18,6 +21,7 @@ from agentic_sdlc.clarification_draft import (
 )
 from agentic_sdlc.human_governance_history import (
     HUMAN_GOVERNANCE_HISTORY_FILENAME,
+    HumanGovernanceHistoryError,
     render_human_governance_history,
 )
 from agentic_sdlc.llm import FakeRequirementAnalysisClient, FakeTaskPlanningClient
@@ -612,6 +616,130 @@ def test_persistent_terminal_rejection_audit_failure_preserves_safe_stop_authori
         / HUMAN_GOVERNANCE_HISTORY_FILENAME
     ).exists()
     assert not (stopped.artifact_bundle.artifact_dir / "manifest.json").exists()
+
+
+def test_successful_workflow_report_write_failure_blocks_manifest_and_publication(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    service, _, _ = _service(
+        tmp_path,
+        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        planner=FakeTaskPlanningClient([_proposal()]),
+        run_suffix="governance-report-write-failure",
+    )
+    requirement_gate = service.start_run(
+        GovernedRunRequest(command="demo", workflow_input=demo_input())
+    )
+    graph_gate = service.resume_run(
+        requirement_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=requirement_gate.human_gate.gate_token,  # type: ignore[union-attr]
+    )
+
+    def fail_after_partial_write(_state, _event_log, output_dir):
+        partial = output_dir / HUMAN_GOVERNANCE_HISTORY_FILENAME
+        partial.write_text("partial report", encoding="utf-8")
+        raise OSError("injected governance report write failure")
+
+    monkeypatch.setattr(
+        application_module,
+        "write_human_governance_history",
+        fail_after_partial_write,
+    )
+    terminal = service.resume_run(
+        graph_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=graph_gate.human_gate.gate_token,  # type: ignore[union-attr]
+    )
+
+    assert terminal.workflow_status == "success"
+    assert terminal.workflow_state["requirement_review_history"][-1]["decision"] == (
+        "APPROVE"
+    )
+    assert terminal.workflow_state["approved_requirement_spec"]
+    assert terminal.workflow_state["task_graph_review_history"][-1]["decision"] == (
+        "APPROVE"
+    )
+    assert len(terminal.workflow_state["task_graph_review_history"]) == 1
+    assert terminal.workflow_state["approved_task_graph"]
+    assert terminal.human_gate is None
+    assert terminal.application_status is GovernedRunApplicationStatus.FAILED
+    assert terminal.application_error == (
+        "Terminal evidence finalization failed: Human Governance History could "
+        "not be generated."
+    )
+    assert any(
+        "injected governance report write failure" in warning
+        for warning in terminal.warnings
+    )
+    assert not (
+        terminal.artifact_bundle.artifact_dir
+        / HUMAN_GOVERNANCE_HISTORY_FILENAME
+    ).exists()
+    assert not (terminal.artifact_bundle.artifact_dir / "manifest.json").exists()
+    assert terminal.manifest_path is None
+    assert terminal.export_result is None
+    assert not (tmp_path / "projects").exists()
+
+    inspected = service.inspect_run(terminal.run_id)
+    assert inspected.human_gate is None
+    assert len(inspected.workflow_state["task_graph_review_history"]) == 1
+
+
+def test_safe_stop_report_render_failure_preserves_rejection_without_manifest(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    service, _, _ = _service(
+        tmp_path,
+        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        planner=FakeTaskPlanningClient([_proposal()]),
+        run_suffix="governance-report-render-failure",
+    )
+    requirement_gate = service.start_run(
+        GovernedRunRequest(command="demo", workflow_input=demo_input())
+    )
+
+    def fail_render(_state, _event_log, _output_dir):
+        raise HumanGovernanceHistoryError(
+            "injected governance report render failure"
+        )
+
+    monkeypatch.setattr(
+        application_module,
+        "write_human_governance_history",
+        fail_render,
+    )
+    stopped = service.resume_run(
+        requirement_gate.run_id,
+        {"decision": "REJECT", "feedback": "Not approved."},
+        gate_token=requirement_gate.human_gate.gate_token,  # type: ignore[union-attr]
+    )
+
+    assert stopped.workflow_status == "safe_stopped"
+    assert stopped.workflow_state["requirement_review_history"][-1]["decision"] == (
+        "REJECT"
+    )
+    assert stopped.workflow_state["safe_stop_reason"]
+    assert stopped.human_gate is None
+    assert stopped.application_status is GovernedRunApplicationStatus.FAILED
+    assert stopped.application_error == (
+        "Terminal evidence finalization failed: Human Governance History could "
+        "not be generated."
+    )
+    assert any(
+        "injected governance report render failure" in warning
+        for warning in stopped.warnings
+    )
+    assert not (
+        stopped.artifact_bundle.artifact_dir
+        / HUMAN_GOVERNANCE_HISTORY_FILENAME
+    ).exists()
+    assert not (stopped.artifact_bundle.artifact_dir / "manifest.json").exists()
+    assert stopped.manifest_path is None
+    assert stopped.export_result is None
+    assert not (tmp_path / "projects").exists()
 
 
 def test_authority_modules_do_not_read_event_or_markdown_reports() -> None:
