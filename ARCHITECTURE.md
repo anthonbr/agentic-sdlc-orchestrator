@@ -419,6 +419,13 @@ remains an integrity index rather than a signature or tamper-proof event store.
 Renaming the curated tree changes none of these execution, evidence, or publication
 authority boundaries.
 
+For a completed Streamlit presentation, the finalized manifest records drive a
+read-only, lifecycle-ordered **SDLC Evidence & Artifacts** index. The adapter
+offers exact retained bytes through native download controls, rejects unsafe or
+content-mismatched entries, and does not enumerate unrelated directory contents.
+The index is presentation metadata only and introduces no workflow, artifact,
+validation, or publication authority.
+
 `sample_output/reliability_metrics.json` is generated as a deterministic projection over the checked-in terminal `task_execution.json` and `workspace_execution.json` evidence for the curated V17 greenfield and V18 brownfield publications. The derivation validates that every started attempt has exactly one exit decision, then reports task outcomes, attempt outcomes, success ratios, retry frequency, mutation and rollback counts/frequency, and safe-stop count. It is read-only with respect to execution behavior and is not a telemetry subsystem.
 
 End-to-end latency and MTTR are explicitly `NOT_MEASURED`: the evidence model retains structural events but not authoritative elapsed-time or incident-to-recovery boundaries. Reliability claims are made only where retained evidence supports them; no timing precision is inferred from creation timestamps or file metadata.

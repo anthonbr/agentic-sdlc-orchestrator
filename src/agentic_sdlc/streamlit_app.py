@@ -30,6 +30,10 @@ from agentic_sdlc.requirement_analysis import (
     RequirementPlanningReadiness,
 )
 from agentic_sdlc.requirement_submission import RequirementSubmissionError
+from agentic_sdlc.sdlc_artifact_index import (
+    SDLCArtifactIndexError,
+    load_sdlc_artifact_index,
+)
 from agentic_sdlc.state import ApprovalDecision, ApprovalResponse
 from agentic_sdlc.streamlit_execution_progress import (
     StreamlitExecutionProgressView,
@@ -495,6 +499,7 @@ def _render_snapshot(
         _render_run_context(snapshot, None)
         if execution_progress is not None:
             _render_engineering_execution(execution_progress)
+        _render_terminal_artifact_index(snapshot)
         return
 
     if snapshot.application_status is GovernedRunApplicationStatus.SUCCEEDED:
@@ -505,6 +510,7 @@ def _render_snapshot(
         _render_run_context(snapshot, None)
         if execution_progress is not None:
             _render_engineering_execution(execution_progress)
+        _render_terminal_artifact_index(snapshot)
         return
 
     st.session_state[_UI_PHASE_KEY] = "failed"
@@ -664,6 +670,54 @@ def _render_published_project(snapshot: GovernedRunSnapshot) -> None:
         st.info(
             f"Baseline project {baseline_name} was preserved. The governed result "
             f"was published as the new project {export_result.project_name}."
+        )
+
+
+def _render_terminal_artifact_index(snapshot: GovernedRunSnapshot) -> None:
+    """Render read-only native downloads from one finalized run manifest."""
+
+    manifest_path = snapshot.manifest_path
+    if manifest_path is None:
+        return
+    try:
+        rows = load_sdlc_artifact_index(
+            bundle=snapshot.artifact_bundle,
+            manifest_path=manifest_path,
+            workflow_status=snapshot.workflow_status,
+        )
+    except SDLCArtifactIndexError as error:
+        st.warning(
+            "SDLC Evidence & Artifacts are unavailable because the finalized "
+            f"manifest could not be validated: {error}"
+        )
+        return
+
+    st.header("SDLC Evidence & Artifacts")
+    st.caption(
+        "Read-only access to retained evidence in lifecycle order, derived from "
+        "the finalized manifest."
+    )
+    stage_column, artifact_column, description_column, action_column = st.columns(
+        (1.3, 1.8, 3.7, 1.0)
+    )
+    stage_column.markdown("**SDLC Stage**")
+    artifact_column.markdown("**Artifact**")
+    description_column.markdown("**What it shows**")
+    action_column.markdown("**Action**")
+    for row in rows:
+        stage_column, artifact_column, description_column, action_column = (
+            st.columns((1.3, 1.8, 3.7, 1.0))
+        )
+        stage_column.write(row.stage)
+        artifact_column.text(row.artifact)
+        description_column.write(row.description)
+        action_column.download_button(
+            "Download",
+            data=row.contents,
+            file_name=row.artifact,
+            mime=row.mime_type,
+            key=f"sdlc-artifact-download-{snapshot.run_id}-{row.artifact}",
+            on_click="ignore",
         )
 
 

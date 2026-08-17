@@ -220,6 +220,13 @@ successfully generated. If either evidence step fails, workflow authority remain
 intact but evidence finalization fails explicitly and no normal manifest or
 durable project publication is created.
 
+Completed Streamlit runs with a valid finalized manifest end with a
+lifecycle-ordered **SDLC Evidence & Artifacts** index. Native read-only downloads
+offer the exact retained bytes listed by that manifest, while unknown future
+manifest-bound evidence remains visible under a deterministic fallback stage.
+The index scans no directory for additional files and gains no workflow,
+mutation, validation, or publication authority.
+
 ## Evaluator guide
 
 For the quickest evaluation path, use these documents and retained evidence:
