@@ -245,6 +245,16 @@ class _GovernedRunContext:
     lock: Lock = field(default_factory=Lock)
 
 
+@dataclass(frozen=True, slots=True)
+class _RunEventReconciliationResult:
+    """Whether every reconstructible semantic event was confirmed retained."""
+
+    complete: bool
+    expected_event_count: int
+    confirmed_event_count: int
+    incomplete_event_id: str | None = None
+
+
 class GovernedRunService:
     """Coordinate run lifetime without acquiring governance authority.
 
@@ -628,21 +638,40 @@ class GovernedRunService:
                 context.gate_token = None
         try:
             with context.lock:
-                self._reconcile_run_events_locked(context)
-                self._finalize_terminal_run(context)
+                reconciliation = self._reconcile_run_events_locked(context)
+                self._finalize_terminal_run(
+                    context,
+                    reconciliation=reconciliation,
+                )
         finally:
             with context.lock:
                 context.executing = False
         with context.lock:
             return _snapshot_from_context(context)
 
-    def _finalize_terminal_run(self, context: _GovernedRunContext) -> None:
+    def _finalize_terminal_run(
+        self,
+        context: _GovernedRunContext,
+        *,
+        reconciliation: _RunEventReconciliationResult,
+    ) -> None:
         state = context.workflow_state
         if state.get("__interrupt__") or context.terminal_finalized:
             return
 
         workflow_status = state.get("workflow_status", "unknown")
         if workflow_status in {"success", "safe_stopped"}:
+            if not reconciliation.complete:
+                # The governed transition already succeeded. Retry only the
+                # observational reconciliation before freezing derived evidence.
+                reconciliation = self._reconcile_run_events_locked(context)
+            if not reconciliation.complete:
+                self._fail_terminal_evidence_finalization(
+                    context,
+                    reconciliation=reconciliation,
+                )
+                context.terminal_finalized = True
+                return
             self._write_human_governance_history_locked(context)
             try:
                 context.manifest_path = write_sdlc_artifact_manifest(
@@ -676,7 +705,10 @@ class GovernedRunService:
 
         context.terminal_finalized = True
 
-    def _reconcile_run_events_locked(self, context: _GovernedRunContext) -> None:
+    def _reconcile_run_events_locked(
+        self,
+        context: _GovernedRunContext,
+    ) -> _RunEventReconciliationResult:
         """Repair reconstructible observations from authoritative state."""
 
         try:
@@ -686,10 +718,47 @@ class GovernedRunService:
                 context,
                 _event_warning("semantic run-event reconciliation", error),
             )
-            return
-        for draft in drafts:
+            return _RunEventReconciliationResult(
+                complete=False,
+                expected_event_count=0,
+                confirmed_event_count=0,
+            )
+        for confirmed_count, draft in enumerate(drafts):
             if not self._append_run_event_locked(context, draft):
-                return
+                return _RunEventReconciliationResult(
+                    complete=False,
+                    expected_event_count=len(drafts),
+                    confirmed_event_count=confirmed_count,
+                    incomplete_event_id=draft.event_id,
+                )
+        return _RunEventReconciliationResult(
+            complete=True,
+            expected_event_count=len(drafts),
+            confirmed_event_count=len(drafts),
+        )
+
+    def _fail_terminal_evidence_finalization(
+        self,
+        context: _GovernedRunContext,
+        *,
+        reconciliation: _RunEventReconciliationResult,
+    ) -> None:
+        report_path = (
+            context.artifact_bundle.artifact_dir
+            / HUMAN_GOVERNANCE_HISTORY_FILENAME
+        )
+        report_path.unlink(missing_ok=True)
+        event_detail = (
+            f"; first unconfirmed event: {reconciliation.incomplete_event_id}"
+            if reconciliation.incomplete_event_id is not None
+            else ""
+        )
+        context.application_error = (
+            "Terminal evidence finalization failed: reconstructible semantic "
+            "governance events were not completely retained "
+            f"({reconciliation.confirmed_event_count}/"
+            f"{reconciliation.expected_event_count} confirmed{event_detail})."
+        )
 
     def _append_run_event_locked(
         self,

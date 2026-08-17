@@ -364,7 +364,11 @@ This stream observes authority rather than creating it. Requirement Analysis and
 TaskGraph decisions are reconciled from the authoritative review histories after
 the governed transition succeeds. A failed append therefore cannot revoke a
 human decision; later inspection or lifecycle advancement can repair a missing
-reconstructible event without replaying the workflow. The initial vocabulary is
+reconstructible event without replaying the workflow. At terminal success or safe
+stop, the application retries incomplete reconciliation before rendering or
+freezing evidence. If reconstructible events remain unretained, workflow authority
+is preserved while application evidence finalization fails explicitly; no normal
+manifest or successful project publication proceeds. The initial vocabulary is
 limited to accepted requirement submission, brownfield baseline selection and
 verification, Requirement Analysis and TaskGraph review decisions, and AI
 clarification request/generation. Task attempts, validation, rollback,

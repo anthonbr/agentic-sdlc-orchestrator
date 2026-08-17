@@ -6,7 +6,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from agentic_sdlc.application import GovernedRunRequest
+from agentic_sdlc.application import (
+    GovernedRunApplicationStatus,
+    GovernedRunRequest,
+)
 from agentic_sdlc.clarification_draft import (
     ClarificationDraftRequest,
     ClarificationDraftResult,
@@ -283,6 +286,21 @@ class _FailOnceReviewLog(RunEventLog):
         return super().append(draft)
 
 
+class _ControlledTerminalReviewLog(RunEventLog):
+    failing_event_type: RunEventType | None = None
+    failures_remaining = 0
+    fail_persistently = False
+    matching_attempts = 0
+
+    def append(self, draft: RunEventDraft):
+        if draft.event_type is self.failing_event_type:
+            self.matching_attempts += 1
+            if self.fail_persistently or self.failures_remaining > 0:
+                self.failures_remaining = max(0, self.failures_remaining - 1)
+                raise RunEventError("injected terminal audit append failure")
+        return super().append(draft)
+
+
 def test_logging_failure_cannot_undo_approval_and_inspection_repairs_event(
     tmp_path: Path,
 ) -> None:
@@ -326,6 +344,203 @@ def test_logging_failure_cannot_undo_approval_and_inspection_repairs_event(
     ]
     service.inspect_run(paused.run_id)
     assert len(logs[0].read()) == 2
+
+
+def test_terminal_reconciliation_repairs_transient_task_graph_audit_failure(
+    tmp_path: Path,
+) -> None:
+    logs: list[_ControlledTerminalReviewLog] = []
+
+    def log_factory(bundle):
+        log = _ControlledTerminalReviewLog(bundle)
+        logs.append(log)
+        return log
+
+    service, _, _ = _service(
+        tmp_path,
+        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        planner=FakeTaskPlanningClient([_proposal()]),
+        run_suffix="terminal-audit-repair",
+        run_event_log_factory=log_factory,
+    )
+    requirement_gate = service.start_run(
+        GovernedRunRequest(command="demo", workflow_input=demo_input())
+    )
+    graph_gate = service.resume_run(
+        requirement_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=requirement_gate.human_gate.gate_token,  # type: ignore[union-attr]
+    )
+    logs[0].failing_event_type = RunEventType.TASK_GRAPH_REVIEW_DECIDED
+    logs[0].failures_remaining = 1
+
+    terminal = service.resume_run(
+        graph_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=graph_gate.human_gate.gate_token,  # type: ignore[union-attr]
+    )
+
+    assert terminal.workflow_status == "success"
+    assert terminal.application_status is GovernedRunApplicationStatus.SUCCEEDED
+    assert terminal.workflow_state["task_graph_review_history"][-1]["decision"] == (
+        "APPROVE"
+    )
+    assert terminal.workflow_state["approved_task_graph"]
+    assert logs[0].matching_attempts == 2
+    assert any("run-event append" in warning for warning in terminal.warnings)
+    task_graph_events = tuple(
+        event
+        for event in logs[0].read()
+        if event.event_type is RunEventType.TASK_GRAPH_REVIEW_DECIDED
+    )
+    assert len(task_graph_events) == 1
+    assert task_graph_events[0].actor is RunEventActor.HUMAN
+    assert task_graph_events[0].authority is RunEventAuthority.HUMAN_GOVERNANCE
+    assert task_graph_events[0].data["decision"] == "APPROVE"
+
+    report_path = (
+        terminal.artifact_bundle.artifact_dir
+        / HUMAN_GOVERNANCE_HISTORY_FILENAME
+    )
+    report_bytes = report_path.read_bytes()
+    assert b"became the approved TaskGraph authorized" in report_bytes
+    assert terminal.manifest_path is not None
+    manifest = json.loads(terminal.manifest_path.read_text(encoding="utf-8"))
+    assert HUMAN_GOVERNANCE_HISTORY_FILENAME in {
+        record["path"] for record in manifest["files"]
+    }
+    assert terminal.export_result is not None
+    assert terminal.export_result.destination_directory is not None
+    published_report = (
+        terminal.export_result.destination_directory
+        / "sdlc-artifacts"
+        / HUMAN_GOVERNANCE_HISTORY_FILENAME
+    )
+    assert published_report.read_bytes() == report_bytes
+
+    service.inspect_run(terminal.run_id)
+    assert len(
+        [
+            event
+            for event in logs[0].read()
+            if event.event_type is RunEventType.TASK_GRAPH_REVIEW_DECIDED
+        ]
+    ) == 1
+
+
+def test_persistent_terminal_task_graph_audit_failure_blocks_evidence_freeze(
+    tmp_path: Path,
+) -> None:
+    logs: list[_ControlledTerminalReviewLog] = []
+
+    def log_factory(bundle):
+        log = _ControlledTerminalReviewLog(bundle)
+        logs.append(log)
+        return log
+
+    service, _, _ = _service(
+        tmp_path,
+        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        planner=FakeTaskPlanningClient([_proposal()]),
+        run_suffix="terminal-audit-persistent",
+        run_event_log_factory=log_factory,
+    )
+    requirement_gate = service.start_run(
+        GovernedRunRequest(command="demo", workflow_input=demo_input())
+    )
+    graph_gate = service.resume_run(
+        requirement_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=requirement_gate.human_gate.gate_token,  # type: ignore[union-attr]
+    )
+    logs[0].failing_event_type = RunEventType.TASK_GRAPH_REVIEW_DECIDED
+    logs[0].fail_persistently = True
+
+    terminal = service.resume_run(
+        graph_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=graph_gate.human_gate.gate_token,  # type: ignore[union-attr]
+    )
+
+    assert terminal.workflow_status == "success"
+    assert terminal.application_status is GovernedRunApplicationStatus.FAILED
+    assert terminal.workflow_state["task_graph_review_history"][-1]["decision"] == (
+        "APPROVE"
+    )
+    assert terminal.workflow_state["approved_task_graph"]
+    assert len(terminal.workflow_state["task_graph_review_history"]) == 1
+    assert terminal.human_gate is None
+    assert terminal.application_error is not None
+    assert "Terminal evidence finalization failed" in terminal.application_error
+    assert "not completely retained" in terminal.application_error
+    assert any("run-event append" in warning for warning in terminal.warnings)
+    assert logs[0].matching_attempts == 2
+    assert all(
+        event.event_type is not RunEventType.TASK_GRAPH_REVIEW_DECIDED
+        for event in logs[0].read()
+    )
+    assert terminal.manifest_path is None
+    assert terminal.export_result is None
+    assert not (
+        terminal.artifact_bundle.artifact_dir
+        / HUMAN_GOVERNANCE_HISTORY_FILENAME
+    ).exists()
+    assert not (terminal.artifact_bundle.artifact_dir / "manifest.json").exists()
+    assert not (tmp_path / "projects").exists()
+
+
+def test_persistent_terminal_rejection_audit_failure_preserves_safe_stop_authority(
+    tmp_path: Path,
+) -> None:
+    logs: list[_ControlledTerminalReviewLog] = []
+
+    def log_factory(bundle):
+        log = _ControlledTerminalReviewLog(bundle)
+        logs.append(log)
+        return log
+
+    service, _, _ = _service(
+        tmp_path,
+        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        planner=FakeTaskPlanningClient([_proposal()]),
+        run_suffix="rejection-audit-persistent",
+        run_event_log_factory=log_factory,
+    )
+    requirement_gate = service.start_run(
+        GovernedRunRequest(command="demo", workflow_input=demo_input())
+    )
+    logs[0].failing_event_type = (
+        RunEventType.REQUIREMENT_ANALYSIS_REVIEW_DECIDED
+    )
+    logs[0].fail_persistently = True
+
+    stopped = service.resume_run(
+        requirement_gate.run_id,
+        {"decision": "REJECT", "feedback": "Not approved."},
+        gate_token=requirement_gate.human_gate.gate_token,  # type: ignore[union-attr]
+    )
+
+    assert stopped.workflow_status == "safe_stopped"
+    assert stopped.application_status is GovernedRunApplicationStatus.FAILED
+    assert stopped.workflow_state["requirement_review_decision"] == "REJECT"
+    assert stopped.workflow_state["safe_stop_reason"]
+    assert len(stopped.workflow_state["requirement_review_history"]) == 1
+    assert stopped.human_gate is None
+    assert stopped.application_error is not None
+    assert "Terminal evidence finalization failed" in stopped.application_error
+    assert any("run-event append" in warning for warning in stopped.warnings)
+    assert logs[0].matching_attempts == 2
+    assert all(
+        event.event_type is not RunEventType.REQUIREMENT_ANALYSIS_REVIEW_DECIDED
+        for event in logs[0].read()
+    )
+    assert stopped.manifest_path is None
+    assert stopped.export_result is None
+    assert not (
+        stopped.artifact_bundle.artifact_dir
+        / HUMAN_GOVERNANCE_HISTORY_FILENAME
+    ).exists()
+    assert not (stopped.artifact_bundle.artifact_dir / "manifest.json").exists()
 
 
 def test_authority_modules_do_not_read_event_or_markdown_reports() -> None:
