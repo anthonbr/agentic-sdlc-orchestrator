@@ -28,9 +28,11 @@ class ScriptedFinalValidationExecutor:
         self,
         *,
         pytest_outcome: ValidationExecutionOutcome = ValidationExecutionOutcome.PASSED,
+        task_pytest_outcome: ValidationExecutionOutcome | None = None,
         compile_outcome: ValidationExecutionOutcome = ValidationExecutionOutcome.PASSED,
     ) -> None:
         self.pytest_outcome = pytest_outcome
+        self.task_pytest_outcome = task_pytest_outcome
         self.compile_outcome = compile_outcome
         self.calls: list[ValidationExecutionRequest] = []
         self.observed_contents: list[dict[str, str]] = []
@@ -78,10 +80,13 @@ class ScriptedFinalValidationExecutor:
             stderr_truncated=False,
             container_cleanup_succeeded=True,
         )
+        pytest_outcome = self.pytest_outcome
+        if request.task_id != "TASK-000" and self.task_pytest_outcome is not None:
+            pytest_outcome = self.task_pytest_outcome
         execution = _execution_evidence(
             request,
             policy,
-            self.pytest_outcome,
+            pytest_outcome,
             provisioning_evidence_ids=(provisioning.evidence_id,),
             container_image_reference=policy.container_image_reference,
             container_image_id=image_id,

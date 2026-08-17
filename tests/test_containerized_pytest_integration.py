@@ -162,7 +162,7 @@ def test_real_docker_reads_restrictive_governed_workspace_without_chmod(
     } == governed_modes
 
 
-def test_real_docker_application_required_final_validation_runs_without_graph_request(
+def test_real_docker_final_validation_runs_independently_after_task_pytest(
     tmp_path: Path,
 ) -> None:
     workspace_parent = tmp_path / "final-validation-workspaces"
@@ -192,12 +192,21 @@ def test_real_docker_application_required_final_validation_runs_without_graph_re
         workflow=workflow,
     )
 
-    assert all(
-        not task.get("required_validations", [])
+    automated_tests = next(
+        task
         for task in result["approved_task_graph"]["tasks"]
+        if "AUTOMATED_TESTS" in task["deliverable_roles"]
     )
+    assert [
+        requirement["profile"]
+        for requirement in automated_tests["required_validations"]
+    ] == ["PYTHON_PYTEST"]
     assert result["workflow_status"] == "success"
     readiness = result["project_readiness_validation"]
+    assert [
+        item.profile.value
+        for item in result["task_validation_execution_evidence"]
+    ] == ["PYTHON_PYTEST"]
     assert readiness.final_workspace_validation_required_count == 2
     assert readiness.final_workspace_validation_verified_count == 2
     assert [

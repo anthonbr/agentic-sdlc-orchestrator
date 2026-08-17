@@ -178,6 +178,7 @@ def _proposed_task(
         TaskMaterializationPolicy.FORBIDDEN
     ),
     deliverable_roles: list[ProjectDeliverableRole] | None = None,
+    required_validations: list[ProposedTaskValidationRequirement] | None = None,
 ) -> ProposedTask:
     return ProposedTask(
         key=key,
@@ -192,6 +193,7 @@ def _proposed_task(
         ambiguity_refs=ambiguity_refs or [],
         expected_outputs=[f"{key}.md"],
         deliverable_roles=deliverable_roles or [],
+        required_validations=required_validations or [],
     )
 
 
@@ -231,6 +233,11 @@ def _proposal(version: str = "v1") -> ProposedTaskGraph:
                 risk_refs=["RISK-001"],
                 materialization_policy=TaskMaterializationPolicy.REQUIRED,
                 deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+                required_validations=[
+                    ProposedTaskValidationRequirement(
+                        profile=ValidationExecutionProfile.PYTHON_PYTEST
+                    )
+                ],
             ),
             _proposed_task(
                 "document_service",
@@ -561,7 +568,10 @@ def test_cli_task_graph_review_displays_delivery_policy_and_roles(
                                 profile=(
                                     ValidationExecutionProfile.PYTHON_COMPILE
                                 )
-                            )
+                            ),
+                            ProposedTaskValidationRequirement(
+                                profile=ValidationExecutionProfile.PYTHON_PYTEST
+                            ),
                         ]
                     }
                 )
@@ -587,7 +597,7 @@ def test_cli_task_graph_review_displays_delivery_policy_and_roles(
     assert "Delivery roles: RUNNABLE_ENTRYPOINT" in output
     assert "Delivery roles: AUTOMATED_TESTS" in output
     assert "Delivery roles: RUN_INSTRUCTIONS" in output
-    assert "Required validations: PYTHON_COMPILE" in output
+    assert "Required validations: PYTHON_COMPILE, PYTHON_PYTEST" in output
 
 
 def test_requirement_changes_preserve_feedback_and_lineage() -> None:
@@ -831,11 +841,14 @@ def test_openai_task_planner_uses_approved_spec_and_schema_without_network() -> 
 
 def test_task_planning_prompt_reserves_authoritative_metadata() -> None:
     prompt = " ".join(TASK_PLANNING_SYSTEM_PROMPT.casefold().split())
-    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.6"
+    assert TASK_PLANNING_PROMPT_VERSION == "task-planning-v1.7"
     assert "cover every fr, nfr, con, and ac item" in prompt
     assert "deterministic application validation is authoritative" in prompt
     assert "do not assign task-### ids" in prompt
     assert "python_compile" in prompt
+    assert "every task assigned the automated_tests deliverable role" in prompt
+    assert "must propose python_pytest as a required validation" in prompt
+    assert "compilation alone does not satisfy automated-test execution" in prompt
     assert "never propose executable paths" in prompt
     assert "do not silently choose an implementation outcome" in prompt
     assert "do not derive this policy mechanically from task type" in prompt
@@ -899,6 +912,33 @@ def test_missing_runnable_role_retries_before_human_review() -> None:
         "Runnable-project delivery policy requires RUNNABLE_ENTRYPOINT coverage."
     )
     assert _interrupt_stage(paused) == "task_graph_review"
+
+
+def test_compile_only_automated_tests_retries_before_human_review() -> None:
+    incomplete = _proposal().model_dump(mode="json")
+    incomplete["tasks"][3]["required_validations"] = [
+        {"profile": "PYTHON_COMPILE"}
+    ]
+    planner = FakeTaskPlanningClient([incomplete, _proposal("retry")])
+    workflow, thread_id, _, _, _ = _start_demo(planner=planner)
+
+    paused = _approve_requirements(workflow, thread_id)
+
+    assert paused["task_planning_attempt_count"] == 2
+    assert paused["task_planning_failures"][0]["reason"] == (
+        "Runnable-project delivery role AUTOMATED_TESTS requires "
+        "PYTHON_PYTEST validation; invalid task proposals: verify_service."
+    )
+    assert _interrupt_stage(paused) == "task_graph_review"
+    reviewed_tests = paused["candidate_task_graph"]["tasks"][3]
+    assert reviewed_tests["deliverable_roles"] == ["AUTOMATED_TESTS"]
+    assert reviewed_tests["required_validations"] == [
+        {
+            "requirement_id": "TASK-004-VALIDATION-001",
+            "profile": "PYTHON_PYTEST",
+        }
+    ]
+    assert len(planner.calls) == 2
 
 
 def test_incomplete_core_coverage_exhaustion_safe_stops() -> None:
@@ -1049,8 +1089,8 @@ def test_task_graph_approval_runs_the_authoritative_task_graph_to_completion() -
     }
     assert readiness.runtime_execution_verified is True
     assert readiness.runtime_validation_required is True
-    assert readiness.runtime_validation_required_count == 2
-    assert readiness.runtime_validation_verified_count == 2
+    assert readiness.runtime_validation_required_count == 3
+    assert readiness.runtime_validation_verified_count == 3
     assert readiness.final_workspace_validation_required is True
     assert readiness.final_workspace_validation_required_count == 2
     assert readiness.final_workspace_validation_verified_count == 2
@@ -1739,6 +1779,11 @@ def test_cli_run_custom_requirement_completes_governed_pipeline(
                         risk_refs=["RISK-001"],
                         materialization_policy=TaskMaterializationPolicy.REQUIRED,
                         deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+                        required_validations=[
+                            ProposedTaskValidationRequirement(
+                                profile=ValidationExecutionProfile.PYTHON_PYTEST
+                            )
+                        ],
                     ),
                     _proposed_task(
                         "document_service",

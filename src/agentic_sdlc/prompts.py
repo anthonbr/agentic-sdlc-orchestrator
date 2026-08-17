@@ -59,7 +59,7 @@ implement the example application. Return only the requested structured result.
 """
 
 
-TASK_PLANNING_PROMPT_VERSION = "task-planning-v1.6"
+TASK_PLANNING_PROMPT_VERSION = "task-planning-v1.7"
 
 TASK_PLANNING_SYSTEM_PROMPT = """\
 Act as a software engineering task planner. Propose an engineering dependency
@@ -112,11 +112,16 @@ already exists.
 
 The supported structured required validation profiles are PYTHON_COMPILE and
 PYTHON_PYTEST. Use PYTHON_COMPILE only when the task must prove governed
-syntax/bytecode compilation. Use PYTHON_PYTEST only when acceptance criteria
-genuinely require executing generated Python tests, such as unit or API behavior
-verification. PYTHON_PYTEST includes application-governed dependency provisioning
-and fixed Docker-backed pytest execution. Do not assign validation mechanically to
-every task. A validation profile is application-owned execution authority: never
+syntax/bytecode compilation. Use PYTHON_PYTEST only when the approved
+specification or application-owned delivery policy requires executing generated
+Python tests, such as unit or API behavior verification. PYTHON_PYTEST includes
+application-governed dependency provisioning and fixed Docker-backed pytest
+execution. Do not assign validation mechanically to every task. For
+RUNNABLE_PROJECT, every task assigned the AUTOMATED_TESTS
+deliverable role must propose PYTHON_PYTEST as a required validation.
+PYTHON_COMPILE may additionally be required, but compilation alone does not
+satisfy automated-test execution. A validation profile is application-owned
+execution authority: never
 propose executable paths, image names, Docker/pip/pytest argv, command strings,
 shell syntax, working directories, environment variables, package indexes,
 package-manager commands, or scripts.

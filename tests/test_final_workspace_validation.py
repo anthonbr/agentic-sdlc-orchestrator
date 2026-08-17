@@ -112,11 +112,12 @@ def _complete(service: GovernedRunService, *, project_name: str) -> Any:
     )
 
 
-def test_planner_omission_cannot_publish_failing_final_pytest(
+def test_task_pytest_cannot_replace_failing_final_workspace_pytest(
     tmp_path: Path,
 ) -> None:
     validator = ScriptedFinalValidationExecutor(
-        pytest_outcome=ValidationExecutionOutcome.FAILED
+        pytest_outcome=ValidationExecutionOutcome.FAILED,
+        task_pytest_outcome=ValidationExecutionOutcome.PASSED,
     )
     service = _service(
         tmp_path,
@@ -128,7 +129,15 @@ def test_planner_omission_cannot_publish_failing_final_pytest(
     result = _complete(service, project_name="must-not-publish")
 
     graph = result.workflow_state["approved_task_graph"]
-    assert all(not task.get("required_validations", []) for task in graph["tasks"])
+    automated_tests = next(
+        task
+        for task in graph["tasks"]
+        if "AUTOMATED_TESTS" in task["deliverable_roles"]
+    )
+    assert [
+        requirement["profile"]
+        for requirement in automated_tests["required_validations"]
+    ] == ["PYTHON_PYTEST"]
     assert result.application_status is GovernedRunApplicationStatus.SAFE_STOPPED
     assert result.workflow_status == "safe_stopped"
     assert result.export_result is None
@@ -141,14 +150,14 @@ def test_planner_omission_cannot_publish_failing_final_pytest(
         "PYTHON_PYTEST",
     ]
     assert [item.passed for item in evidence] == [True, False]
-    assert "tests.missing_adapter" in validator.observed_contents[1][
+    assert "tests.missing_adapter" in validator.observed_contents[2][
         "tests/test_service.py"
     ]
     assert "PYTHON_PYTEST returned FAILED" in result.workflow_state["safe_stop_reason"]
     assert result.workflow_state["task_execution_recovery_decisions"] == ()
 
 
-def test_planner_omission_runs_final_validation_before_successful_publication(
+def test_task_pytest_preserves_independent_final_validation_before_publication(
     tmp_path: Path,
 ) -> None:
     validator = ScriptedFinalValidationExecutor()
@@ -172,6 +181,7 @@ def test_planner_omission_runs_final_validation_before_successful_publication(
         "governed_workspace_session"
     ].authoritative_snapshot_id
     assert [call.requirement.profile.value for call in validator.calls] == [
+        "PYTHON_PYTEST",
         "PYTHON_COMPILE",
         "PYTHON_PYTEST",
     ]
@@ -185,7 +195,12 @@ def test_planner_omission_runs_final_validation_before_successful_publication(
             "final_workspace_validation_execution_evidence"
         ]
     )
-    assert result.workflow_state["task_validation_execution_evidence"] == ()
+    task_validation = result.workflow_state[
+        "task_validation_execution_evidence"
+    ]
+    assert len(task_validation) == 1
+    assert task_validation[0].profile.value == "PYTHON_PYTEST"
+    assert task_validation[0].passed is True
     published_evidence = tmp_path / "projects" / "validated-project" / (
         "sdlc-artifacts"
     )
@@ -195,8 +210,8 @@ def test_planner_omission_runs_final_validation_before_successful_publication(
     assert len(task_evidence["final_workspace_validation_executions"]) == 2
     assert len(task_evidence["final_workspace_validation_provisioning"]) == 1
     summary = (published_evidence / "summary.md").read_text()
-    assert "Governed required validations: 2 passed / 2 required" in summary
-    assert "Planner-requested task validations: 0 required" in summary
+    assert "Governed required validations: 3 passed / 3 required" in summary
+    assert "Planner-requested task validations: 1 required" in summary
     assert "Application-required final-workspace validations: 2 required" in summary
 
 
@@ -235,4 +250,4 @@ def test_stale_final_validation_evidence_cannot_authorize_modified_snapshot() ->
     assert readiness.final_workspace_validation_required is True
     assert readiness.final_workspace_validation_verified is False
     assert readiness.final_workspace_validation_verified_count == 0
-    assert len(validator.calls) == 2
+    assert len(validator.calls) == 3

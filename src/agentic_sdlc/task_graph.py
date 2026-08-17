@@ -464,6 +464,23 @@ def _validate_delivery_role_coverage(
                 + ", ".join(non_required)
                 + "."
             )
+        if role is ProjectDeliverableRole.AUTOMATED_TESTS:
+            missing_pytest = [
+                task.key
+                for task in carrying_tasks
+                if ValidationExecutionProfile.PYTHON_PYTEST
+                not in {
+                    requirement.profile
+                    for requirement in task.required_validations
+                }
+            ]
+            if missing_pytest:
+                raise TaskGraphValidationError(
+                    "Runnable-project delivery role AUTOMATED_TESTS requires "
+                    "PYTHON_PYTEST validation; invalid task proposals: "
+                    + ", ".join(missing_pytest)
+                    + "."
+                )
 
 
 def _content_hash(value: object) -> str:
