@@ -25,6 +25,7 @@ from agentic_sdlc.requirement_analysis import (
     RequirementAnalysis,
     RequirementPlanningReadiness,
 )
+from agentic_sdlc.requirement_submission import resolve_inline_requirement
 from agentic_sdlc.run_events import (
     RunEventActor,
     RunEventAuthority,
@@ -33,7 +34,7 @@ from agentic_sdlc.run_events import (
     RunEventLog,
     RunEventType,
 )
-from agentic_sdlc.state import demo_input
+from agentic_sdlc.state import demo_input, workflow_input_from_submission
 from agentic_sdlc.streamlit_runtime import ClarificationDraftBackgroundRuntime
 from tests.test_application import _service
 from tests.test_streamlit_runtime import QueuedExecutor
@@ -196,6 +197,76 @@ def test_governance_events_report_manifest_and_publication_preserve_authority(
     assert published.read_bytes() == report_bytes
     service.inspect_run(terminal.run_id)
     assert event_log.read() == events
+
+
+def test_requirement_submission_renders_exact_source_text_without_jsonl_duplication(
+    tmp_path: Path,
+) -> None:
+    original = (
+        "\nBuild a ledger with exact human formatting.\n\n"
+        "- Preserve ``inline`` markers.\n"
+        "- Preserve this literal fence:\n"
+        "`````\ninside the requirement\n`````\n"
+    )
+    submission = resolve_inline_requirement(original)
+    service, _, _ = _service(
+        tmp_path,
+        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        planner=FakeTaskPlanningClient([_proposal()]),
+        run_suffix="exact-requirement-history",
+    )
+    requirement_gate = service.start_run(
+        GovernedRunRequest(
+            command="run",
+            workflow_input=workflow_input_from_submission(
+                submission,
+                project_name="exact-requirement-history",
+            ),
+        )
+    )
+    graph_gate = service.resume_run(
+        requirement_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=requirement_gate.human_gate.gate_token,  # type: ignore[union-attr]
+    )
+    terminal = service.resume_run(
+        graph_gate.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=graph_gate.human_gate.gate_token,  # type: ignore[union-attr]
+    )
+
+    retained_submission = terminal.workflow_state["requirement_submission"]
+    assert retained_submission["original_text"] == original
+    events = RunEventLog(terminal.artifact_bundle).read()
+    report = (
+        terminal.artifact_bundle.artifact_dir
+        / HUMAN_GOVERNANCE_HISTORY_FILENAME
+    ).read_text(encoding="utf-8")
+    fence = "`" * 6
+    assert f"{fence}text\n{original}\n{fence}" in report
+    assert original in report
+    assert (
+        f"**Original requirement SHA-256:** `{submission.original_sha256}`"
+        in report
+    )
+    assert (
+        f"**Normalized requirement SHA-256:** `{submission.normalized_sha256}`"
+        in report
+    )
+    jsonl = terminal.artifact_bundle.run_events_path.read_text(encoding="utf-8")
+    assert original not in jsonl
+    assert '"original_text"' not in jsonl
+    assert submission.original_sha256 in jsonl
+    assert submission.normalized_sha256 in jsonl
+    first_render = render_human_governance_history(
+        events,
+        terminal.workflow_state,
+    )
+    second_render = render_human_governance_history(
+        events,
+        terminal.workflow_state,
+    )
+    assert report == first_render == second_render
 
 
 def test_rejection_is_reported_as_human_governance_and_safe_stop(

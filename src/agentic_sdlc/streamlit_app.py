@@ -704,10 +704,6 @@ def _render_requirement_traceability(
         hide_index=True,
         width="stretch",
     )
-    st.caption(
-        "Missing links remain visible and are not inferred from names, prose, or "
-        "semantic similarity."
-    )
     for row in projection.rows:
         _render_traceability_row_detail(row, projection)
 

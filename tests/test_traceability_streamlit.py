@@ -147,6 +147,11 @@ def test_terminal_summary_renders_compact_traceability_table_and_details(
     )
     assert any("semantic-TASK-001" in value for value in _values(app.text))
     assert any("src/candidate.py — CREATE" in value for value in _values(app.text))
+    assert not any(
+        "Missing links remain visible and are not inferred from names, prose, or "
+        "semantic similarity." in value
+        for value in _values(app.caption)
+    )
     assert not any("traceability" in button.label.casefold() for button in app.button)
 
 

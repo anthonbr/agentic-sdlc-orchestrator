@@ -124,6 +124,10 @@ def _append_requirement_submission(
             raise HumanGovernanceHistoryError(
                 "Requirement submission event differs from authoritative intake."
             )
+    original_text = _required_text(
+        submission.get("original_text"),
+        "original submitted requirement",
+    )
     analysis = _first_revision(state, "requirement_analysis_history")
     result = (
         "Requirement Analysis revision "
@@ -138,8 +142,15 @@ def _append_requirement_submission(
             "",
             f"**Source:** `{_code(str(submission['source_kind']))}`",
             "",
+            "**Original submitted requirement:**",
+            "",
+            *_fenced_text_lines(original_text),
+            "",
+            "**Original requirement SHA-256:** "
+            f"`{_code(str(event.data['original_sha256']))}`",
+            "",
             "**Normalized requirement SHA-256:** "
-            f"`{_code(str(submission['normalized_sha256']))}`",
+            f"`{_code(str(event.data['normalized_sha256']))}`",
             "",
             f"**Result:** {result}",
             "",
@@ -578,15 +589,19 @@ def _first_revision(
 def _feedback_lines(feedback: str) -> list[str]:
     if not feedback:
         return ["None provided."]
+    return _fenced_text_lines(feedback)
+
+
+def _fenced_text_lines(text: str) -> list[str]:
     # Select a fence longer than any actual backtick run while retaining the
-    # authoritative feedback bytes verbatim inside the report source.
+    # authoritative source bytes verbatim inside the report.
     maximum_run = 0
     current_run = 0
-    for character in feedback:
+    for character in text:
         current_run = current_run + 1 if character == "`" else 0
         maximum_run = max(maximum_run, current_run)
     fence = "`" * max(3, maximum_run + 1)
-    return [f"{fence}text", feedback, fence]
+    return [f"{fence}text", text, fence]
 
 
 def _required_mapping(value: object, label: str) -> Mapping[str, object]:
