@@ -59,7 +59,7 @@ implement the example application. Return only the requested structured result.
 """
 
 
-TASK_PLANNING_PROMPT_VERSION = "task-planning-v1.6"
+TASK_PLANNING_PROMPT_VERSION = "task-planning-v1.7"
 
 TASK_PLANNING_SYSTEM_PROMPT = """\
 Act as a software engineering task planner. Propose an engineering dependency
@@ -112,11 +112,16 @@ already exists.
 
 The supported structured required validation profiles are PYTHON_COMPILE and
 PYTHON_PYTEST. Use PYTHON_COMPILE only when the task must prove governed
-syntax/bytecode compilation. Use PYTHON_PYTEST only when acceptance criteria
-genuinely require executing generated Python tests, such as unit or API behavior
-verification. PYTHON_PYTEST includes application-governed dependency provisioning
-and fixed Docker-backed pytest execution. Do not assign validation mechanically to
-every task. A validation profile is application-owned execution authority: never
+syntax/bytecode compilation. Use PYTHON_PYTEST only when the approved
+specification or application-owned delivery policy requires executing generated
+Python tests, such as unit or API behavior verification. PYTHON_PYTEST includes
+application-governed dependency provisioning and fixed Docker-backed pytest
+execution. Do not assign validation mechanically to every task. For
+RUNNABLE_PROJECT, every task assigned the AUTOMATED_TESTS
+deliverable role must propose PYTHON_PYTEST as a required validation.
+PYTHON_COMPILE may additionally be required, but compilation alone does not
+satisfy automated-test execution. A validation profile is application-owned
+execution authority: never
 propose executable paths, image names, Docker/pip/pytest argv, command strings,
 shell syntax, working directories, environment variables, package indexes,
 package-manager commands, or scripts.
@@ -142,7 +147,7 @@ routing. Return only the requested structured task proposal.
 """
 
 
-TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.8"
+TASK_EXECUTION_PROMPT_VERSION = "task-execution-v1.9"
 
 TASK_EXECUTION_SYSTEM_PROMPT = """\
 Execute exactly one approved software-engineering task using only the bounded
@@ -175,6 +180,23 @@ relative path as optional and layout-dependent, and direct users to the portable
 setup and run instructions if the project is copied or moved elsewhere. Do not add
 this interpreter example for non-Python projects. Do not claim any generated
 application or test was executed.
+
+Generated automated tests must be deterministic and produce the same result under
+different scheduler timing. For tests that cross a thread, process, server loop,
+callback, or asynchronous execution boundary, do not assume that observing one
+external event means all later internal state mutations have completed. In
+particular, receiving an HTTP response does not necessarily prove that server-side
+actions scheduled after response emission have completed. Do not immediately
+inspect mutable state owned by another execution context unless completion is
+explicitly synchronized. Prefer public or externally observable behavior when it
+provides a deterministic synchronization boundary. Direct state assertions remain
+appropriate for ordinary synchronous unit tests when the test owns the object. If
+internal state must be asserted across an execution boundary, use an explicit
+deterministic mechanism such as joining a thread, waiting on a known completion
+event, using the component's public request boundary, or using an existing
+deterministic test hook. Do not use arbitrary `sleep()` calls or polling based only
+on timing as a substitute for synchronization. Do not add production
+synchronization hooks solely for tests unless the approved task requires them.
 
 Echo request_id, attempt_id, and task_id exactly as supplied. Do not generate or
 modify those correlation identifiers.

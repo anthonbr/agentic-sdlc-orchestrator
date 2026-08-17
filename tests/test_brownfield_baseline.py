@@ -26,6 +26,9 @@ from agentic_sdlc.brownfield_baseline import (
 )
 from agentic_sdlc.brownfield_context import BrownfieldCodebaseContext
 from agentic_sdlc.llm import FakeRequirementAnalysisClient, FakeTaskPlanningClient
+from agentic_sdlc.human_governance_history import (
+    HUMAN_GOVERNANCE_HISTORY_FILENAME,
+)
 from agentic_sdlc.project_delivery import ProjectDeliveryMode
 from agentic_sdlc.project_export import (
     ProjectExportRequest,
@@ -34,6 +37,12 @@ from agentic_sdlc.project_export import (
 from agentic_sdlc.run_artifacts import (
     LiveRunArtifactBundle,
     write_sdlc_artifact_manifest,
+)
+from agentic_sdlc.run_events import (
+    RunEventActor,
+    RunEventAuthority,
+    RunEventLog,
+    RunEventType,
 )
 from agentic_sdlc.requirement_analysis import (
     BrownfieldImpactAnalysis,
@@ -517,6 +526,14 @@ def test_greenfield_application_state_has_no_brownfield_lineage(
     )
 
     assert "brownfield_baseline" not in snapshot.workflow_state
+    assert all(
+        event.event_type
+        not in {
+            RunEventType.BROWNFIELD_BASELINE_SELECTED,
+            RunEventType.BROWNFIELD_BASELINE_VERIFIED,
+        }
+        for event in RunEventLog(snapshot.artifact_bundle).read()
+    )
 
 
 def test_application_seeds_baseline_before_session_and_retains_provenance(
@@ -549,6 +566,18 @@ def test_application_seeds_baseline_before_session_and_retains_provenance(
     provenance = brownfield_baseline_from_value(
         requirement_review.workflow_state["brownfield_baseline"]
     )
+    initial_events = RunEventLog(requirement_review.artifact_bundle).read()
+    assert [event.event_type for event in initial_events] == [
+        RunEventType.REQUIREMENT_SUBMISSION_ACCEPTED,
+        RunEventType.BROWNFIELD_BASELINE_SELECTED,
+        RunEventType.BROWNFIELD_BASELINE_VERIFIED,
+    ]
+    assert initial_events[1].actor is RunEventActor.HUMAN
+    assert initial_events[1].authority is RunEventAuthority.HUMAN_INPUT
+    assert initial_events[1].data["selected_project_name"] == "published-project"
+    assert initial_events[2].actor is RunEventActor.SYSTEM
+    assert initial_events[2].authority is RunEventAuthority.AUTOMATED_CONSEQUENCE
+    assert initial_events[2].data["baseline_id"] == provenance.baseline_id
     workspace = runtime.workspace_for_run(requirement_review.run_id)
     seeded_snapshot = snapshot_isolated_workspace(workspace)
     assert seeded_snapshot.snapshot_id == provenance.governed_baseline_snapshot_id
@@ -581,6 +610,27 @@ def test_application_seeds_baseline_before_session_and_retains_provenance(
     assert workspace_evidence["brownfield_codebase_context"]["baseline_id"] == (
         provenance.baseline_id
     )
+    governance_report = (
+        terminal.artifact_bundle.artifact_dir
+        / HUMAN_GOVERNANCE_HISTORY_FILENAME
+    ).read_text(encoding="utf-8")
+    assert "Selected `published-project` as the brownfield baseline" in governance_report
+    assert "**Automated verification:** `PASSED`" in governance_report
+    assert (
+        "impact analysis was reviewed as part of this Requirement Analysis decision"
+        in governance_report
+    )
+    assert "BROWNFIELD_IMPACT_APPROVED" not in governance_report
+    assert terminal.export_result is not None
+    assert terminal.export_result.destination_directory is not None
+    assert (
+        terminal.export_result.destination_directory
+        / "sdlc-artifacts"
+        / HUMAN_GOVERNANCE_HISTORY_FILENAME
+    ).read_bytes() == (
+        terminal.artifact_bundle.artifact_dir
+        / HUMAN_GOVERNANCE_HISTORY_FILENAME
+    ).read_bytes()
     assert executor.calls
     assert {
         item.path for item in executor.calls[0].repository_context.observations

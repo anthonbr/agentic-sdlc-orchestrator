@@ -104,6 +104,40 @@ def _proposal(*tasks: ProposedTask) -> ProposedTaskGraph:
     return ProposedTaskGraph(tasks=list(tasks))
 
 
+def _validation_requirement(
+    profile: ValidationExecutionProfile,
+) -> ProposedTaskValidationRequirement:
+    return ProposedTaskValidationRequirement(profile=profile)
+
+
+def _runnable_proposal(
+    *test_validation_profiles: ValidationExecutionProfile,
+    extra_tasks: tuple[ProposedTask, ...] = (),
+) -> ProposedTaskGraph:
+    return _proposal(
+        _task(
+            "entrypoint",
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=[ProjectDeliverableRole.RUNNABLE_ENTRYPOINT],
+        ),
+        _task(
+            "tests",
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+            required_validations=[
+                _validation_requirement(profile)
+                for profile in test_validation_profiles
+            ],
+        ),
+        *extra_tasks,
+        _task(
+            "readme",
+            materialization_policy=TaskMaterializationPolicy.REQUIRED,
+            deliverable_roles=[ProjectDeliverableRole.RUN_INSTRUCTIONS],
+        ),
+    )
+
+
 def test_approved_spec_assigns_namespaces_lineage_and_exact_text() -> None:
     spec = _spec()
 
@@ -401,23 +435,7 @@ def test_default_delivery_policy_preserves_engineering_artifact_graphs() -> None
 
 def test_runnable_delivery_policy_requires_and_canonicalizes_all_roles() -> None:
     graph, _ = normalize_and_validate_task_graph(
-        _proposal(
-            _task(
-                "entrypoint",
-                materialization_policy=TaskMaterializationPolicy.REQUIRED,
-                deliverable_roles=[ProjectDeliverableRole.RUNNABLE_ENTRYPOINT],
-            ),
-            _task(
-                "tests",
-                materialization_policy=TaskMaterializationPolicy.REQUIRED,
-                deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
-            ),
-            _task(
-                "readme",
-                materialization_policy=TaskMaterializationPolicy.REQUIRED,
-                deliverable_roles=[ProjectDeliverableRole.RUN_INSTRUCTIONS],
-            ),
-        ),
+        _runnable_proposal(ValidationExecutionProfile.PYTHON_PYTEST),
         _spec(),
         version=1,
         created_at=FIXED_TIME,
@@ -430,6 +448,88 @@ def test_runnable_delivery_policy_requires_and_canonicalizes_all_roles() -> None
         (ProjectDeliverableRole.AUTOMATED_TESTS,),
         (ProjectDeliverableRole.RUN_INSTRUCTIONS,),
     ]
+
+
+def test_runnable_automated_tests_rejects_compile_only_validation() -> None:
+    with raises(
+        TaskGraphValidationError,
+        match=(
+            "^Runnable-project delivery role AUTOMATED_TESTS requires "
+            "PYTHON_PYTEST validation; invalid task proposals: tests\\.$"
+        ),
+    ):
+        normalize_and_validate_task_graph(
+            _runnable_proposal(ValidationExecutionProfile.PYTHON_COMPILE),
+            _spec(),
+            version=1,
+            created_at=FIXED_TIME,
+            delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+        )
+
+
+def test_runnable_automated_tests_accepts_and_canonicalizes_pytest() -> None:
+    graph, _ = normalize_and_validate_task_graph(
+        _runnable_proposal(ValidationExecutionProfile.PYTHON_PYTEST),
+        _spec(),
+        version=1,
+        created_at=FIXED_TIME,
+        delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+    )
+
+    assert [
+        requirement.profile for requirement in graph.tasks[1].required_validations
+    ] == [ValidationExecutionProfile.PYTHON_PYTEST]
+
+
+def test_runnable_automated_tests_accepts_compile_and_pytest() -> None:
+    graph, _ = normalize_and_validate_task_graph(
+        _runnable_proposal(
+            ValidationExecutionProfile.PYTHON_PYTEST,
+            ValidationExecutionProfile.PYTHON_COMPILE,
+        ),
+        _spec(),
+        version=1,
+        created_at=FIXED_TIME,
+        delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+    )
+
+    assert [
+        requirement.profile for requirement in graph.tasks[1].required_validations
+    ] == [
+        ValidationExecutionProfile.PYTHON_COMPILE,
+        ValidationExecutionProfile.PYTHON_PYTEST,
+    ]
+
+
+def test_runnable_unrelated_task_is_not_forced_to_run_pytest() -> None:
+    graph, _ = normalize_and_validate_task_graph(
+        _runnable_proposal(
+            ValidationExecutionProfile.PYTHON_PYTEST,
+            extra_tasks=(
+                _task(
+                    "implementation",
+                    materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                    required_validations=[
+                        _validation_requirement(
+                            ValidationExecutionProfile.PYTHON_COMPILE
+                        )
+                    ],
+                ),
+            ),
+        ),
+        _spec(),
+        version=1,
+        created_at=FIXED_TIME,
+        delivery_policy=RUNNABLE_PROJECT_DELIVERY_POLICY,
+    )
+
+    implementation = next(
+        task for task in graph.tasks if task.source_key == "implementation"
+    )
+    assert [
+        requirement.profile
+        for requirement in implementation.required_validations
+    ] == [ValidationExecutionProfile.PYTHON_COMPILE]
 
 
 @mark.parametrize(
@@ -458,6 +558,15 @@ def test_runnable_policy_rejects_each_missing_role(
             role.value.casefold(),
             materialization_policy=TaskMaterializationPolicy.REQUIRED,
             deliverable_roles=[role],
+            required_validations=(
+                [
+                    _validation_requirement(
+                        ValidationExecutionProfile.PYTHON_PYTEST
+                    )
+                ]
+                if role is ProjectDeliverableRole.AUTOMATED_TESTS
+                else []
+            ),
         )
         for role in RUNNABLE_PROJECT_DELIVERY_POLICY.required_roles
         if role is not missing_role
@@ -490,6 +599,9 @@ def test_runnable_role_requires_required_materialization(
             "tests",
             materialization_policy=TaskMaterializationPolicy.REQUIRED,
             deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+            required_validations=[
+                _validation_requirement(ValidationExecutionProfile.PYTHON_PYTEST)
+            ],
         ),
         _task(
             "readme",
@@ -531,6 +643,11 @@ def test_duplicate_role_coverage_is_allowed_and_role_order_is_canonical() -> Non
                 "tests",
                 materialization_policy=TaskMaterializationPolicy.REQUIRED,
                 deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+                required_validations=[
+                    _validation_requirement(
+                        ValidationExecutionProfile.PYTHON_PYTEST
+                    )
+                ],
             ),
         ),
         _spec(),
@@ -554,6 +671,9 @@ def test_deliverable_role_and_delivery_policy_participate_in_graph_identity() ->
             deliverable_roles=list(
                 RUNNABLE_PROJECT_DELIVERY_POLICY.required_roles
             ),
+            required_validations=[
+                _validation_requirement(ValidationExecutionProfile.PYTHON_PYTEST)
+            ],
         )
     )
     plain, _ = normalize_and_validate_task_graph(
@@ -610,6 +730,9 @@ def test_framework_neutral_live_regression_requires_launcher_and_root_run_guide(
             "automated_tests",
             materialization_policy=TaskMaterializationPolicy.REQUIRED,
             deliverable_roles=[ProjectDeliverableRole.AUTOMATED_TESTS],
+            required_validations=[
+                _validation_requirement(ValidationExecutionProfile.PYTHON_PYTEST)
+            ],
         ),
         _task(
             "docs_run_guide",

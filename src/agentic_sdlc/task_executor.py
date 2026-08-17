@@ -33,6 +33,9 @@ from agentic_sdlc.workspace_integration_contracts import (
 )
 
 
+TASK_EXECUTION_REASONING_EFFORT = "xhigh"
+
+
 class TaskExecutor(Protocol):
     """Narrow boundary from one authoritative request to one semantic result.
 
@@ -87,6 +90,7 @@ class OpenAITaskExecutor:
         try:
             response = client.responses.parse(
                 model=self.model_name,
+                reasoning={"effort": TASK_EXECUTION_REASONING_EFFORT},
                 input=[
                     {"role": "system", "content": TASK_EXECUTION_SYSTEM_PROMPT},
                     {

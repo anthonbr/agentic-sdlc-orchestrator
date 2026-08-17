@@ -37,6 +37,7 @@ def _service(
     analyst: FakeRequirementAnalysisClient,
     planner: FakeTaskPlanningClient,
     run_suffix: str,
+    run_event_log_factory: Any | None = None,
 ) -> tuple[GovernedRunService, GovernedWorkspaceRuntime, RecordingTaskExecutor]:
     workspace_parent = tmp_path / "isolated"
     workspace_parent.mkdir(exist_ok=True)
@@ -74,6 +75,7 @@ def _service(
             workspace_runtime_factory=lambda: runtime,
             run_id_factory=lambda command: f"{command}-{run_suffix}",
             workflow_diagram_writer=write_stub_diagram,
+            run_event_log_factory=run_event_log_factory,
         ),
         runtime,
         executor,

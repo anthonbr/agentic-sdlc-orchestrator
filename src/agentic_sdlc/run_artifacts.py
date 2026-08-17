@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 RUNS_DIRECTORY_NAME = "runs"
 SDLC_ARTIFACT_DIRECTORY_NAME = "sdlc-artifacts"
+RUN_EVENTS_FILENAME = "run-events.jsonl"
 WORKFLOW_DIAGRAM_FILENAME = "workflow_diagram.png"
 SDLC_ARTIFACT_MANIFEST_FILENAME = "manifest.json"
 SDLC_ARTIFACT_MANIFEST_SCHEMA_VERSION = "sdlc-artifact-manifest-v1"
@@ -61,6 +62,12 @@ class LiveRunArtifactBundle:
         """Return the diagram location inside this run's evidence bundle."""
 
         return self.artifact_dir / WORKFLOW_DIAGRAM_FILENAME
+
+    @property
+    def run_events_path(self) -> Path:
+        """Return the live operational audit path outside the frozen bundle."""
+
+        return self.run_root / RUN_EVENTS_FILENAME
 
 
 class SDLCArtifactFileRecord(BaseModel):

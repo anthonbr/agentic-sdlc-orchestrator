@@ -49,6 +49,7 @@ def test_live_run_bundle_uses_existing_run_id_for_owned_paths(
     assert bundle.workflow_diagram_path == (
         bundle.artifact_dir / "workflow_diagram.png"
     )
+    assert bundle.run_events_path == bundle.run_root / "run-events.jsonl"
 
 
 @mark.parametrize(
@@ -75,6 +76,7 @@ def test_success_manifest_binds_sorted_actual_files_and_diagram(
     }
     for name, contents in files.items():
         (bundle.artifact_dir / name).write_bytes(contents)
+    bundle.run_events_path.write_text('{"live":"outside-bundle"}\n')
 
     manifest_path = write_sdlc_artifact_manifest(
         _terminal_state(bundle.run_id),
@@ -90,6 +92,9 @@ def test_success_manifest_binds_sorted_actual_files_and_diagram(
     assert manifest["exit_gate_passed"] is True
     assert [record["path"] for record in manifest["files"]] == sorted(files)
     assert SDLC_ARTIFACT_MANIFEST_FILENAME not in {
+        record["path"] for record in manifest["files"]
+    }
+    assert "run-events.jsonl" not in {
         record["path"] for record in manifest["files"]
     }
     for record in manifest["files"]:

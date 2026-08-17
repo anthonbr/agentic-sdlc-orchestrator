@@ -137,7 +137,7 @@ Validated requirement analyses are accumulated as ordered revision records conta
 
 Planning consumes only that specification. The resulting TaskGraph embeds its source `spec_id` and version; human TaskGraph revisions retain graph lineage and supersession. Execution validates the source-spec pair before workspace initialization and again before every execution-loop advance. A mismatch yields `STALE_TASK_GRAPH` before request construction, workspace access, or mutation.
 
-The planner also receives a separately serialized `ProjectDeliveryPolicy`. The default `ENGINEERING_ARTIFACTS` mode preserves existing workflows. `RUNNABLE_PROJECT` deterministically requires `RUNNABLE_ENTRYPOINT`, `AUTOMATED_TESTS`, and `RUN_INSTRUCTIONS` coverage on REQUIRED-materialization tasks. This policy does not amend the approved requirement specification or authorize resolution of unrelated ambiguity. Executor validation binds those roles to materializable canonical SOURCE, TEST, and root `README.md` DOCUMENTATION artifacts respectively, with correctable defects using the existing bounded retry path.
+The planner also receives a separately serialized `ProjectDeliveryPolicy`. The default `ENGINEERING_ARTIFACTS` mode preserves existing workflows. `RUNNABLE_PROJECT` deterministically requires `RUNNABLE_ENTRYPOINT`, `AUTOMATED_TESTS`, and `RUN_INSTRUCTIONS` coverage on REQUIRED-materialization tasks. Each task carrying `AUTOMATED_TESTS` must also expose human-reviewed `PYTHON_PYTEST` validation; `PYTHON_COMPILE` may be additional evidence but cannot substitute for executing the tests. This policy does not amend the approved requirement specification or authorize resolution of unrelated ambiguity. Executor validation binds those roles to materializable canonical SOURCE, TEST, and root `README.md` DOCUMENTATION artifacts respectively, with correctable defects using the existing bounded retry path.
 
 The authority chain is therefore: approved analysis revision → canonical specification → validated TaskGraph → human TaskGraph approval → execution authority. An upstream authority change invalidates stale downstream planning; regeneration and governance are required before a new plan can gain execution authority. The prototype detects and stops stale execution, but it does not automatically synthesize the replacement graph.
 
@@ -348,6 +348,58 @@ is installed. A generation failure remains visible through the existing required
 terminal-artifact failure path, so no manifest or publication treats a partial
 report set as valid.
 
+### Semantic run events and human governance history
+
+The application lifecycle records a deliberately small semantic audit stream at
+`runs/<run-id>/run-events.jsonl`. Each canonical JSON line carries a stable event
+identity, per-run sequence, UTC recording time, actor, authority classification,
+stage, correlation identifiers, bounded data, and evidence references. Sequence,
+not timestamp, establishes chronology. The process-local append layer validates
+the complete existing stream, rejects malformed or conflicting records, assigns
+monotonic sequences, and treats an identical semantic replay as an idempotent
+no-op. It provides thread safety for the current application and background
+clarification model; it does not claim distributed or cross-process ordering.
+
+This stream observes authority rather than creating it. Requirement Analysis and
+TaskGraph decisions are reconciled from the authoritative review histories after
+the governed transition succeeds. A failed append therefore cannot revoke a
+human decision; later inspection or lifecycle advancement can repair a missing
+reconstructible event without replaying the workflow. At terminal success or safe
+stop, the application retries incomplete reconciliation before rendering or
+freezing evidence. Reconstructible events must be retained and the derived Human
+Governance History must be successfully materialized. Failure of either step
+preserves workflow authority while application evidence finalization fails
+explicitly; no normal manifest or successful project publication proceeds. The
+initial vocabulary is limited to accepted requirement submission, brownfield
+baseline selection and verification, Requirement Analysis and TaskGraph review
+decisions, and AI clarification request/generation. Task attempts, validation,
+rollback, publication, performance, and generic UI telemetry are intentionally
+absent.
+
+Actor and authority are separate. Human submission or baseline selection is
+`HUMAN_INPUT`; an authoritative review decision is `HUMAN_GOVERNANCE`; an AI
+clarification request/draft is `NON_AUTHORITATIVE_ASSISTANCE`; and verified
+brownfield provenance is an `AUTOMATED_CONSEQUENCE`. The AI draft stores only
+bounded generation/context metadata and a digest, cannot resume the workflow, and
+cannot approve, request changes, create a revision, or authorize execution.
+Human feedback remains in the authoritative review history; the event references
+it by presence, digest, and review correlation rather than creating a competing
+copy.
+
+At terminal application finalization,
+`runs/<run-id>/sdlc-artifacts/human_governance_history.md` is rendered
+deterministically from the validated sequence plus structured authoritative
+state. It labels itself derived and non-authoritative, dereferences exact human
+feedback for evaluator readability, and describes only consequences supported by
+approved specification, TaskGraph, revision, or safe-stop evidence. Brownfield
+impact analysis is described as part of Requirement Analysis governance, not as
+an invented independent approval gate. The existing manifest binds this Markdown
+report and verified publication copies it normally. The live sibling
+`run-events.jsonl` deliberately stays outside the frozen manifest so later event
+families can append without invalidating retained artifact integrity. Neither file
+is read to decide approval, resume permission, requirement or TaskGraph authority,
+validation, mutation, or publication.
+
 The repository separates storage and evidence ownership. `sample_output/` is
 Git-tracked, curated reviewer/reference material; it may preserve frozen scenarios,
 is not authoritative execution history, and is never a CLI or Streamlit runtime
@@ -366,6 +418,13 @@ separately manifest-verified copy at
 remains an integrity index rather than a signature or tamper-proof event store.
 Renaming the curated tree changes none of these execution, evidence, or publication
 authority boundaries.
+
+For a completed Streamlit presentation, the finalized manifest records drive a
+read-only, lifecycle-ordered **SDLC Evidence & Artifacts** index. The adapter
+offers exact retained bytes through native download controls, rejects unsafe or
+content-mismatched entries, and does not enumerate unrelated directory contents.
+The index is presentation metadata only and introduces no workflow, artifact,
+validation, or publication authority.
 
 `sample_output/reliability_metrics.json` is generated as a deterministic projection over the checked-in terminal `task_execution.json` and `workspace_execution.json` evidence for the curated V17 greenfield and V18 brownfield publications. The derivation validates that every started attempt has exactly one exit decision, then reports task outcomes, attempt outcomes, success ratios, retry frequency, mutation and rollback counts/frequency, and safe-stop count. It is read-only with respect to execution behavior and is not a telemetry subsystem.
 

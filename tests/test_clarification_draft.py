@@ -91,6 +91,7 @@ def test_openai_drafter_uses_only_narrow_current_context_without_network() -> No
     assert len(calls) == 1
     call = calls[0]
     assert call["model"] == "test-model"
+    assert "reasoning" not in call
     assert call["text_format"] is ClarificationDraftResult
     assert call["store"] is False
     assert len(call["input"]) == 2

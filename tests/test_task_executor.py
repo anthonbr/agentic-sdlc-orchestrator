@@ -52,6 +52,7 @@ from agentic_sdlc.task_execution_contracts import (
 )
 from agentic_sdlc.task_executor import (
     OpenAITaskExecutor,
+    TASK_EXECUTION_REASONING_EFFORT,
     TaskExecutorError,
     build_task_execution_input,
 )
@@ -214,7 +215,7 @@ def _bound(request: TaskExecutionRequest) -> WorkspaceBoundTaskExecutionRequest:
 def test_execution_prompt_preserves_authority_boundary() -> None:
     prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
 
-    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.8"
+    assert TASK_EXECUTION_PROMPT_VERSION == "task-execution-v1.9"
     assert "exactly one approved software-engineering task" in prompt
     assert "declare success" in prompt
     assert "change the approved task" in prompt
@@ -246,6 +247,31 @@ def test_execution_prompt_preserves_authority_boundary() -> None:
     assert "do not infer new engineering requirements" in prompt
     assert "cannot change task scope or dependencies" in prompt
     assert "never makes rejected artifact content authoritative" in prompt
+
+
+def test_execution_prompt_requires_deterministic_tests_across_async_boundaries(
+) -> None:
+    prompt = " ".join(TASK_EXECUTION_SYSTEM_PROMPT.casefold().split())
+
+    assert "generated automated tests must be deterministic" in prompt
+    assert "produce the same result under different scheduler timing" in prompt
+    assert "thread, process, server loop, callback, or asynchronous" in prompt
+    assert (
+        "receiving an http response does not necessarily prove that server-side "
+        "actions scheduled after response emission have completed"
+    ) in prompt
+    assert "mutable state owned by another execution context" in prompt
+    assert "unless completion is explicitly synchronized" in prompt
+    assert "public or externally observable behavior" in prompt
+    assert "deterministic synchronization boundary" in prompt
+    assert "ordinary synchronous unit tests" in prompt
+    assert "joining a thread" in prompt
+    assert "waiting on a known completion event" in prompt
+    assert "using the component's public request boundary" in prompt
+    assert "arbitrary `sleep()` calls" in prompt
+    assert "polling based only on timing" in prompt
+    assert "as a substitute for synchronization" in prompt
+    assert "do not add production synchronization hooks solely for tests" in prompt
 
 
 def test_run_instructions_keep_portable_commands_primary_and_local_reuse_optional(
@@ -507,7 +533,9 @@ def test_openai_executor_uses_one_structured_parse_and_returns_result() -> None:
 
     assert result is expected
     assert len(calls) == 1
+    assert TASK_EXECUTION_REASONING_EFFORT == "xhigh"
     assert calls[0]["model"] == "test-executor-model"
+    assert calls[0]["reasoning"] == {"effort": "xhigh"}
     assert calls[0]["text_format"] is TaskExecutionResult
     assert calls[0]["store"] is False
     assert calls[0]["input"][0]["content"] == TASK_EXECUTION_SYSTEM_PROMPT
