@@ -123,6 +123,7 @@ Generation is not authority. Each component receives only the authority required
 | Durable delivery package | Application-published output under `projects/<name>/`; its project-content and `sdlc-artifacts/` projections are independently verified before and after promotion. |
 | Authoritative Git repository | Outside autonomous execution authority. The runtime exposes no commit, branch, push, PR, merge, worktree, or promotion operation. |
 | Reliability reporter | Reads terminal evidence, validates accounting, and emits a separate deterministic metrics projection; it cannot alter execution. |
+| SDLC document builders and PDF renderer | Build validated, non-authoritative human-readable views from existing governed records and render them locally; PDFs are never read as workflow authority. |
 
 TaskGraph approval includes each task's `FORBIDDEN`, `ALLOWED`, or `REQUIRED` materialization policy. That approval grants bounded execution authority only within the isolated workspace. It grants no shell, generated-code execution, deployment, or Git authority.
 
@@ -347,6 +348,53 @@ export pipeline copies the complete bundle to
 is installed. A generation failure remains visible through the existing required
 terminal-artifact failure path, so no manifest or publication treats a partial
 report set as valid.
+
+### Governed SDLC PDF publication
+
+Successful terminal finalization adds an application-owned presentation pipeline:
+
+```text
+approved specification + approved TaskGraph + final governed evidence
+    -> validated renderer-neutral SDLC document views
+    -> narrow local ReportLab renderer
+    -> four manifest-bound PDF artifacts
+```
+
+The builders make no LLM call and perform no semantic rediscovery. They copy exact
+approved requirement text, canonical identifiers, explicit TaskGraph references,
+final-attempt engineering lineage, governed validation argv/results/output, the
+existing conservative traceability statuses, and verified brownfield provenance.
+Functional and design relationships are shown only where explicit TaskGraph or
+traceability edges already exist. A brownfield impact finding remains run-level
+when the current model has no finding-to-task edge. The workflow diagram remains
+an orchestrator diagram and is not relabeled as product architecture.
+
+`sdlc_document_models.py` defines immutable renderer-neutral sections, entries,
+fields, and tables; `sdlc_document_builder.py` validates and builds the four views;
+`pdf_renderer.py` is the narrow renderer boundary; and
+`sdlc_pdf_publication.py` installs the canonical snake_case set:
+`requirements_specification.pdf`, `functional_specification.pdf`,
+`design_specification.pdf`, and `test_plan_validation_report.pdf`. ReportLab
+Platypus supplies flowing layout, repeating table headers, long-value wrapping,
+page templates, and page numbers. `pypdf` is dev-only and verifies that generated
+files can be parsed and searched in automated tests.
+
+PDF generation runs only for `success`, after semantic-event reconciliation and
+Human Governance History generation but before `manifest.json`. Every document is
+first rendered to a temporary file. The application installs and verifies all four
+or removes the entire set. A builder, renderer, partial-install, or verification
+failure becomes explicit terminal evidence-finalization failure: workflow authority
+is preserved, but no normal manifest or durable project export proceeds. On
+success, the existing manifest automatically binds PDF hashes/sizes, the unchanged
+exporter copies exact bytes into `projects/<project-name>/sdlc-artifacts/`, and the
+manifest-driven Streamlit index presents human-friendly direct downloads without
+removing existing evidence.
+
+The initial view model does not claim a general typed product API/schema model,
+project architecture diagram, canonical per-test-function identity, or explicit
+trade-off/mitigation model because the current authority contracts do not guarantee
+those structures. Missing optional evidence is labeled or omitted; it is never
+filled with generated interpretation.
 
 ### Semantic run events and human governance history
 

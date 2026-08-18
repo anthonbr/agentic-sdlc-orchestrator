@@ -20,6 +20,7 @@ from agentic_sdlc.run_artifacts import (
     LiveRunArtifactBundle,
     write_sdlc_artifact_manifest,
 )
+from agentic_sdlc.sdlc_document_models import SDLC_PDF_FILENAMES
 from tests.test_run_artifacts import _terminal_state
 from tests.test_streamlit_app import FakeUIRuntime, _render_for_test, _values
 from tests.test_streamlit_runtime import _snapshot
@@ -55,6 +56,13 @@ def _terminal_with_manifest(
         "task_graph.md": b"# TaskGraph\n",
         "human_governance_history.md": b"# Human Governance History\n",
     }
+    if workflow_status == "success":
+        files.update(
+            {
+                filename: b"%PDF-1.4\n" + b"x" * 600
+                for filename in SDLC_PDF_FILENAMES
+            }
+        )
     for name, contents in files.items():
         (bundle.artifact_dir / name).write_bytes(contents)
     manifest_path = write_sdlc_artifact_manifest(
@@ -120,7 +128,25 @@ def test_terminal_run_renders_lifecycle_ordered_artifact_downloads(
         "summary.md",
         "manifest.json",
     ]
-    assert [button.label for button in app.download_button] == ["Download"] * 6
+    assert [button.label for button in app.download_button] == ["Download"] * 10
+    assert [
+        value
+        for value in _values(app.text)
+        if value
+        in {
+            "Requirements Specification",
+            "Functional Specification",
+            "Design Specification",
+            "Test Plan and Validation Report",
+        }
+    ] == [
+        "Requirements Specification",
+        "Functional Specification",
+        "Design Specification",
+        "Test Plan and Validation Report",
+    ]
+    captions = _values(app.caption)
+    assert all(filename in captions for filename in SDLC_PDF_FILENAMES)
     rendered = "\n".join(_values(app.markdown))
     assert "Original and normalized requirement submission." in rendered
     assert "Human decisions, feedback, AI assistance" in rendered
