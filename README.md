@@ -76,6 +76,10 @@ projects/<project-name>/
     ├── engineering_artifacts.json
     ├── requirement_traceability.json
     ├── requirement_traceability.md
+    ├── requirements_specification.pdf
+    ├── functional_specification.pdf
+    ├── design_specification.pdf
+    ├── test_plan_validation_report.pdf
     ├── human_governance_history.md
     ├── workflow_diagram.png
     └── summary.md
@@ -198,6 +202,37 @@ Because the reports are created before export, they record readiness and the fin
 authoritative workspace snapshot but do not claim that publication has already
 succeeded. Existing governed records remain the authority, and missing links stay
 missing in both formats.
+
+Successful final publication also creates four evaluator-facing PDFs:
+`requirements_specification.pdf`, `functional_specification.pdf`,
+`design_specification.pdf`, and `test_plan_validation_report.pdf`. These are
+deterministic human-readable projections over the same approved specification,
+TaskGraph, final engineering/workspace evidence, governed validation records,
+traceability projection, and brownfield lineage when applicable. No additional
+LLM call is made. Canonical identifiers such as `FR-###`, `AC-###`, `TASK-###`,
+validation-requirement IDs, and immutable evidence IDs are reproduced exactly;
+missing mappings and `UNVERIFIED` or `NOT_IMPLEMENTED` statuses are not upgraded.
+
+The application builds renderer-neutral validated document views and gives those
+views to a narrow local ReportLab renderer. ReportLab provides flowing paragraphs,
+repeating multi-page table headers, long-value wrapping, headers/footers, and page
+numbers without a cloud document service. `pypdf` is a development-only test
+dependency used to parse generated files and assert extractable content. The four
+PDFs are rendered to temporary files and installed only as a complete set after
+governance-history reconciliation and before manifest creation. Any build,
+rendering, or installation failure removes the set, fails terminal evidence
+finalization, and prevents both the normal manifest and project publication.
+Safe-stopped and otherwise unsuccessful runs do not receive the PDFs.
+
+The documents do not invent a product architecture diagram, general API/schema
+model, per-test-case traceability identity, or risk mitigation where those records
+do not exist. Approved FR/AC text and explicit TaskGraph references carry the
+functional view; approved task responsibilities, final canonical artifact
+inventory, risks, and structured brownfield impact carry the design view; and the
+test report uses actual fixed argv, result, output, retry, policy, and evidence
+records. New successful runs expose all four PDFs with human-friendly names in
+Streamlit's existing **SDLC Evidence & Artifacts** downloads while preserving every
+existing JSON, Markdown, PNG, and manifest download.
 
 Each governed application run also retains a semantic operational audit stream at
 `runs/<run-id>/run-events.jsonl`. Its append order records meaningful human input,
@@ -1027,6 +1062,10 @@ python3 -m venv .venv
 cp .env.example .env
 ```
 
+The runtime dependency set includes ReportLab for local deterministic PDF layout.
+The `dev` extra adds `pypdf` for structural and text-extraction tests of generated
+PDFs.
+
 Set a real `OPENAI_API_KEY` in the ignored local `.env`. `OPENAI_MODEL` defaults
 to `gpt-5.6-sol`. The project does not load `.env` itself, so export it before
 either an interactive CLI run or the Streamlit GUI:
@@ -1137,6 +1176,10 @@ runs/
         ├── engineering_artifacts.json
         ├── requirement_traceability.json
         ├── requirement_traceability.md
+        ├── requirements_specification.pdf
+        ├── functional_specification.pdf
+        ├── design_specification.pdf
+        ├── test_plan_validation_report.pdf
         ├── human_governance_history.md
         ├── workflow_diagram.png
         └── summary.md
@@ -1152,6 +1195,10 @@ The sibling `run-events.jsonl` is an append-only operational audit record and is
 intentionally not manifest-bound. The derived `human_governance_history.md` report
 inside `sdlc-artifacts/` is manifest-bound and published through the normal
 verified evidence-copy path.
+The four PDFs are success-only derived projections; they are absent from safe-stop
+bundles. The checked-in V17/V18 `sample_output/` scenarios predate this publication
+slice and remain intentionally frozen rather than being rewritten to resemble a
+new live run.
 For a successful run, the independently retained run bundle is copied during
 controlled staging into the durable package:
 

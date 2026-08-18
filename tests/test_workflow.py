@@ -52,6 +52,7 @@ from agentic_sdlc.requirement_analysis import (
     determine_requirement_planning_readiness,
 )
 from agentic_sdlc.requirement_spec import ApprovedRequirementSpec
+from agentic_sdlc.sdlc_document_models import SDLC_PDF_FILENAMES
 from agentic_sdlc.state import (
     DEMO_RAW_REQUIREMENT,
     DEMO_REQUIREMENTS,
@@ -1668,6 +1669,7 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
         (
             *ARTIFACT_FILENAMES,
             HUMAN_GOVERNANCE_HISTORY_FILENAME,
+            *SDLC_PDF_FILENAMES,
             "workflow_diagram.png",
         )
     )
@@ -1685,6 +1687,7 @@ def test_cli_live_run_uses_one_owned_artifact_bundle_across_resumes(
     assert {path.name for path in packaged_dir.iterdir()} == {
         *ARTIFACT_FILENAMES,
         HUMAN_GOVERNANCE_HISTORY_FILENAME,
+        *SDLC_PDF_FILENAMES,
         "manifest.json",
         "workflow_diagram.png",
     }

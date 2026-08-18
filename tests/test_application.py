@@ -16,6 +16,7 @@ from agentic_sdlc.application import (
     UnknownGovernedRunError,
 )
 from agentic_sdlc.llm import FakeRequirementAnalysisClient, FakeTaskPlanningClient
+from agentic_sdlc.sdlc_document_models import SDLC_PDF_FILENAMES
 from agentic_sdlc.state import WorkflowState, demo_input
 from agentic_sdlc.task_execution_progress import TaskExecutionProgressReporter
 from agentic_sdlc.workflow import build_workflow
@@ -38,6 +39,7 @@ def _service(
     planner: FakeTaskPlanningClient,
     run_suffix: str,
     run_event_log_factory: Any | None = None,
+    sdlc_pdf_artifact_publisher: Any | None = None,
 ) -> tuple[GovernedRunService, GovernedWorkspaceRuntime, RecordingTaskExecutor]:
     workspace_parent = tmp_path / "isolated"
     workspace_parent.mkdir(exist_ok=True)
@@ -76,6 +78,7 @@ def _service(
             run_id_factory=lambda command: f"{command}-{run_suffix}",
             workflow_diagram_writer=write_stub_diagram,
             run_event_log_factory=run_event_log_factory,
+            sdlc_pdf_artifact_publisher=sdlc_pdf_artifact_publisher,
         ),
         runtime,
         executor,
@@ -211,6 +214,54 @@ def test_repeated_governance_resumes_preserve_authority_and_reach_export(
     assert len(terminal.workflow_state["requirement_review_history"]) == 2
 
 
+def test_pdf_publication_failure_fails_terminal_evidence_and_prevents_export(
+    tmp_path: Path,
+) -> None:
+    def fail_after_partial_write(_state: object, output_dir: Path) -> tuple[Path, ...]:
+        partial = output_dir / SDLC_PDF_FILENAMES[0]
+        partial.write_bytes(b"%PDF-1.4\n" + b"x" * 600)
+        raise RuntimeError("renderer backend failed")
+
+    service, _, _ = _service(
+        tmp_path,
+        analyst=FakeRequirementAnalysisClient([_analysis()]),
+        planner=FakeTaskPlanningClient([_proposal()]),
+        run_suffix="pdf-failure",
+        sdlc_pdf_artifact_publisher=fail_after_partial_write,
+    )
+    requirement_review = service.start_run(
+        GovernedRunRequest(command="demo", workflow_input=demo_input())
+    )
+    assert requirement_review.human_gate is not None
+    graph_review = service.resume_run(
+        requirement_review.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=requirement_review.human_gate.gate_token,
+    )
+    assert graph_review.human_gate is not None
+
+    terminal = service.resume_run(
+        graph_review.run_id,
+        {"decision": "APPROVE", "feedback": ""},
+        gate_token=graph_review.human_gate.gate_token,
+    )
+
+    assert terminal.workflow_status == "success"
+    assert terminal.application_status is GovernedRunApplicationStatus.FAILED
+    assert terminal.manifest_path is None
+    assert terminal.export_result is None
+    assert terminal.application_error == (
+        "Terminal evidence finalization failed: The governed SDLC PDF "
+        "publication set could not be generated."
+    )
+    assert any("renderer backend failed" in warning for warning in terminal.warnings)
+    assert not (tmp_path / "projects").exists()
+    assert all(
+        not (terminal.artifact_bundle.artifact_dir / name).exists()
+        for name in SDLC_PDF_FILENAMES
+    )
+
+
 def test_invalid_feedback_does_not_consume_active_human_gate(tmp_path: Path) -> None:
     service, _, _ = _service(
         tmp_path,
@@ -301,6 +352,10 @@ def test_safe_stop_writes_manifest_never_exports_and_rejects_duplicate_resume(
     assert stopped.manifest_path is not None
     assert stopped.manifest_path.is_file()
     assert stopped.export_result is None
+    assert all(
+        not (stopped.artifact_bundle.artifact_dir / name).exists()
+        for name in SDLC_PDF_FILENAMES
+    )
     assert not (tmp_path / "projects").exists()
     with pytest.raises(GovernedRunLifecycleError, match="already terminal"):
         service.resume_run(

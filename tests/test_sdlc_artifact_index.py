@@ -16,6 +16,7 @@ from agentic_sdlc.sdlc_artifact_index import (
     SDLCArtifactIndexRow,
     load_sdlc_artifact_index,
 )
+from agentic_sdlc.sdlc_document_models import SDLC_PDF_FILENAMES
 from tests.test_run_artifacts import _terminal_state
 
 
@@ -148,6 +149,27 @@ def test_index_exposes_exact_retained_bytes_filename_and_mime_type(
     assert row.artifact == "requirement_traceability.md"
     assert row.mime_type == "text/markdown"
     assert row.contents == expected
+
+
+def test_index_gives_pdfs_human_friendly_names_and_pdf_mime_type(
+    tmp_path: Path,
+) -> None:
+    bundle, manifest_path = _finalized_bundle(
+        tmp_path,
+        files={name: b"%PDF-1.4\n" for name in SDLC_PDF_FILENAMES},
+    )
+
+    rows = _load(bundle, manifest_path)
+
+    assert [row.artifact for row in rows[:-1]] == list(SDLC_PDF_FILENAMES)
+    assert [row.display_name for row in rows[:-1]] == [
+        "Requirements Specification",
+        "Functional Specification",
+        "Design Specification",
+        "Test Plan and Validation Report",
+    ]
+    assert all(row.stage == "Governed SDLC Documents" for row in rows[:-1])
+    assert all(row.mime_type == "application/pdf" for row in rows[:-1])
 
 
 def test_index_rejects_traversal_in_manifest_record(tmp_path: Path) -> None:

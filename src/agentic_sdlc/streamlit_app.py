@@ -709,7 +709,9 @@ def _render_terminal_artifact_index(snapshot: GovernedRunSnapshot) -> None:
             st.columns((1.3, 1.8, 3.7, 1.0))
         )
         stage_column.write(row.stage)
-        artifact_column.text(row.artifact)
+        artifact_column.text(row.display_name)
+        if row.display_name != row.artifact:
+            artifact_column.caption(row.artifact)
         description_column.write(row.description)
         action_column.download_button(
             "Download",

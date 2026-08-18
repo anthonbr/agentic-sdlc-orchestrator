@@ -54,6 +54,11 @@ from agentic_sdlc.run_events import (
     build_clarification_draft_generated_event,
     build_clarification_draft_requested_event,
 )
+from agentic_sdlc.sdlc_document_models import SDLC_PDF_FILENAMES
+from agentic_sdlc.sdlc_pdf_publication import (
+    remove_sdlc_pdf_artifacts,
+    write_sdlc_pdf_artifacts,
+)
 from agentic_sdlc.state import ApprovalDecision, ApprovalResponse, WorkflowState
 from agentic_sdlc.task_execution_progress import (
     NullTaskExecutionProgressReporter,
@@ -210,6 +215,10 @@ class WorkflowFactory(Protocol):
 RunIdFactory = Callable[[str], str]
 WorkspaceRuntimeFactory = Callable[[], GovernedWorkspaceRuntime]
 RunEventLogFactory = Callable[[LiveRunArtifactBundle], RunEventLog]
+SDLCPDFArtifactPublisher = Callable[
+    [Mapping[str, Any], Path],
+    tuple[Path, ...],
+]
 
 
 class WorkflowDiagramWriter(Protocol):
@@ -274,6 +283,7 @@ class GovernedRunService:
         project_exporter: ProjectExporter | None = None,
         published_project_catalog: PublishedProjectCatalog | None = None,
         run_event_log_factory: RunEventLogFactory | None = None,
+        sdlc_pdf_artifact_publisher: SDLCPDFArtifactPublisher | None = None,
     ) -> None:
         self._repository_root = Path(repository_root).resolve()
         self._workflow_factory = workflow_factory or build_workflow
@@ -290,6 +300,9 @@ class GovernedRunService:
             or PublishedProjectCatalog(self._repository_root)
         )
         self._run_event_log_factory = run_event_log_factory or RunEventLog
+        self._sdlc_pdf_artifact_publisher = (
+            sdlc_pdf_artifact_publisher or write_sdlc_pdf_artifacts
+        )
         self._runs: dict[str, _GovernedRunContext] = {}
         self._runs_lock = Lock()
 
@@ -691,6 +704,16 @@ class GovernedRunService:
                 )
                 context.terminal_finalized = True
                 return
+            if (
+                workflow_status == "success"
+                and not self._write_sdlc_pdf_artifacts_locked(context)
+            ):
+                self._fail_terminal_evidence_finalization(
+                    context,
+                    reason="The governed SDLC PDF publication set could not be generated.",
+                )
+                context.terminal_finalized = True
+                return
             try:
                 context.manifest_path = write_sdlc_artifact_manifest(
                     state,
@@ -766,9 +789,38 @@ class GovernedRunService:
             / HUMAN_GOVERNANCE_HISTORY_FILENAME
         )
         report_path.unlink(missing_ok=True)
+        remove_sdlc_pdf_artifacts(context.artifact_bundle.artifact_dir)
         context.manifest_path = None
         context.export_result = None
         context.application_error = f"Terminal evidence finalization failed: {reason}"
+
+    def _write_sdlc_pdf_artifacts_locked(
+        self,
+        context: _GovernedRunContext,
+    ) -> bool:
+        """Render and verify the complete success-only PDF set before manifesting."""
+
+        artifact_dir = context.artifact_bundle.artifact_dir
+        expected = tuple(artifact_dir / name for name in SDLC_PDF_FILENAMES)
+        try:
+            written = self._sdlc_pdf_artifact_publisher(
+                context.workflow_state,
+                artifact_dir,
+            )
+            if tuple(written) != expected or any(
+                path.is_symlink() or not path.is_file() for path in expected
+            ):
+                raise ValueError(
+                    "PDF publisher did not materialize the exact canonical set."
+                )
+        except Exception as error:
+            remove_sdlc_pdf_artifacts(artifact_dir)
+            _append_warning_once(
+                context,
+                _event_warning("governed SDLC PDF publication", error),
+            )
+            return False
+        return True
 
     def _append_run_event_locked(
         self,

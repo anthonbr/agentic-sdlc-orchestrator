@@ -20,6 +20,12 @@ from agentic_sdlc.run_artifacts import (
     LiveRunArtifactBundle,
     SDLCArtifactManifest,
 )
+from agentic_sdlc.sdlc_document_models import (
+    DESIGN_SPECIFICATION_PDF,
+    FUNCTIONAL_SPECIFICATION_PDF,
+    REQUIREMENTS_SPECIFICATION_PDF,
+    TEST_PLAN_VALIDATION_REPORT_PDF,
+)
 
 
 class SDLCArtifactIndexError(ValueError):
@@ -34,6 +40,7 @@ class SDLCArtifactIndexRow:
     lifecycle_subrank: int
     stage: str
     artifact: str
+    display_name: str
     description: str
     mime_type: str
     contents: bytes
@@ -45,6 +52,7 @@ class _ArtifactPresentation:
     lifecycle_subrank: int
     stage: str
     description: str
+    display_name: str | None = None
 
 
 _PRESENTATION_BY_ARTIFACT = {
@@ -116,6 +124,34 @@ _PRESENTATION_BY_ARTIFACT = {
         1,
         "Requirement-to-Code Traceability",
         "Structured requirement-to-code traceability projection.",
+    ),
+    REQUIREMENTS_SPECIFICATION_PDF: _ArtifactPresentation(
+        95,
+        0,
+        "Governed SDLC Documents",
+        "Human-readable projection of approved requirements and traceability.",
+        "Requirements Specification",
+    ),
+    FUNCTIONAL_SPECIFICATION_PDF: _ArtifactPresentation(
+        95,
+        1,
+        "Governed SDLC Documents",
+        "Human-readable projection of approved functional behavior and mappings.",
+        "Functional Specification",
+    ),
+    DESIGN_SPECIFICATION_PDF: _ArtifactPresentation(
+        95,
+        2,
+        "Governed SDLC Documents",
+        "Human-readable projection of approved design and engineering evidence.",
+        "Design Specification",
+    ),
+    TEST_PLAN_VALIDATION_REPORT_PDF: _ArtifactPresentation(
+        95,
+        3,
+        "Governed SDLC Documents",
+        "Human-readable projection of actual governed validation evidence.",
+        "Test Plan and Validation Report",
     ),
     "human_governance_history.md": _ArtifactPresentation(
         100,
@@ -238,6 +274,7 @@ def _row_for(artifact: str, contents: bytes) -> SDLCArtifactIndexRow:
         lifecycle_subrank=presentation.lifecycle_subrank,
         stage=presentation.stage,
         artifact=artifact,
+        display_name=presentation.display_name or artifact,
         description=presentation.description,
         mime_type=_mime_type(artifact),
         contents=contents,
@@ -252,6 +289,8 @@ def _mime_type(artifact: str) -> str:
         return "application/json"
     if suffix == ".png":
         return "image/png"
+    if suffix == ".pdf":
+        return "application/pdf"
     return "application/octet-stream"
 
 
