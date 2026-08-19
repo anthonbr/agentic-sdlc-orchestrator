@@ -206,12 +206,22 @@ missing in both formats.
 Successful final publication also creates four evaluator-facing PDFs:
 `requirements_specification.pdf`, `functional_specification.pdf`,
 `design_specification.pdf`, and `test_plan_validation_report.pdf`. These are
-deterministic human-readable projections over the same approved specification,
+professional engineering reports generated from the same approved specification,
 TaskGraph, final engineering/workspace evidence, governed validation records,
-traceability projection, and brownfield lineage when applicable. No additional
-LLM call is made. Canonical identifiers such as `FR-###`, `AC-###`, `TASK-###`,
+traceability relationships, and brownfield lineage when applicable. They are a
+presentation layer, not new workflow authority, and no additional LLM call is
+made. Canonical identifiers such as `FR-###`, `AC-###`, `TASK-###`,
 validation-requirement IDs, and immutable evidence IDs are reproduced exactly;
 missing mappings and `UNVERIFIED` or `NOT_IMPLEMENTED` statuses are not upgraded.
+
+The Test Plan and Validation Report presents a static Python test inventory from
+final governed `.py` content using the standard-library AST parser. Test names are
+inventory only and never create traceability links. Validation attempts retain
+commands, profiles, policies, outcomes, timing, retry decisions, and evidence IDs,
+while pytest failure lines and final summaries replace raw traceback/source dumps.
+Dependency provisioning is similarly summarized rather than reproducing package
+download logs. Complete stdout and stderr remain unchanged in the governed
+machine-readable execution evidence referenced by the report.
 
 The application builds renderer-neutral validated document views and gives those
 views to a narrow local ReportLab renderer. ReportLab provides flowing paragraphs,
