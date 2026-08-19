@@ -18,7 +18,6 @@ from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
     HRFlowable,
     LongTable,
-    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -63,7 +62,7 @@ class ReportLabPDFRenderer:
             bottomMargin=0.68 * inch,
             title=document.title,
             author="Agentic SDLC Orchestrator",
-            subject="Deterministic projection of governed SDLC evidence",
+            subject="Governed SDLC report",
             creator="Agentic SDLC Orchestrator / ReportLab",
             pageCompression=1,
             allowSplitting=1,
@@ -112,15 +111,8 @@ class ReportLabPDFRenderer:
             Spacer(1, 0.34 * inch),
             HRFlowable(width="100%", thickness=1.2, color=colors.HexColor("#2563A6")),
             Spacer(1, 0.22 * inch),
-            Paragraph("ABOUT THIS DOCUMENT", styles["Eyebrow"]),
-            Paragraph(_markup(document.authority_statement), styles["Authority"]),
-            Spacer(1, 0.18 * inch),
-            Paragraph(
-                "Authoritative inputs: "
-                + _markup("; ".join(document.authoritative_sources)),
-                styles["SmallBody"],
-            ),
-            PageBreak(),
+            Paragraph(_markup(document.authority_statement), styles["Provenance"]),
+            Spacer(1, 0.34 * inch),
         ]
         for section in document.sections:
             story.extend(
@@ -229,8 +221,8 @@ def _metadata_table(
         ("Run ID", document.run_id),
         ("Specification", document.requirement_spec_id),
         ("Specification version", str(document.requirement_spec_version)),
-        ("Document kind", document.kind.value),
-        ("Authority", "DERIVED / NON-AUTHORITATIVE"),
+        ("Document kind", document.kind.value.replace("_", " ").title()),
+        ("Source", "Governed SDLC evidence"),
     ]
     table = LongTable(
         [
@@ -269,7 +261,7 @@ def _draw_page(
     canvas.line(doc.leftMargin, 0.43 * inch, page_width - doc.rightMargin, 0.43 * inch)
     canvas.setFillColor(colors.HexColor("#526B80"))
     canvas.setFont(regular_font, 7.0)
-    canvas.drawString(doc.leftMargin, 0.28 * inch, "Governed evidence projection")
+    canvas.drawString(doc.leftMargin, 0.28 * inch, "Governed SDLC evidence")
     canvas.drawRightString(
         page_width - doc.rightMargin,
         0.28 * inch,
@@ -300,17 +292,8 @@ def _styles(regular_font: str, bold_font: str) -> dict[str, ParagraphStyle]:
             alignment=TA_CENTER,
             textColor=colors.HexColor("#41647F"),
         ),
-        "Eyebrow": ParagraphStyle(
-            "Eyebrow",
-            parent=base["Normal"],
-            fontName=bold_font,
-            fontSize=8,
-            leading=10,
-            textColor=colors.HexColor("#2563A6"),
-            spaceAfter=5,
-        ),
-        "Authority": ParagraphStyle(
-            "Authority",
+        "Provenance": ParagraphStyle(
+            "Provenance",
             parent=base["Normal"],
             fontName=regular_font,
             fontSize=10,
@@ -348,15 +331,6 @@ def _styles(regular_font: str, bold_font: str) -> dict[str, ParagraphStyle]:
             leading=13.1,
             alignment=TA_LEFT,
             textColor=colors.HexColor("#243746"),
-            splitLongWords=True,
-        ),
-        "SmallBody": ParagraphStyle(
-            "SmallBody",
-            parent=base["BodyText"],
-            fontName=regular_font,
-            fontSize=8.2,
-            leading=11.2,
-            textColor=colors.HexColor("#526B80"),
             splitLongWords=True,
         ),
         "FieldLabel": ParagraphStyle(

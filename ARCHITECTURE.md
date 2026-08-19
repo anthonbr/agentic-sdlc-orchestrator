@@ -362,12 +362,22 @@ approved specification + approved TaskGraph + final governed evidence
 
 The builders make no LLM call and perform no semantic rediscovery. They copy exact
 approved requirement text, canonical identifiers, explicit TaskGraph references,
-final-attempt engineering lineage, governed validation argv/results/output, the
-existing conservative traceability statuses, and verified brownfield provenance.
+final-attempt engineering lineage, governed validation commands/results/evidence,
+the existing conservative traceability statuses, and verified brownfield
+provenance.
 Functional and design relationships are shown only where explicit TaskGraph or
 traceability edges already exist. A brownfield impact finding remains run-level
 when the current model has no finding-to-task edge. The workflow diagram remains
 an orchestrator diagram and is not relabeled as product architecture.
+
+The renderer-owned vocabulary is concise and specific to each report type. The
+Test Plan and Validation Report uses Python `ast` to inventory conventional
+`test_` functions and methods from final governed Python content; these names are
+never treated as requirement mappings. It extracts factual pytest failed-node
+lines and terminal summaries for the report, summarizes provisioning metadata,
+and references immutable evidence IDs for complete stdout/stderr. Raw validation,
+provisioning, and recovery diagnostics remain unchanged in the run-owned evidence
+artifacts and are not duplicated into the human-readable PDF.
 
 `sdlc_document_models.py` defines immutable renderer-neutral sections, entries,
 fields, and tables; `sdlc_document_builder.py` validates and builds the four views;

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import json
+import re
 import shlex
 from collections.abc import Mapping, Sequence
 from typing import Any, TypeVar
@@ -14,6 +16,7 @@ from agentic_sdlc.brownfield_baseline import (
     brownfield_baseline_from_value,
 )
 from agentic_sdlc.brownfield_context import (
+    BrownfieldCodebaseFileKind,
     BrownfieldCodebaseContext,
     brownfield_codebase_context_from_value,
 )
@@ -39,6 +42,7 @@ from agentic_sdlc.traceability import (
     RequirementTraceabilityProjection,
     TraceabilityItemKind,
     TraceabilityRow,
+    TraceabilityStatus,
     build_requirement_traceability,
 )
 from agentic_sdlc.validation_execution_contracts import (
@@ -51,24 +55,23 @@ class SDLCDocumentBuildError(ValueError):
     """Raised when successful governed evidence cannot form valid document views."""
 
 
-_AUTHORITY_STATEMENT = (
-    "This document is a deterministic, non-authoritative projection of existing "
-    "governed SDLC evidence. It presents the governed truth; it does not create "
-    "requirements, design, implementation, validation, traceability, or publication "
-    "authority."
+_PROVENANCE_SENTENCE = (
+    "This report is generated from the governed SDLC evidence for this run."
+)
+_TRACEABILITY_INTRODUCTION = (
+    "Traceability reflects relationships established during the governed workflow. "
+    "Relationships are reported only where they were established by the governed "
+    "workflow."
+)
+_COMPLETE_OUTPUT_NOTE = (
+    "Complete stdout and stderr are retained in immutable evidence {evidence_id}."
 )
 _COMMON_SOURCES = (
     "Original immutable requirement submission and governed analysis history",
     "Human-approved authoritative requirement specification",
     "Human-approved canonical TaskGraph",
-    "Final-authority engineering, workspace, and validation evidence",
-    "Conservative requirement-to-code traceability projection",
-)
-_COMMON_LIMITATIONS = (
-    "Missing relationships remain missing; identifiers, names, prose, paths, and "
-    "semantic similarity are not used to infer links.",
-    "The PDF files are presentation artifacts and are never read by governance or "
-    "execution logic.",
+    "Final engineering, workspace, and validation evidence",
+    "Governed requirement-to-code traceability",
 )
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
@@ -198,11 +201,10 @@ def _requirements_document(evidence: _BuilderEvidence) -> SDLCDocument:
     spec = evidence.spec
     sections = [
         _section(
-            "Document authority and identity",
-            introduction=(_AUTHORITY_STATEMENT,),
+            "Document identity",
             entries=(
                 DocumentEntry(
-                    heading="Governed source identity",
+                    heading="Run and specification",
                     fields=(
                         _field("Project / product", evidence.project_name),
                         _field("Run ID", evidence.run_id),
@@ -262,7 +264,7 @@ def _requirements_document(evidence: _BuilderEvidence) -> SDLCDocument:
         filename=REQUIREMENTS_SPECIFICATION_PDF,
         title="Requirements Specification",
         sections=sections,
-        limitations=_COMMON_LIMITATIONS,
+        limitations=(),
     )
 
 
@@ -274,12 +276,11 @@ def _functional_document(evidence: _BuilderEvidence) -> SDLCDocument:
             introduction=(evidence.spec.normalized_problem_statement,),
             entries=(
                 DocumentEntry(
-                    heading="Approved functional authority",
+                    heading="Approved functional scope",
                     paragraphs=(
-                        "The sections below reproduce approved requirement text "
-                        "and approved TaskGraph descriptions. Implements and "
-                        "Addresses fields come only from explicit TaskGraph "
-                        "references.",
+                        "The sections below organize approved requirements and "
+                        "TaskGraph responsibilities into the externally observable "
+                        "behavior of the system.",
                     ),
                 ),
             ),
@@ -287,8 +288,9 @@ def _functional_document(evidence: _BuilderEvidence) -> SDLCDocument:
         _section(
             "Approved functional behavior and interactions",
             introduction=(
-                "Each record is one canonical approved task with the exact "
-                "requirements and acceptance criteria it explicitly references.",
+                "Each behavior is associated with its canonical TaskGraph task and "
+                "the requirement and acceptance-criterion coverage established for "
+                "that task.",
             ),
             entries=tuple(_functional_task_entry(evidence, task) for task in evidence.graph.tasks),
         ),
@@ -322,17 +324,17 @@ def _functional_document(evidence: _BuilderEvidence) -> SDLCDocument:
             _traceability_section(evidence.projection),
         )
     )
-    limitations = [*_COMMON_LIMITATIONS]
+    limitations = []
     if impact is None:
         limitations.append(
-            "The governed evidence has no separate typed API, user-flow, or state-"
-            "transition model; exact approved FR/AC text and TaskGraph descriptions "
-            "are presented without reclassification or invented behavior."
+            "This run does not contain a separate typed API, user-flow, or state-"
+            "transition model. Functional behavior is therefore organized from the "
+            "approved requirements and TaskGraph descriptions."
         )
     else:
         limitations.append(
-            "Individual brownfield impact findings have no authoritative item-to-"
-            "task edges, so no requirement IDs are assigned to those findings."
+            "Individual brownfield impact findings do not have item-to-task "
+            "relationships, so those findings are presented without requirement IDs."
         )
     return _document(
         evidence,
@@ -378,17 +380,17 @@ def _design_document(evidence: _BuilderEvidence) -> SDLCDocument:
             _traceability_section(evidence.projection),
         )
     )
-    limitations = [*_COMMON_LIMITATIONS]
+    limitations = []
     if not any(task.task_type is TaskType.DESIGN for task in evidence.graph.tasks):
         limitations.append(
-            "The approved TaskGraph contains no DESIGN task; this document presents "
-            "approved task responsibilities and final engineering inventory without "
-            "inventing a separate architecture narrative."
+            "The approved TaskGraph contains no DESIGN task. The design view is "
+            "therefore limited to approved task responsibilities and the final "
+            "engineering inventory."
         )
     limitations.append(
-        "No authoritative project architecture diagram is retained. The existing "
-        "workflow diagram describes orchestrator control flow and is not relabeled "
-        "as product architecture."
+        "This run does not contain a separate product architecture diagram. The "
+        "workflow diagram documents orchestrator control flow rather than product "
+        "architecture."
     )
     return _document(
         evidence,
@@ -412,26 +414,32 @@ def _test_document(evidence: _BuilderEvidence) -> SDLCDocument:
         _section(
             "Test strategy and approved validation plan",
             introduction=(
-                "The plan is reproduced from approved TEST/VALIDATION tasks and "
-                "explicit required validation profiles; no test relationship is "
-                "inferred from a test name or source text.",
+                "The validation plan follows the approved TEST and VALIDATION tasks "
+                "and their required validation profiles. Test inventory names are "
+                "informational and do not establish traceability relationships.",
             ),
             entries=tuple(_test_task_entry(evidence, task) for task in test_tasks),
         ),
-        _test_artifact_section(evidence),
-        _section(
+    ]
+    test_inventory = _python_test_inventory_section(evidence)
+    if test_inventory is not None:
+        sections.append(test_inventory)
+    sections.extend(
+        (
+            _test_artifact_section(evidence),
+            _section(
             "Governed validation execution",
             introduction=(
-                "Every record below is retained process evidence. PASS means the "
-                "record itself reports a successful governed execution; item-level "
-                "validation IDs are shown only when the conservative traceability "
-                "projection establishes that exact relationship.",
+                "Each record summarizes one governed validation attempt. Complete "
+                "stdout and stderr remain available through the immutable evidence "
+                "identifier shown for that attempt.",
             ),
             entries=tuple(
                 _validation_entry(evidence, item) for item in evidence.validations
             ),
-        ),
-    ]
+            ),
+        )
+    )
     if evidence.provisioning:
         sections.append(_provisioning_section(evidence))
     sections.extend(
@@ -448,12 +456,11 @@ def _test_document(evidence: _BuilderEvidence) -> SDLCDocument:
         title="Test Plan and Validation Report",
         sections=sections,
         limitations=(
-            *_COMMON_LIMITATIONS,
-            "The governed evidence has validation-profile and artifact identities, "
-            "not canonical identities for individual test functions. Test names in "
-            "source or stdout are therefore not promoted into inferred traceability.",
-            "Application-required final-workspace validation is run-level evidence "
-            "and does not create item-specific validation links.",
+            "Validation evidence identifies profiles and artifacts, but does not "
+            "assign canonical IDs to individual test functions. Test inventory names "
+            "do not establish requirement or acceptance-criterion relationships.",
+            "Final-workspace validation is recorded at the run level and does not "
+            "establish item-specific validation relationships.",
         ),
     )
 
@@ -480,7 +487,7 @@ def _document(
         run_id=evidence.run_id,
         requirement_spec_id=evidence.spec.spec_id,
         requirement_spec_version=evidence.spec.version,
-        authority_statement=_AUTHORITY_STATEMENT,
+        authority_statement=_PROVENANCE_SENTENCE,
         authoritative_sources=_COMMON_SOURCES,
         sections=numbered,
         limitations=limitations,
@@ -489,11 +496,10 @@ def _document(
 
 def _identity_section(evidence: _BuilderEvidence) -> DocumentSection:
     return _section(
-        "Document authority and identity",
-        introduction=(_AUTHORITY_STATEMENT,),
+        "Document identity",
         entries=(
             DocumentEntry(
-                heading="Governed source identity",
+                heading="Run and specification",
                 fields=(
                     _field("Project / product", evidence.project_name),
                     _field("Run ID", evidence.run_id),
@@ -601,7 +607,7 @@ def _analysis_revision_section(evidence: _BuilderEvidence) -> DocumentSection:
                 heading="Approved analysis revision",
                 paragraphs=(
                     "No separate analysis-history record is available; the approved "
-                    "specification remains authoritative.",
+                    "specification contains the current approved analysis.",
                 ),
             )
         )
@@ -707,7 +713,7 @@ def _requirements_brownfield_section(evidence: _BuilderEvidence) -> DocumentSect
     if impact is not None:
         entries.append(
             DocumentEntry(
-                heading="Approved brownfield impact authority",
+                heading="Approved brownfield impact",
                 fields=(
                     _field("Baseline ID", impact.baseline_id),
                     _field("Codebase context ID", impact.codebase_context_id),
@@ -757,23 +763,40 @@ def _design_task_entry(evidence: _BuilderEvidence, task: Task) -> DocumentEntry:
     )
 
 
-def _engineering_inventory_section(evidence: _BuilderEvidence) -> DocumentSection:
-    final_artifact_ids = {
+def _final_artifact_ids(evidence: _BuilderEvidence) -> set[str]:
+    return {
         link.artifact_id
         for row in evidence.projection.rows
         for link in row.artifact_links
     }
-    paths_by_artifact: dict[str, set[str]] = {}
+
+
+def _implementation_paths_by_artifact(
+    evidence: _BuilderEvidence,
+) -> dict[str, tuple[str, ...]]:
+    paths: dict[str, set[str]] = {}
     for row in evidence.projection.rows:
         for link in row.implementation_links:
-            paths_by_artifact.setdefault(link.artifact_id, set()).add(link.target_path)
+            paths.setdefault(link.artifact_id, set()).add(link.target_path)
+    return {
+        artifact_id: tuple(sorted(targets))
+        for artifact_id, targets in paths.items()
+    }
+
+
+def _engineering_inventory_section(evidence: _BuilderEvidence) -> DocumentSection:
+    final_artifact_ids = _final_artifact_ids(evidence)
+    paths_by_artifact = _implementation_paths_by_artifact(evidence)
     entries = tuple(
         DocumentEntry(
             heading=f"{artifact.artifact_id} — {artifact.logical_name}",
             fields=(
                 _field("Artifact type", artifact.artifact_type.value),
                 _field("Canonical task", artifact.task_id),
-                _field("Materialized paths", _joined(sorted(paths_by_artifact.get(artifact.artifact_id, ())))),
+                _field(
+                    "Materialized paths",
+                    _joined(paths_by_artifact.get(artifact.artifact_id, ())),
+                ),
                 _field("Content SHA-256", artifact.content_hash),
                 _field("Requirement IDs", _joined(artifact.requirement_refs)),
                 _field("Acceptance-criterion IDs", _joined(artifact.acceptance_criteria_refs)),
@@ -791,9 +814,8 @@ def _engineering_inventory_section(evidence: _BuilderEvidence) -> DocumentSectio
     return _section(
         "Final engineering artifact inventory",
         introduction=(
-            "Only canonical artifacts reachable through successful final-attempt "
-            "traceability are included. Artifact content is not reinterpreted into "
-            "new architecture claims.",
+            "This inventory lists engineering artifacts associated with successful "
+            "final task attempts and their established implementation paths.",
         ),
         entries=entries or (
             DocumentEntry(
@@ -811,8 +833,8 @@ def _impact_section(title: str, values: Sequence[Any]) -> DocumentSection:
             paragraphs=(value.reason,),
             fields=(
                 _field(
-                    "Canonical item mapping",
-                    "Not established for this individual impact finding.",
+                    "Requirement mapping",
+                    "No item-level relationship was established for this impact finding.",
                 ),
             ),
         )
@@ -845,7 +867,7 @@ def _design_brownfield_lineage_section(evidence: _BuilderEvidence) -> DocumentSe
                 _field("New specification", evidence.spec.spec_id),
                 _field("Resulting TaskGraph", evidence.graph.graph_id),
                 _field(
-                    "Final authoritative snapshot",
+                    "Final workspace snapshot",
                     evidence.projection.final_authority.final_workspace_snapshot_id
                     or "Not established",
                 ),
@@ -867,7 +889,10 @@ def _design_brownfield_lineage_section(evidence: _BuilderEvidence) -> DocumentSe
                 fields=(
                     _field("Context ID", context.context_id),
                     _field("Baseline ID", context.baseline_id),
-                    _field("Complete inventory", str(context.complete_authoritative_inventory)),
+                    _field(
+                        "Complete baseline inventory",
+                        str(context.complete_authoritative_inventory),
+                    ),
                     _field("Total retained text bytes", str(context.total_text_bytes)),
                 ),
                 canonical_identifiers=(context.context_id, context.baseline_id),
@@ -875,7 +900,7 @@ def _design_brownfield_lineage_section(evidence: _BuilderEvidence) -> DocumentSe
         )
         tables = (
             DocumentTable(
-                title="Authoritative baseline inventory",
+                title="Baseline file inventory",
                 columns=("Path", "Kind", "Content SHA-256"),
                 rows=tuple(
                     (item.path, item.kind.value, item.content_hash)
@@ -904,7 +929,7 @@ def _design_risk_section(evidence: _BuilderEvidence) -> DocumentSection:
                     _field("Referenced by approved tasks", _joined(tasks)),
                     _field(
                         "Mitigation status",
-                        "No separate authoritative mitigation claim is recorded.",
+                        "No separate mitigation is recorded for this risk.",
                     ),
                 ),
                 canonical_identifiers=(risk.item_id, *tasks),
@@ -913,8 +938,9 @@ def _design_risk_section(evidence: _BuilderEvidence) -> DocumentSection:
     return _section(
         "Design risks, trade-offs, and mitigations",
         introduction=(
-            "Risk-to-task references are explicit. A task reference is not relabeled "
-            "as a mitigation or trade-off decision without separate evidence.",
+            "The task references below are the relationships recorded for each risk. "
+            "A referenced task is not presented as a mitigation unless a separate "
+            "mitigation is recorded.",
         ),
         entries=tuple(entries) or (
             DocumentEntry(
@@ -953,23 +979,99 @@ def _test_task_entry(evidence: _BuilderEvidence, task: Task) -> DocumentEntry:
     )
 
 
+def _python_test_inventory_section(
+    evidence: _BuilderEvidence,
+) -> DocumentSection | None:
+    entries = []
+    for path, content in _final_python_sources(evidence):
+        fields = _python_test_inventory_fields(content)
+        if not fields:
+            continue
+        entries.append(
+            DocumentEntry(
+                heading=path,
+                fields=fields,
+            )
+        )
+    if not entries:
+        return None
+    return _section(
+        "Python test inventory",
+        introduction=(
+            "Test names are extracted statically from final governed Python files. "
+            "They provide an implementation inventory and do not establish "
+            "requirement or acceptance-criterion relationships.",
+        ),
+        entries=tuple(entries),
+    )
+
+
+def _final_python_sources(
+    evidence: _BuilderEvidence,
+) -> tuple[tuple[str, str], ...]:
+    sources: dict[str, str] = {}
+    if evidence.codebase_context is not None:
+        for item in evidence.codebase_context.files:
+            if (
+                item.kind is BrownfieldCodebaseFileKind.TEXT
+                and item.content is not None
+                and item.path.casefold().endswith(".py")
+            ):
+                sources[item.path] = item.content
+    paths_by_artifact = _implementation_paths_by_artifact(evidence)
+    final_artifact_ids = _final_artifact_ids(evidence)
+    for artifact in evidence.artifacts:
+        if artifact.artifact_id not in final_artifact_ids:
+            continue
+        for path in paths_by_artifact.get(artifact.artifact_id, ()):
+            if path.casefold().endswith(".py"):
+                sources[path] = artifact.content
+    return tuple(sorted(sources.items()))
+
+
+def _python_test_inventory_fields(content: str) -> tuple[DocumentField, ...]:
+    try:
+        module = ast.parse(content)
+    except (SyntaxError, ValueError, TypeError):
+        return ()
+    function_types = (ast.FunctionDef, ast.AsyncFunctionDef)
+    module_tests = tuple(
+        node.name
+        for node in module.body
+        if isinstance(node, function_types) and node.name.startswith("test_")
+    )
+    fields = []
+    if module_tests:
+        fields.append(_field("Module-level tests", "\n".join(module_tests)))
+    for node in module.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        methods = tuple(
+            member.name
+            for member in node.body
+            if isinstance(member, function_types)
+            and member.name.startswith("test_")
+        )
+        if methods:
+            fields.append(_field(node.name, "\n".join(methods)))
+    return tuple(fields)
+
+
 def _test_artifact_section(evidence: _BuilderEvidence) -> DocumentSection:
-    final_artifact_ids = {
-        link.artifact_id
-        for row in evidence.projection.rows
-        for link in row.artifact_links
-    }
-    path_by_artifact = {
-        link.artifact_id: link.target_path
-        for row in evidence.projection.rows
-        for link in row.implementation_links
-    }
+    final_artifact_ids = _final_artifact_ids(evidence)
+    paths_by_artifact = _implementation_paths_by_artifact(evidence)
     entries = tuple(
         DocumentEntry(
             heading=f"{artifact.artifact_id} — {artifact.logical_name}",
             fields=(
                 _field("Canonical task", artifact.task_id),
-                _field("Implementation", path_by_artifact.get(artifact.artifact_id, "No authoritative materialized path is linked.")),
+                _field(
+                    "Implementation",
+                    _joined(
+                        paths_by_artifact.get(artifact.artifact_id, ()),
+                        empty="No materialized path is linked.",
+                    ),
+                ),
                 _field("Requirement IDs", _joined(artifact.requirement_refs)),
                 _field("Acceptance-criterion IDs", _joined(artifact.acceptance_criteria_refs)),
                 _field("Content SHA-256", artifact.content_hash),
@@ -1016,49 +1118,62 @@ def _validation_entry(
         else ()
     )
     statuses = tuple(dict.fromkeys(row.status.value for row in linked_rows))
-    paragraphs = tuple(
-        value
-        for value in (
-            f"Retained stdout:\n{item.retained_stdout}" if item.retained_stdout else None,
-            f"Retained stderr:\n{item.retained_stderr}" if item.retained_stderr else None,
+    recovery = _recovery_for_attempt(evidence, item.task_id, item.attempt_number)
+    fields = [
+        _field("Evidence", item.evidence_id),
+        _field("Validation profile", item.profile.value),
+        _field("Validation requirement ID", item.validation_requirement_id),
+        _field("Canonical task", item.task_id),
+        _field("Attempt", str(item.attempt_number)),
+        _field("Request ID", item.request_id),
+        _field("Attempt ID", item.attempt_id),
+        _field("Approved task coverage", _joined(plan_refs)),
+        _field(
+            "Validates canonical IDs",
+            _joined(
+                validated_ids,
+                empty="No item-specific relationship is established.",
+            ),
+        ),
+        _field("Governed command", shlex.join(item.argv)),
+        _field("Working directory", item.working_directory),
+        _field("Policy", f"{item.policy_id} / {item.policy_version}"),
+        _field("Outcome", item.outcome.value),
+        _field("Exit code", str(item.exit_code) if item.exit_code is not None else "None"),
+        _field("Result", "PASS" if item.passed else "NOT PASSED"),
+        _field(
+            "Traceability status",
+            _joined(statuses, empty="Run-level / no item-specific status"),
+        ),
+        _field("Started", item.started_at),
+        _field("Ended", item.ended_at),
+        _field("Duration seconds", f"{item.duration_seconds:.6f}"),
+        *_validation_diagnostic_fields(item),
+    ]
+    if recovery is not None:
+        fields.extend(
+            (
+                _field("Retryable", str(recovery.retryable)),
+                _field("Recovery action", recovery.action.value),
+                _field(
+                    "Subsequent outcome",
+                    _subsequent_validation_outcome(
+                        evidence,
+                        item.task_id,
+                        item.attempt_number,
+                    ),
+                ),
+            )
         )
-        if value is not None
+    fields.append(
+        _field(
+            "Complete output",
+            _COMPLETE_OUTPUT_NOTE.format(evidence_id=item.evidence_id),
+        )
     )
     return DocumentEntry(
-        heading=f"{item.evidence_id} — {item.profile.value}",
-        paragraphs=paragraphs,
-        fields=(
-            _field("Validation requirement ID", item.validation_requirement_id),
-            _field("Canonical task", item.task_id),
-            _field("Attempt", str(item.attempt_number)),
-            _field("Request ID", item.request_id),
-            _field("Attempt ID", item.attempt_id),
-            _field("Approved task coverage", _joined(plan_refs)),
-            _field(
-                "Validates canonical IDs",
-                _joined(
-                    validated_ids,
-                    empty="No item-specific relationship is established.",
-                ),
-            ),
-            _field("Governed command", shlex.join(item.argv)),
-            _field("Working directory", item.working_directory),
-            _field("Policy", f"{item.policy_id} / {item.policy_version}"),
-            _field("Outcome", item.outcome.value),
-            _field("Exit code", str(item.exit_code) if item.exit_code is not None else "None"),
-            _field("Result", "PASS" if item.passed else "NOT PASSED"),
-            _field(
-                "Traceability status",
-                _joined(statuses, empty="Run-level / no item-specific status"),
-            ),
-            _field("Started", item.started_at),
-            _field("Ended", item.ended_at),
-            _field("Duration seconds", f"{item.duration_seconds:.6f}"),
-            _field("stdout SHA-256", item.stdout_sha256),
-            _field("stderr SHA-256", item.stderr_sha256),
-            _field("stdout truncated", str(item.stdout_truncated)),
-            _field("stderr truncated", str(item.stderr_truncated)),
-        ),
+        heading=f"Attempt {item.attempt_number} — {_attempt_result(item)}",
+        fields=tuple(fields),
         canonical_identifiers=(
             item.evidence_id,
             item.validation_requirement_id,
@@ -1075,25 +1190,26 @@ def _provisioning_section(evidence: _BuilderEvidence) -> DocumentSection:
         "Governed dependency provisioning",
         entries=tuple(
             DocumentEntry(
-                heading=f"{item.evidence_id} — {item.profile.value}",
-                paragraphs=tuple(
-                    value
-                    for value in (
-                        f"Retained stdout:\n{item.retained_stdout}" if item.retained_stdout else None,
-                        f"Retained stderr:\n{item.retained_stderr}" if item.retained_stderr else None,
-                    )
-                    if value is not None
-                ),
+                heading=f"Attempt {item.attempt_number} — {_attempt_result(item)}",
                 fields=(
+                    _field("Evidence", item.evidence_id),
+                    _field("Validation profile", item.profile.value),
                     _field("Validation requirement ID", item.validation_requirement_id),
                     _field("Canonical task", item.task_id),
+                    _field("Attempt", str(item.attempt_number)),
                     _field("Governed command", shlex.join(item.argv)),
                     _field("Dependencies", _joined(item.normalized_dependencies)),
-                    _field("Package index", item.package_index_url),
+                    _field("Package source", item.package_index_url),
+                    _field("Policy", f"{item.policy_id} / {item.policy_version}"),
                     _field("Outcome", item.outcome.value),
                     _field("Exit code", str(item.exit_code) if item.exit_code is not None else "None"),
                     _field("Result", "PASS" if item.passed else "NOT PASSED"),
+                    _field("Duration seconds", f"{item.duration_seconds:.6f}"),
                     _field("Container cleanup succeeded", str(item.container_cleanup_succeeded)),
+                    _field(
+                        "Complete output",
+                        _COMPLETE_OUTPUT_NOTE.format(evidence_id=item.evidence_id),
+                    ),
                 ),
                 canonical_identifiers=(
                     item.evidence_id,
@@ -1109,15 +1225,33 @@ def _provisioning_section(evidence: _BuilderEvidence) -> DocumentSection:
 def _retry_section(evidence: _BuilderEvidence) -> DocumentSection:
     entries = tuple(
         DocumentEntry(
-            heading=f"{item.task_id} attempt {item.attempt_number}",
-            paragraphs=(item.reason, item.feedback),
+            heading=f"{item.task_id} — attempt {item.attempt_number} recovery",
             fields=(
                 _field("Failure kind", item.failure_kind.value),
                 _field("Retryable", str(item.retryable)),
                 _field("Recovery action", item.action.value),
+                _field("Decision reason", item.reason),
                 _field("Maximum attempts", str(item.max_attempts)),
                 _field("Request ID", item.request_id or "Not established"),
                 _field("Attempt ID", item.attempt_id or "Not established"),
+                _field(
+                    "Related evidence",
+                    _joined(
+                        _attempt_evidence_ids(
+                            evidence,
+                            item.task_id,
+                            item.attempt_number,
+                        )
+                    ),
+                ),
+                _field(
+                    "Subsequent outcome",
+                    _subsequent_validation_outcome(
+                        evidence,
+                        item.task_id,
+                        item.attempt_number,
+                    ),
+                ),
             ),
             canonical_identifiers=tuple(
                 value
@@ -1138,6 +1272,124 @@ def _retry_section(evidence: _BuilderEvidence) -> DocumentSection:
     )
 
 
+def _attempt_result(
+    item: TaskValidationExecutionEvidence | TaskValidationProvisioningEvidence,
+) -> str:
+    return item.outcome.value
+
+
+def _recovery_for_attempt(
+    evidence: _BuilderEvidence,
+    task_id: str,
+    attempt_number: int,
+) -> TaskExecutionRecoveryDecision | None:
+    return next(
+        (
+            item
+            for item in evidence.recoveries
+            if item.task_id == task_id and item.attempt_number == attempt_number
+        ),
+        None,
+    )
+
+
+def _attempt_evidence_ids(
+    evidence: _BuilderEvidence,
+    task_id: str,
+    attempt_number: int,
+) -> tuple[str, ...]:
+    return tuple(
+        item.evidence_id
+        for item in (*evidence.provisioning, *evidence.validations)
+        if item.task_id == task_id and item.attempt_number == attempt_number
+    )
+
+
+def _subsequent_validation_outcome(
+    evidence: _BuilderEvidence,
+    task_id: str,
+    attempt_number: int,
+) -> str:
+    later = tuple(
+        item
+        for item in evidence.validations
+        if item.task_id == task_id and item.attempt_number > attempt_number
+    )
+    if later:
+        item = min(later, key=lambda candidate: candidate.attempt_number)
+        return (
+            f"Attempt {item.attempt_number} — {_attempt_result(item)} "
+            f"({item.evidence_id})"
+        )
+    return "No subsequent validation execution is recorded."
+
+
+def _validation_diagnostic_fields(
+    item: TaskValidationExecutionEvidence,
+) -> tuple[DocumentField, ...]:
+    output = "\n".join(
+        value for value in (item.retained_stdout, item.retained_stderr) if value
+    )
+    summary = _pytest_summary(output)
+    failed_tests, failure_details = _pytest_failures(output)
+    fields: list[DocumentField] = []
+    if failed_tests:
+        fields.append(_field("Failed tests", "\n".join(failed_tests)))
+    if failure_details:
+        fields.append(_field("Failure summary", "\n".join(failure_details)))
+    if summary:
+        fields.append(_field("Execution summary", summary))
+    elif not fields:
+        fields.append(
+            _field(
+                "Execution summary",
+                (
+                    "Validation completed successfully."
+                    if item.passed
+                    else f"Validation finished with outcome {item.outcome.value}."
+                ),
+            )
+        )
+    return tuple(fields)
+
+
+def _pytest_failures(output: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    failed_tests: list[str] = []
+    details: list[str] = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("FAILED "):
+            continue
+        diagnostic = stripped.removeprefix("FAILED ")
+        node_id, separator, detail = diagnostic.partition(" - ")
+        if node_id and node_id not in failed_tests:
+            failed_tests.append(node_id)
+        if separator and detail:
+            compact = _compact_diagnostic(detail)
+            if compact and compact not in details:
+                details.append(compact)
+    return tuple(failed_tests[:20]), tuple(details[:5])
+
+
+def _pytest_summary(output: str) -> str | None:
+    status_pattern = re.compile(
+        r"\b\d+\s+(?:passed|failed|error|errors|skipped|xfailed|xpassed)\b",
+        flags=re.IGNORECASE,
+    )
+    for line in reversed(output.splitlines()):
+        candidate = line.strip().strip("=").strip()
+        if status_pattern.search(candidate):
+            return _compact_diagnostic(candidate)
+    return None
+
+
+def _compact_diagnostic(value: str, *, limit: int = 240) -> str:
+    compact = " ".join(value.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 1].rstrip() + "…"
+
+
 def _final_validation_outcome_section(evidence: _BuilderEvidence) -> DocumentSection:
     final = evidence.projection.final_authority
     fields = [
@@ -1145,7 +1397,7 @@ def _final_validation_outcome_section(evidence: _BuilderEvidence) -> DocumentSec
         _field("Exit gate", "PASS" if final.exit_gate_passed else "NOT PASSED"),
         _field("Readiness validation ID", final.readiness_validation_id or "Not established"),
         _field("Readiness", "PASS" if final.readiness_passed else "NOT PASSED"),
-        _field("Final authoritative snapshot", final.final_workspace_snapshot_id or "Not established"),
+        _field("Final workspace snapshot", final.final_workspace_snapshot_id or "Not established"),
     ]
     if evidence.readiness is not None:
         fields.extend(
@@ -1180,10 +1432,7 @@ def _traceability_section(
 ) -> DocumentSection:
     return _section(
         "Traceability summary",
-        introduction=(
-            "Statuses and relationships are copied from the conservative existing "
-            "traceability projection. Missing joins remain missing.",
-        ),
+        introduction=(_traceability_introduction(projection),),
         tables=(
             DocumentTable(
                 title="Requirement and acceptance-criterion traceability",
@@ -1192,6 +1441,22 @@ def _traceability_section(
             ),
         ),
     )
+
+
+def _traceability_introduction(
+    projection: RequirementTraceabilityProjection,
+) -> str:
+    statuses = {row.status for row in projection.rows}
+    sentences = [_TRACEABILITY_INTRODUCTION]
+    if TraceabilityStatus.UNVERIFIED in statuses:
+        sentences.append(
+            "Items without qualifying validation evidence remain UNVERIFIED."
+        )
+    if TraceabilityStatus.NOT_IMPLEMENTED in statuses:
+        sentences.append(
+            "Items without established implementation remain NOT_IMPLEMENTED."
+        )
+    return " ".join(sentences)
 
 
 def _traceability_table_row(row: TraceabilityRow) -> tuple[str, ...]:

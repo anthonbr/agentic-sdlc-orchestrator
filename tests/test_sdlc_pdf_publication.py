@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -12,6 +13,8 @@ import pytest
 from pypdf import PdfReader
 
 from agentic_sdlc.application import GovernedRunMode, GovernedRunRequest
+from agentic_sdlc.artifacts import write_artifacts
+from agentic_sdlc.docker_validation import DockerPytestValidationExecutor
 from agentic_sdlc.llm import FakeTaskPlanningClient
 from agentic_sdlc.pdf_renderer import PDFRenderer
 from agentic_sdlc.requirement_analysis import RequirementAnalysis
@@ -33,14 +36,22 @@ from agentic_sdlc.state import WorkflowState, demo_input
 from agentic_sdlc.task_graph import (
     ProposedTask,
     ProposedTaskGraph,
+    ProposedTaskValidationRequirement,
     TaskMaterializationPolicy,
     TaskType,
+    ValidationExecutionProfile,
     normalize_and_validate_task_graph,
 )
 from agentic_sdlc.traceability import TraceabilityStatus, build_requirement_traceability
+from agentic_sdlc.workspace_integration import GovernedWorkspaceRuntime
 from tests.test_application import _service
 from tests.test_brownfield_baseline import _publish_project
 from tests.test_brownfield_reasoning import _ContextAwareAnalyst
+from tests.test_containerized_pytest_validation import (
+    ScriptedDockerRunner,
+    _captured,
+    _operation,
+)
 from tests.test_governed_validation_workflow import (
     ScriptedValidationExecutor,
     _run as _run_compile,
@@ -148,7 +159,7 @@ def test_canonical_requirement_and_acceptance_ids_are_not_renumbered(
         normalized_problem_statement="Preserve caller-owned identifiers.",
         requirement_type="greenfield",
         functional_requirements=["Named behavior."],
-        nonfunctional_requirements=[],
+        nonfunctional_requirements=["Statistics output must be deterministic."],
         constraints=[],
         ambiguities=[],
         assumptions=[],
@@ -169,6 +180,11 @@ def test_canonical_requirement_and_acceptance_ids_are_not_renumbered(
                     update={"item_id": "FR-9"}
                 ),
             ),
+            "nonfunctional_requirements": (
+                original.nonfunctional_requirements[0].model_copy(
+                    update={"item_id": "NFR-9"}
+                ),
+            ),
             "acceptance_criteria": (
                 original.acceptance_criteria[0].model_copy(
                     update={"item_id": "AC-1.1"}
@@ -186,7 +202,7 @@ def test_canonical_requirement_and_acceptance_ids_are_not_renumbered(
                     task_type=TaskType.IMPLEMENTATION,
                     materialization_policy=TaskMaterializationPolicy.FORBIDDEN,
                     depends_on=[],
-                    requirement_refs=["FR-9"],
+                    requirement_refs=["FR-9", "NFR-9"],
                     acceptance_criteria_refs=["AC-1.1"],
                     risk_refs=[],
                     ambiguity_refs=[],
@@ -217,6 +233,7 @@ def test_canonical_requirement_and_acceptance_ids_are_not_renumbered(
 
     assert "FR-9" in combined
     assert "AC-1.1" in combined
+    assert "Statistics output must be deterministic." in combined
     assert "FR-001" not in combined
     assert "AC-001" not in combined
 
@@ -227,6 +244,8 @@ def test_canonical_requirement_and_acceptance_ids_are_not_renumbered(
         assert "AC-1.1" in rendered_text
         assert "FR-001" not in rendered_text
         assert "AC-001" not in rendered_text
+    _, requirements_text = _pdf_text(tmp_path / REQUIREMENTS_SPECIFICATION_PDF)
+    assert "Statistics output must be deterministic." in requirements_text
 
 
 def test_functional_and_design_mappings_match_existing_traceability_only(
@@ -297,6 +316,19 @@ def test_rendered_pdf_set_is_nonempty_parseable_searchable_and_paginated(
     tmp_path: Path,
     verified_state: WorkflowState,
 ) -> None:
+    provenance = (
+        "This report is generated from the governed SDLC evidence for this run."
+    )
+    legacy_provenance = (
+        "This document is a deterministic, non-authoritative projection of "
+        "existing governed SDLC evidence."
+    )
+    for document in build_sdlc_documents(verified_state):
+        document_text = _text(document)
+        assert document_text.count(provenance) == 1
+        assert legacy_provenance not in document_text
+        assert "ABOUT THIS DOCUMENT" not in document_text
+
     paths = write_sdlc_pdf_artifacts(verified_state, tmp_path)
 
     assert tuple(path.name for path in paths) == SDLC_PDF_FILENAMES
@@ -305,10 +337,163 @@ def test_rendered_pdf_set_is_nonempty_parseable_searchable_and_paginated(
         assert path.stat().st_size > 1_000
         assert reader.pages
         assert reader.metadata.title
-        assert "governed truth" in text
+        assert text.count(provenance) == 1
+        assert legacy_provenance not in text
+        assert "ABOUT THIS DOCUMENT" not in text
+        assert "Authority DERIVED / NON-AUTHORITATIVE" not in text
+        assert "DERIVED / NON-AUTHORITATIVE" not in text
         assert "FR-001" in text
         assert "AC-001" in text
         assert "Page " in text
+
+
+class _VerboseRetryDockerRunner(ScriptedDockerRunner):
+    """Return realistic transcripts while retaining deterministic lifecycle behavior."""
+
+    def __init__(self) -> None:
+        super().__init__(pytest_exit_codes=(1, 0))
+
+    def run(self, argv, **kwargs):
+        result = super().run(argv, **kwargs)
+        operation = _operation(argv)
+        if operation == "pip":
+            return replace(
+                result,
+                stdout=_captured(
+                    "Collecting pytest\n"
+                    "Downloading pytest-9.0.0-py3-none-any.whl\n"
+                    "Installing collected packages: pytest\n"
+                    "Successfully installed pytest-9.0.0\n"
+                ),
+                stderr=_captured(
+                    "WARNING: The scripts py.test and pytest are installed in "
+                    "/tmp/bin which is not on PATH.\n"
+                ),
+            )
+        if operation == "pytest" and result.exit_code == 1:
+            return replace(
+                result,
+                stdout=_captured(
+                    "============================= test session starts "
+                    "=============================\n"
+                    "tests/test_example.py .FF\n"
+                    "___________________________________ FAILURES "
+                    "___________________________________\n"
+                    "def test_collision_retry():\n"
+                    "    RAW_PYTHON_SOURCE_SHOULD_NOT_APPEAR\n"
+                    "    assert False\n"
+                    "Traceback (most recent call last):\n"
+                    "  File 'tests/test_example.py', line 9, in test_collision_retry\n"
+                    "FAILED tests/test_example.py::TestCreationService::test_collision_retry"
+                    " - AssertionError: expected retry\n"
+                    "FAILED tests/test_example.py::test_unknown_redirect_returns_404"
+                    " - AssertionError: expected 404\n"
+                    "========================= 2 failed, 1 passed in 0.12s "
+                    "=========================\n"
+                ),
+                stderr=_captured("FULL_TRACEBACK_STDERR_SHOULD_NOT_APPEAR\n"),
+            )
+        if operation == "pytest" and result.exit_code == 0:
+            return replace(
+                result,
+                stdout=_captured("3 passed in 0.08s\n"),
+                stderr=_captured(""),
+            )
+        return result
+
+
+def test_validation_report_humanizes_retry_inventory_and_provisioning(
+    tmp_path: Path,
+) -> None:
+    test_source = (
+        "def test_valid_creation():\n"
+        "    assert True\n\n"
+        "class TestCreationService:\n"
+        "    def helper(self):\n"
+        "        return True\n\n"
+        "    def test_collision_retry(self):\n"
+        "        assert True\n\n"
+        "    async def test_unknown_redirect_returns_404(self):\n"
+        "        assert True\n"
+    )
+    proposal = ProposedTaskGraph(
+        tasks=[
+            _task(
+                "execute_generated_tests",
+                depends_on=[],
+                task_type=TaskType.TEST,
+                materialization_policy=TaskMaterializationPolicy.REQUIRED,
+                required_validations=[
+                    ProposedTaskValidationRequirement(
+                        profile=ValidationExecutionProfile.PYTHON_PYTEST
+                    )
+                ],
+            )
+        ]
+    )
+    runtime = GovernedWorkspaceRuntime(parent_directory=tmp_path)
+    state = _run_approved(
+        proposal,
+        MaterializingExecutor(
+            {"TASK-001": "tests/test_example.py"},
+            contents={"TASK-001": test_source},
+        ),
+        workspace_runtime=runtime,
+        thread_id="pdf-humanized-retry",
+        validation_executor=DockerPytestValidationExecutor(
+            runner=_VerboseRetryDockerRunner(),
+            docker_executable="/application/docker",
+        ),
+    )
+
+    assert state["workflow_status"] == "success"
+    executions = state["task_validation_execution_evidence"]
+    provisioning = state["task_validation_provisioning_evidence"]
+    assert [item.passed for item in executions] == [False, True]
+    assert len(provisioning) == 2
+
+    documents = build_sdlc_documents(state)
+    report_text = _text(documents[3])
+    for item in (*executions, *provisioning):
+        assert item.evidence_id in report_text
+    assert executions[0].validation_requirement_id in report_text
+    assert "Attempt 1 — FAILED" in report_text
+    assert "Attempt 2 — PASSED" in report_text
+    assert "Recovery action" in report_text
+    assert "RETRY" in report_text
+    assert "tests/test_example.py::TestCreationService::test_collision_retry" in report_text
+    assert "tests/test_example.py::test_unknown_redirect_returns_404" in report_text
+    assert "2 failed, 1 passed in 0.12s" in report_text
+    assert "3 passed in 0.08s" in report_text
+    assert "test_valid_creation" in report_text
+    assert "test_collision_retry" in report_text
+    assert "test_unknown_redirect_returns_404" in report_text
+    assert "helper" not in report_text
+    assert "RAW_PYTHON_SOURCE_SHOULD_NOT_APPEAR" not in report_text
+    assert "FULL_TRACEBACK_STDERR_SHOULD_NOT_APPEAR" not in report_text
+    assert "Collecting pytest" not in report_text
+    assert "Downloading pytest" not in report_text
+    assert "Installing collected packages" not in report_text
+    assert "not on PATH" not in report_text
+
+    pdf_dir = tmp_path / "pdfs"
+    write_sdlc_pdf_artifacts(state, pdf_dir)
+    _, rendered_text = _pdf_text(pdf_dir / TEST_PLAN_VALIDATION_REPORT_PDF)
+    assert "Attempt 1 — FAILED" in rendered_text
+    assert "Attempt 2 — PASSED" in rendered_text
+    assert executions[0].evidence_id in rendered_text
+    assert executions[1].evidence_id in rendered_text
+    assert "test_collision_retry" in rendered_text
+    assert "RAW_PYTHON_SOURCE_SHOULD_NOT_APPEAR" not in rendered_text
+    assert "FULL_TRACEBACK_STDERR_SHOULD_NOT_APPEAR" not in rendered_text
+    assert "Collecting pytest" not in rendered_text
+
+    evidence_dir = tmp_path / "raw-evidence"
+    write_artifacts(state, evidence_dir)
+    raw_evidence = (evidence_dir / "task_execution.json").read_text()
+    assert "RAW_PYTHON_SOURCE_SHOULD_NOT_APPEAR" in raw_evidence
+    assert "FULL_TRACEBACK_STDERR_SHOULD_NOT_APPEAR" in raw_evidence
+    assert "Collecting pytest" in raw_evidence
 
 
 class _FailingSecondRenderer(PDFRenderer):
