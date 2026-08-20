@@ -16,11 +16,11 @@ The implementation also separates two graph responsibilities. A relatively stabl
 
 Authority flows downstream from the human-approved requirement analysis into a canonical approved requirement specification. A TaskGraph records the exact source specification identity and version from which it was produced. Human TaskGraph approval is necessary but not sufficient if that source later becomes stale: source-authority checks still guard execution initialization and every execution-loop advance. Deeper control, lineage, and transaction mechanics are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## 3. Reviewer Scenarios
+## 3. Demonstration Scenarios
 
 The checked-in samples expose one coherent publication lineage plus an interactive ambiguity demonstration.
 
-| Scenario | Engineering behavior demonstrated | Reviewer evidence and runnable product | Verified product tests |
+| Scenario | Engineering behavior demonstrated | Evidence and runnable product | Verified product tests |
 | --- | --- | --- | ---: |
 | V17 greenfield | Approved requirement revision, governed planning and validation, transactional creation, and verified publication of a four-file URL shortener | [`sample_output/url-shortener-v17/`](sample_output/url-shortener-v17/) with its manifest-bound [`sdlc-artifacts/`](sample_output/url-shortener-v17/sdlc-artifacts/) | 13 passed |
 | V18 brownfield | Baseline selection and integrity, bounded codebase impact analysis, four preimage-checked `MODIFY` transactions, governed validation, and separate publication | [`sample_output/url-shortener-v18-expiration/`](sample_output/url-shortener-v18-expiration/) with V17 lineage in [`workspace_execution.json`](sample_output/url-shortener-v18-expiration/sdlc-artifacts/workspace_execution.json) | 20 passed |
@@ -43,7 +43,7 @@ The curated V18 evidence identifies `url-shortener-v17` as its selected baseline
 | Dependency-aware execution with a parallelism cap of two | Demonstrate real concurrency while bounding resource use and synchronization complexity. | Independent tasks may overlap; dependency joins and evidence settlement remain deterministic. |
 | Isolated, transactional workspace mutation | Model-produced content should not translate directly into unrestricted filesystem writes. | The application derives and validates `CREATE`, `MODIFY`, or `NO_CHANGE`, applies eligible changes serially, and verifies resulting state. `DELETE` is not supported. |
 | Deterministic evidence and reliability projection | Reliability claims should follow retained facts rather than inferred telemetry. | Metrics are recomputed read-only from execution and workspace evidence and do not influence the run. |
-| Derived requirement-to-code reports | Evaluators need both an approachable summary and exact evidence without creating another authority system. | One read-only projection supplies Streamlit plus deterministic JSON/Markdown reports; missing links remain explicit, and manifest-verified publication retains and copies the reports without changing execution authority. |
+| Derived requirement-to-code reports | Readers need both an approachable summary and exact evidence without creating another authority system. | One read-only projection supplies Streamlit plus deterministic JSON/Markdown reports; missing links remain explicit, and manifest-verified publication retains and copies the reports without changing execution authority. |
 | Structured governed validation authority | Artifact generation, provisioning, test execution, and passing validation are different facts; task prose must not grant process authority. | Human-reviewed `required_validations` select closed application profiles. `PYTHON_COMPILE` performs fixed compilation; `PYTHON_PYTEST` provisions accepted staged dependencies and runs generated tests in disposable Docker. Exact immutable PASS evidence and cleanup are required before live mutation and task success. |
 | Application-required final validation | A planning omission must not make execution optional, and a task-level pass may become stale after later mutations. | For runnable projects, the exit gate derives compile/pytest requirements from the exact final snapshot and requires matching governed PASS evidence before readiness or publication, independently of planner-requested validations. |
 | Application-owned runnable-project delivery policy | Product delivery completeness should not be an LLM-invented business requirement or a filename heuristic. | Structured deliverable roles participate in TaskGraph identity/review, executor and materialization validation, final authoritative-snapshot readiness evidence, and the exit gate. |
@@ -59,7 +59,7 @@ The current orchestrator checkpoint completed with **797 tests passed** and five
 
 Generated-product behavioral validation remains a separate governed layer. V0.13
 introduced the fixed `PYTHON_COMPILE` profile. V0.14 adds the human-approved
-`PYTHON_PYTEST` assessment profile. The
+`PYTHON_PYTEST` governed validation profile. The
 application constructs a disposable candidate postimage, invokes only its own
 fixed compile or Docker/pip/pytest argv, retains bounded immutable provisioning and
 execution evidence, proves disposable-container cleanup, and blocks success without
@@ -78,10 +78,10 @@ cannot publish an unexecuted Python project. Docker must be installed and runnin
 (Docker Desktop on macOS/Windows or Docker Engine on Linux); unavailability fails
 closed without a host-pytest fallback.
 
-Each reviewer bundle retains the approved specification, requirement decisions, TaskGraph, execution attempts/results, engineering artifacts, workspace mutation records, and summary needed to inspect the demonstrated path. Within a run, frozen records and additive histories provide immutable-by-contract evidence. The default LangGraph checkpoint is process-local, and exported JSON and Markdown are ordinary files, not a tamper-evident durable event store. The evidence is therefore strong for deterministic reconstruction and review within the prototype's trust model, but it is not a claim of production proof or durable audit infrastructure.
+Each demonstration bundle retains the approved specification, requirement decisions, TaskGraph, execution attempts/results, engineering artifacts, workspace mutation records, and summary needed to inspect the demonstrated path. Within a run, frozen records and additive histories provide immutable-by-contract evidence. The default LangGraph checkpoint is process-local, and exported JSON and Markdown are ordinary files, not a tamper-evident durable event store. The evidence is therefore strong for deterministic reconstruction and review within the prototype's trust model, but it is not a claim of production proof or durable audit infrastructure.
 
 Artifact ownership is explicit: `sample_output/` remains curated checked-in
-reviewer material rather than live or authoritative execution history. Live CLI
+reference material rather than live or authoritative execution history. Live CLI
 and Streamlit evidence is isolated by the governed identity under
 `runs/<run-id>/sdlc-artifacts/`, and successful durable delivery packages are
 published under `projects/`. A deterministic terminal manifest indexes the live
@@ -152,7 +152,7 @@ It has no autonomous Git branch, commit, push, pull-request, merge, or authorita
 
 MTTR and end-to-end latency remain unmeasured. These are deliberate evidence boundaries, not zero-valued results. The implementation is a governed orchestration prototype, not a production distributed scheduler, repository-management service, CI/CD platform, or deployment system.
 
-## 11. Reviewer Artifact Map
+## 11. Evidence and Artifact Map
 
 | Purpose | Location |
 | --- | --- |

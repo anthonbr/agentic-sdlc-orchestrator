@@ -21,14 +21,14 @@ user-supplied natural-language software requirement. Both input paths cross the
 same requirement-submission boundary and enter the same governed SDLC lifecycle;
 custom input does not select a separate workflow or bypass either human approval.
 
-> **[Reviewer walkthrough](https://anthonbr.github.io/agentic-sdlc-orchestrator/)**
-> — Start here for a guided mapping of the implementation to the assessment
+> **[Project walkthrough](https://anthonbr.github.io/agentic-sdlc-orchestrator/)**
+> — Start here for a guided mapping of the implementation to the project goals,
 > requirements, architecture, scenarios, governance controls, validation evidence,
 > and limitations.
 
 ## Built-in end-to-end demo
 
-The quickest evaluator walkthrough is the convenient built-in URL-shortener
+The quickest end-to-end introduction is the convenient built-in URL-shortener
 scenario. Before any LLM requirement analysis, the `demo` command supplies this
 exact source requirement:
 
@@ -203,7 +203,7 @@ authoritative workspace snapshot but do not claim that publication has already
 succeeded. Existing governed records remain the authority, and missing links stay
 missing in both formats.
 
-Successful final publication also creates four evaluator-facing PDFs:
+Successful final publication also creates four human-readable PDFs:
 `requirements_specification.pdf`, `functional_specification.pdf`,
 `design_specification.pdf`, and `test_plan_validation_report.pdf`. These are
 professional engineering reports generated from the same approved specification,
@@ -254,7 +254,7 @@ state histories; AI-generated clarification remains a draft for human review.
 
 At terminal finalization, the application renders
 `human_governance_history.md` from the validated event stream and those existing
-authoritative histories. This evaluator-oriented report is derived and
+authoritative histories. This human-readable governance report is derived and
 non-authoritative. Unlike the live append-only JSONL, it is included in the normal
 artifact manifest and copied through verified project publication. Audit logging
 failure cannot roll back an accepted governance transition; later inspection can
@@ -272,17 +272,17 @@ manifest-bound evidence remains visible under a deterministic fallback stage.
 The index scans no directory for additional files and gains no workflow,
 mutation, validation, or publication authority.
 
-## Evaluator guide
+## Repository guide
 
-For the quickest evaluation path, use these documents and retained evidence:
+For the quickest orientation, use these documents and retained evidence:
 
 | Purpose | Start here |
 | --- | --- |
-| Evaluate and judge: engineering approach, rationale, evidence, decisions, risks, trade-offs, assumptions, limitations, and readiness | [Engineering summary](ENGINEERING_SUMMARY.md) |
+| Understand the engineering approach, rationale, evidence, decisions, risks, trade-offs, assumptions, limitations, and readiness | [Engineering summary](ENGINEERING_SUMMARY.md) |
 | Inspect and verify: detailed architecture, authority model, orchestration, TaskGraph execution, mutation/rollback, and reliability mechanics | [Architecture](ARCHITECTURE.md) |
 | Inspect cross-scenario reliability evidence | [`sample_output/reliability_metrics.json`](sample_output/reliability_metrics.json) |
 
-| Scenario | Reviewer bundle | Runnable product | Verified product validation |
+| Scenario | Curated example | Runnable product | Verified product validation |
 | --- | --- | --- | --- |
 | V17 greenfield | [`sample_output/url-shortener-v17/`](sample_output/url-shortener-v17/) | [`url-shortener-v17/`](sample_output/url-shortener-v17/) | 13 tests passed |
 | V18 brownfield evolution | [`sample_output/url-shortener-v18-expiration/`](sample_output/url-shortener-v18-expiration/) | [`url-shortener-v18-expiration/`](sample_output/url-shortener-v18-expiration/) | 20 tests passed |
@@ -292,7 +292,7 @@ Repository storage and evidence ownership are intentionally distinct:
 
 | Location | Purpose and ownership |
 | --- | --- |
-| `sample_output/` | Git-tracked, curated representative output for repository reviewers. It is reference material, not a live runtime destination or authoritative execution history; its frozen scenarios need not come from the latest execution. Normal CLI and Streamlit runs must never write here. |
+| `sample_output/` | Git-tracked, curated representative output for repository readers. It is reference material, not a live runtime destination or authoritative execution history; its frozen scenarios need not come from the latest execution. Normal CLI and Streamlit runs must never write here. |
 | `runs/<run-id>/run-events.jsonl` | Ignored, application-owned append-only semantic operational audit stream. Sequence establishes per-run chronology. It is observational, not workflow authority, and intentionally remains outside the frozen artifact manifest. |
 | `runs/<run-id>/sdlc-artifacts/` | Ignored, application-owned live execution history and the authoritative retained evidence for that governed run. |
 | `projects/<project-name>/` | Ignored, durable generated or brownfield-evolved product publication. |
@@ -307,7 +307,7 @@ workspace, but deliberately does not execute generated code as part of its exit
 gate or autonomously perform Git promotion, CI/CD promotion, or deployment.
 
 The `V0.x` labels below are engineering milestone labels for the incremental
-assessment implementation; they are distinct from the Python package version in
+project implementation; they are distinct from the Python package version in
 `pyproject.toml` and do not imply semantic compatibility with it.
 
 ## Version progression
@@ -329,8 +329,9 @@ assessment implementation; they are distinct from the Python package version in
 - **V0.6 — Governed ambiguity resolution:** deterministic
   requirement planning readiness, clarification through the existing immutable
   analysis-revision loop, stale TaskGraph/source-spec execution protection, and a
-  reproducible third reviewer scenario that resolves an intentionally ambiguous
-  URL-expiration requirement before planning and governed brownfield execution.
+  reproducible third demonstration scenario that resolves an intentionally
+  ambiguous URL-expiration requirement before planning and governed brownfield
+  execution.
 - **V0.7 — Durable project export:** promotion of an exit-verified isolated
   workspace snapshot into a new non-overwriting `projects/<project-name>/`
   directory, with staging/final verification and descriptor-relative no-follow
@@ -610,8 +611,8 @@ disconnection is attempted before pytest and recorded in evidence, but V0.14 doe
 not require it; evidence and documentation therefore do not claim outbound network
 denial when Docker cannot disconnect it.
 
-This is an assessment prototype, not a production hostile-code or package-supply-
-chain sandbox. It uses a mutable fixed image tag, public PyPI without a generated
+This is a bounded engineering prototype, not a production hostile-code or
+package-supply-chain sandbox. It uses a mutable fixed image tag, public PyPI without a generated
 lockfile or dependency hashes, no private indexes, no package allowlist/cache,
 and default Docker isolation plus small memory/PID limits. Task Agents still never
 choose Docker, pip, pytest, image, package-index, environment, or shell commands.
@@ -1016,14 +1017,14 @@ mutating history. V0.6 prohibits execution of `GRAPH-v1` under `SPEC-v2` authori
 and requires governed replanning; it does not implement live upstream-change
 reconciliation, DAG mutation, or execution-state migration.
 
-## Reviewer path: V17 → V18 plus live ambiguity review
+## Reference path: V17 → V18 plus live ambiguity review
 
 Start with each scenario's `summary.md`. Human decisions are in
 `requirement_analysis.md` and `task_graph.md`, dependencies are in `task_graph.*`,
 and validation/mutation evidence is in `task_execution.json` and
 `workspace_execution.json`.
 
-| Scenario | Demonstrates | Reviewer evidence | Runnable product |
+| Scenario | Demonstrates | Evidence | Runnable product |
 | --- | --- | --- | --- |
 | V17 greenfield | Governed creation and publication of the baseline URL shortener | [`summary.md`](sample_output/url-shortener-v17/sdlc-artifacts/summary.md), [`task_graph.md`](sample_output/url-shortener-v17/sdlc-artifacts/task_graph.md), and [`manifest.json`](sample_output/url-shortener-v17/sdlc-artifacts/manifest.json) | [`url-shortener-v17/`](sample_output/url-shortener-v17/) |
 | V18 brownfield | Governed expiration evolution of the published V17 baseline | [`workspace_execution.json`](sample_output/url-shortener-v18-expiration/sdlc-artifacts/workspace_execution.json) records baseline selection/identity; [`approved_requirement_spec.json`](sample_output/url-shortener-v18-expiration/sdlc-artifacts/approved_requirement_spec.json) records impact analysis; [`summary.md`](sample_output/url-shortener-v18-expiration/sdlc-artifacts/summary.md) and [`manifest.json`](sample_output/url-shortener-v18-expiration/sdlc-artifacts/manifest.json) close the run | [`url-shortener-v18-expiration/`](sample_output/url-shortener-v18-expiration/) |
@@ -1056,8 +1057,8 @@ These deterministic checks use scripted clients and require no API key or networ
 
 Each product export has its own dependency-free run/test commands in its README.
 The real OpenAI-backed interactive path is separate and described below. Successful
-reviewer bundles show the positive governed path; bounded retry and safe-stop
-evidence is in [`tests/test_workflow.py`](tests/test_workflow.py) and
+checked-in reference bundles show the positive governed path; bounded retry and
+safe-stop evidence is in [`tests/test_workflow.py`](tests/test_workflow.py) and
 [`tests/test_task_execution_workflow.py`](tests/test_task_execution_workflow.py),
 while fault-injected rollback evidence is in
 [`tests/test_workspace_mutation.py`](tests/test_workspace_mutation.py).
@@ -1235,9 +1236,9 @@ materialization/change-set validations, conflict evidence, mutation results,
 task-attempt exit decisions, and final project-readiness evidence;
 `engineering_artifacts.json` contains immutable
 application-canonicalized outputs, including failed-validation output for audit.
-### Curated V17 → V18 evaluator lineage
+### Curated V17 → V18 project lineage
 
-The checked-in evaluator story is one real publication lineage:
+The checked-in reference story is one real publication lineage:
 
 ```text
 sample_output/url-shortener-v17/
@@ -1294,7 +1295,7 @@ are intentionally retained because they describe the real governed execution.
 The live CLI and Streamlit path remains unchanged: actual evidence is retained at
 `runs/<run-id>/sdlc-artifacts/`, and successful products are durably published at
 `projects/<project-name>/` with an application-controlled verified evidence copy.
-`sample_output/` is only a Git-tracked evaluator copy and is never a runtime output
+`sample_output/` is only a Git-tracked reference copy and is never a runtime output
 destination.
 
 ### Ambiguity governance in the live demonstration
@@ -1303,7 +1304,7 @@ Requirement Analysis continues to expose explicit ambiguities and deterministic
 `BLOCKED` or `READY` planning readiness. A blocking analysis offers human
 clarification/revision rather than silently authorizing planning; an approved
 revision establishes new downstream specification and TaskGraph authority. This is
-demonstrated interactively during the evaluator workflow rather than through a
+demonstrated interactively during the live workflow rather than through a
 third frozen checked-in sample. Deterministic coverage remains in
 [`tests/test_ambiguity_demo.py`](tests/test_ambiguity_demo.py) and builds its own
 temporary brownfield fixture instead of reading `sample_output/`.
@@ -1364,6 +1365,6 @@ implemented. The intended configuration keeps `OPENAI_MODEL` as the global
 fallback while permitting stage-specific overrides such as
 `OPENAI_REQUIREMENT_MODEL`, `OPENAI_PLANNING_MODEL`, and
 `OPENAI_EXECUTION_MODEL`; the architectural requirement is configurability, not a
-particular model name. Future evaluator terminology work also remains for making
-the Requirement Analysis Agent, Task Planning Agent, independently instantiated
-Task Agents, and the concurrent Task Agent topology explicit wherever applicable.
+particular model name. Future documentation work includes making the Requirement
+Analysis Agent, Task Planning Agent, independently instantiated Task Agents, and
+the concurrent Task Agent topology explicit wherever applicable.

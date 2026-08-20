@@ -104,7 +104,7 @@ def traceability_status_heading(status: TraceabilityStatus) -> str:
 
 
 def traceability_status_explanation(status: TraceabilityStatus) -> str:
-    """Explain one derived status for evaluators without strengthening evidence."""
+    """Explain one derived status for readers without strengthening evidence."""
 
     return {
         TraceabilityStatus.VERIFIED: (
@@ -231,7 +231,7 @@ class TraceabilityGap(BaseModel):
 
 
 class TraceabilityRow(BaseModel):
-    """Evaluator-facing projection for one canonical approved item."""
+    """Reader-facing projection for one canonical approved item."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -250,7 +250,7 @@ class TraceabilityRow(BaseModel):
 
 
 def traceability_row_evaluator_reason(row: TraceabilityRow) -> str:
-    """Summarize one row conservatively in plain evaluator-facing language."""
+    """Summarize one row conservatively in plain human-readable language."""
 
     if row.status is TraceabilityStatus.VERIFIED:
         targets = ", ".join(link.target_path for link in row.implementation_links)

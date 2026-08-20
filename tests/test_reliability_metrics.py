@@ -1,4 +1,4 @@
-"""Focused proof for deterministic reliability projections and reviewer output."""
+"""Focused proof for deterministic reliability projections and readable output."""
 
 from __future__ import annotations
 

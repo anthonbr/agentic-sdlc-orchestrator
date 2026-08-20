@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agentic SDLC Orchestrator — Reviewer Walkthrough</title>
+<title>Agentic SDLC Orchestrator — Project Walkthrough</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -284,7 +284,7 @@
   .rail-legend span{display:inline-flex; align-items:center; gap:7px;}
   .legend-dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
 
-  /* ---------- reviewer shortcut ---------- */
+  /* ---------- project shortcut ---------- */
   .quick-review{
     margin-top:38px;
     padding:26px 28px;
@@ -592,7 +592,7 @@
       <a href="#how-it-works">How it works</a>
       <a href="#requirements">Requirements</a>
       <a href="#scenarios">Scenarios</a>
-      <a href="#criteria">Evaluation</a>
+      <a href="#criteria">Success criteria</a>
       <a href="#validation">Guardrails</a>
       <a href="#limitations">Limitations</a>
       <a href="#faq">FAQ</a>
@@ -605,11 +605,11 @@
   <!-- ================= HERO ================= -->
   <section class="hero" style="padding-top:88px; border-bottom:1px solid var(--border-soft);">
     <div class="wrap">
-      <span class="eyebrow">Agentic Proficient Assessment · Reviewer Walkthrough</span>
+      <span class="eyebrow">Agentic SDLC Orchestrator · Project Walkthrough</span>
       <h1>A governed pipeline, not a chatbot with file access.</h1>
       <p class="lede">
-        This page walks through <strong>agentic-sdlc-orchestrator</strong>, a working prototype built for the
-        URL-shortener assessment. Models propose analysis, plans, and code. They never get to decide their own
+        This page walks through <strong>agentic-sdlc-orchestrator</strong>, a working prototype built around the
+        URL-shortener project requirements. Models propose analysis, plans, and code. They never get to decide their own
         output is good enough &mdash; deterministic application code and human approval gates do that.
       </p>
       <div class="cta-row">
@@ -670,7 +670,7 @@
 
       <div class="quick-review reveal" aria-labelledby="quick-review-title">
         <div class="quick-review-intro">
-          <span class="kicker">Reviewer shortcut</span>
+          <span class="kicker">Quick project tour</span>
           <h2 id="quick-review-title">Have five minutes?</h2>
           <p>Use this compact path to verify the architecture, governance, execution, and evidence claims.</p>
         </div>
@@ -704,17 +704,17 @@
   <section id="overview">
     <div class="wrap">
       <div class="section-head reveal">
-        <span class="kicker">01 — The assignment</span>
-        <h2>What was asked, and what got built.</h2>
+        <span class="kicker">01 — Project goals</span>
+        <h2>What the project set out to demonstrate.</h2>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:48px;" class="grid-2 reveal">
         <div class="prose">
-          <p><strong>The brief.</strong> The assessment asks for a working URL-shortener prototype built and improved with AI assistance. But the URL shortener itself is a vehicle. The document is explicit that the real subject under evaluation is the <strong>orchestration layer</strong>: an agentic system that carries a requirement through analysis, planning, implementation, testing, documentation, and release readiness with governance rather than a simple linear chain of prompts.</p>
-          <p>Eight capabilities are named directly: requirement understanding, task decomposition, codebase reasoning over an existing brownfield system, workflow orchestration, engineering output generation, validation and risk control, controlled autonomy, and a final engineering summary. Three demonstrated scenarios are required &mdash; greenfield, brownfield, and an ambiguous requirement &mdash; each showing decomposition, orchestration, and validation.</p>
+          <p><strong>The requirements.</strong> The original project requirements call for a working URL-shortener prototype built and improved with AI assistance. The URL shortener is the reference product; the central engineering goal is the <strong>orchestration layer</strong>: an agentic system that carries a requirement through analysis, planning, implementation, testing, documentation, and release readiness with governance rather than a simple linear chain of prompts.</p>
+          <p>The original requirements identify eight core capabilities: requirement understanding, task decomposition, codebase reasoning over an existing brownfield system, workflow orchestration, engineering output generation, validation and risk control, controlled autonomy, and a final engineering summary. The project demonstrates greenfield, brownfield, and ambiguous-requirement scenarios, each showing decomposition, orchestration, and validation.</p>
         </div>
         <div class="prose">
           <p><strong>The build.</strong> <span class="badge badge-accent">agentic-sdlc-orchestrator</span> is a Python/LangGraph application that treats a software requirement as something that has to earn its way through a governed lifecycle, not something an agent just executes. A stable control graph owns routing, retries, human interrupts, and the exit gate. A separate, per-run <span class="mono">TaskGraph</span> represents the actual engineering work &mdash; and that graph is data, not new LangGraph nodes, so the control plane stays reviewable while every requirement produces different work underneath it.</p>
-          <p>The checked-in evaluator material now shows one real publication lineage: <span class="badge badge-good">13 tests passing</span> for the V17 greenfield baseline and <span class="badge badge-good">20 tests passing</span> for its V18 brownfield expiration evolution. Ambiguity governance remains implemented and is demonstrated interactively through the live requirement-review workflow rather than through a third frozen sample.</p>
+          <p>The checked-in demonstration material shows one real publication lineage: <span class="badge badge-good">13 tests passing</span> for the V17 greenfield baseline and <span class="badge badge-good">20 tests passing</span> for its V18 brownfield expiration evolution. Ambiguity governance remains implemented and is demonstrated interactively through the live requirement-review workflow rather than through a third frozen sample.</p>
         </div>
       </div>
     </div>
@@ -759,7 +759,7 @@
       <div class="section-head reveal">
         <span class="kicker">03 — Requirements coverage</span>
         <h2>The eight core requirements, one at a time.</h2>
-        <p>Each card pairs the assignment's own language with the specific mechanism that satisfies it, and where to look for evidence.</p>
+        <p>Each card pairs a core project requirement with the specific mechanism that satisfies it and points to the supporting evidence.</p>
       </div>
 
       <div class="req-grid reveal" style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
@@ -798,7 +798,7 @@
             <li><strong>Bounded retries, rollback, safe-stop</strong> &mdash; up to three attempts per task; failed mutations roll back from captured preimages or fail closed into <span class="mono">ROLLBACK_FAILED</span>; unrecoverable state routes to a hard <span class="mono">safe_stop</span> node.</li>
             <li><strong>Governed fallback / escalation</strong> &mdash; retry classification and budgets are deterministic, and same-wave write conflicts have one explicit execution fallback: affected tasks consume retry budget and rerun as canonical singleton waves against the latest snapshot. The system never silently switches models or providers. Exhausted or non-retryable recovery safe-stops; that run does not auto-resume, so any later correction must begin another explicitly governed progression and pass the applicable revision, planning, and approval gates.</li>
             <li><strong>Policy guardrails</strong> &mdash; each task carries a human-approved <span class="mono">FORBIDDEN</span> / <span class="mono">ALLOWED</span> / <span class="mono">REQUIRED</span> materialization policy; a path policy independently blocks <span class="mono">.git</span>, <span class="mono">.env</span>, traversal, and symlinks.</li>
-            <li><strong>Audit-grade observability</strong> &mdash; every run writes a manifest, requirement analysis, approved spec, task graph (JSON + human-readable Markdown), execution trace, workspace-mutation record, and summary to an isolated <span class="mono">runs/&lt;run-id&gt;/</span> bundle. Successful runs also retain deterministic <span class="mono">requirement_traceability.json</span> and evaluator-readable <span class="mono">requirement_traceability.md</span> reports. They are derived summaries, not new authority; missing links remain visible rather than inferred.</li>
+            <li><strong>Audit-grade observability</strong> &mdash; every run writes a manifest, requirement analysis, approved spec, task graph (JSON + human-readable Markdown), execution trace, workspace-mutation record, and summary to an isolated <span class="mono">runs/&lt;run-id&gt;/</span> bundle. Successful runs also retain deterministic <span class="mono">requirement_traceability.json</span> and human-readable <span class="mono">requirement_traceability.md</span> reports. They are derived summaries, not new authority; missing links remain visible rather than inferred.</li>
             <li><strong>Reliability metrics</strong> &mdash; a read-only projection over retained evidence reports success rate, retry/rollback frequency, and outcome counts per scenario; MTTR and end-to-end latency are explicitly reported as <span class="mono">NOT_MEASURED</span> rather than estimated.</li>
             <li><strong>Governed re-planning on upstream change</strong> &mdash; every TaskGraph is bound to the exact requirement-spec identity and version it was planned from. That authority is checked before workspace initialization and before every execution-loop advance. If it changes, <span class="mono">STALE_TASK_GRAPH</span> blocks the obsolete graph before request dispatch or mutation. The implementation does not synthesize or patch a replacement automatically: a new graph must be regenerated, deterministically validated, and human-approved. Dynamic engineering plans are therefore supported through governed replacement while the control topology remains stable and reviewable.</li>
           </ul>
@@ -840,7 +840,7 @@
   <section id="scenarios">
     <div class="wrap">
       <div class="section-head reveal">
-        <span class="kicker">04 — Reviewer scenarios</span>
+        <span class="kicker">04 — Demonstration scenarios</span>
         <h2>V17 to V18 lineage, plus live ambiguity governance.</h2>
         <p>The two checked-in publications preserve their real manifest-bound evidence. Requirement ambiguity and readiness are demonstrated interactively and remain covered by deterministic regression tests.</p>
       </div>
@@ -870,9 +870,9 @@
         <div class="scen-card" id="ambiguity-scenario">
           <span class="badge badge-gate">Ambiguous</span>
           <h3>Block until clarified</h3>
-          <p>Requirement Analysis exposes ambiguities and deterministic <span class="mono">BLOCKED</span>/<span class="mono">READY</span> planning readiness. Human clarification creates a new immutable authority revision before downstream planning. Evaluators demonstrate this in the live CLI or Streamlit workflow; no third frozen sample is implied.</p>
+          <p>Requirement Analysis exposes ambiguities and deterministic <span class="mono">BLOCKED</span>/<span class="mono">READY</span> planning readiness. Human clarification creates a new immutable authority revision before downstream planning. The live CLI or Streamlit workflow demonstrates this behavior; no third frozen sample is implied.</p>
           <div class="scen-meta">
-            <span class="mono">Live evaluator demonstration</span>
+            <span class="mono">Live workflow demonstration</span>
             <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator/blob/main/tests/test_ambiguity_demo.py" target="_blank" rel="noopener">deterministic regression coverage →</a>
           </div>
         </div>
@@ -881,17 +881,17 @@
     </div>
   </section>
 
-  <!-- ================= EVALUATION CRITERIA ================= -->
+  <!-- ================= SUCCESS CRITERIA ================= -->
   <section id="criteria">
     <div class="wrap">
       <div class="section-head reveal">
-        <span class="kicker">05 — Evaluation criteria</span>
-        <h2>Mapped directly to the assignment's own rubric.</h2>
+        <span class="kicker">05 — Success criteria</span>
+        <h2>Mapped directly to the project's goals and requirements.</h2>
       </div>
 
       <div class="crit-table reveal">
         <div class="crit-row crit-head">
-          <div>Evaluation criterion</div>
+          <div>Success criterion</div>
           <div>Where to look</div>
         </div>
         <div class="crit-row">
@@ -997,7 +997,7 @@
 
         <details class="faq-item" open>
           <summary>Is this actually calling an LLM, or is it three canned demos wearing a costume?</summary>
-          <div class="faq-body">Both paths exist, on purpose. The interactive CLI (<span class="mono">agentic_sdlc demo</span> / <span class="mono">agentic_sdlc run</span>) makes real, structured-output calls to OpenAI for requirement analysis, task planning, and each Task Agent's execution. The three checked-in reviewer bundles instead use scripted, deterministic clients so an evaluator can regenerate and inspect them with no API key and no network variability. Same governed workflow, same validation, same LangGraph routing either way &mdash; only the reasoning source changes.</div>
+          <div class="faq-body">Both paths exist, on purpose. The interactive CLI (<span class="mono">agentic_sdlc demo</span> / <span class="mono">agentic_sdlc run</span>) makes real, structured-output calls to OpenAI for requirement analysis, task planning, and each Task Agent's execution. The checked-in reference scenarios instead use scripted, deterministic clients so readers can regenerate and inspect them with no API key and no network variability. Same governed workflow, same validation, same LangGraph routing either way &mdash; only the reasoning source changes.</div>
         </details>
 
         <details class="faq-item" id="replay-faq">
@@ -1048,7 +1048,7 @@
     <div class="wrap footer-inner">
       <div>
         <div class="brand" style="margin-bottom:8px;"><span class="brand-dot"></span>agentic-sdlc-orchestrator</div>
-        <p style="color:var(--text-faint); font-size:14px; margin:0; max-width:440px;">Prepared as a reviewer walkthrough for the Agentic Proficient Assessment. Every claim above traces back to the repository's own README, ARCHITECTURE.md, ENGINEERING_SUMMARY.md, and checked-in evidence.</p>
+        <p style="color:var(--text-faint); font-size:14px; margin:0; max-width:440px;">This project walkthrough summarizes the implemented architecture, governance controls, demonstrated scenarios, and evidence. Every claim above traces back to the repository's own README, ARCHITECTURE.md, ENGINEERING_SUMMARY.md, and checked-in evidence.</p>
       </div>
       <div class="footer-links">
         <a href="https://github.com/anthonbr/agentic-sdlc-orchestrator" target="_blank" rel="noopener">Repository</a>

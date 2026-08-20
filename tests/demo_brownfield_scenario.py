@@ -638,7 +638,7 @@ def export_verified_brownfield_workspace(
     export_root: Path,
     final_snapshot: WorkspaceSnapshot,
 ) -> None:
-    """Export only final verified regular files for external reviewer use."""
+    """Export only final verified regular files for external verification."""
 
     if export_root.is_symlink():
         raise AssertionError("Brownfield export root must not be a symlink.")
@@ -679,7 +679,7 @@ def write_brownfield_review_artifacts(
     state: WorkflowState,
     seed_result: WorkspaceSeedResult,
 ) -> None:
-    """Add scenario bootstrap evidence and a concise evaluator summary."""
+    """Add scenario bootstrap evidence and a concise review summary."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "workspace_seed.json").write_text(

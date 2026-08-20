@@ -1,4 +1,4 @@
-"""Deterministic evaluator report over semantic events and governed evidence."""
+"""Deterministic human-readable report over semantic events and governed evidence."""
 
 from __future__ import annotations
 

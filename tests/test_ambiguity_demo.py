@@ -1,4 +1,4 @@
-"""Focused proof for the governed ambiguous-requirement reviewer scenario."""
+"""Focused proof for the governed ambiguous-requirement demonstration scenario."""
 
 from __future__ import annotations
 

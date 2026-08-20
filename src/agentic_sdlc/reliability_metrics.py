@@ -41,7 +41,7 @@ class ReliabilityMetricsError(ValueError):
 
 
 class ReliabilityRatio(BaseModel):
-    """Exact counts plus a deterministic four-decimal reviewer representation."""
+    """Exact counts plus a deterministic four-decimal display representation."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -70,7 +70,7 @@ class TimingMeasurementStatus(StrEnum):
 
 
 class TimingMeasurement(BaseModel):
-    """Reviewer-visible explanation for one deliberately unsupported duration."""
+    """Human-readable explanation for one deliberately unsupported duration."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -115,7 +115,7 @@ class RunReliabilityMetrics(BaseModel):
 
 
 class ScenarioReliabilityMetrics(BaseModel):
-    """One independently reported reviewer scenario and its evidence root."""
+    """One independently reported demonstration scenario and its evidence root."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -125,7 +125,7 @@ class ScenarioReliabilityMetrics(BaseModel):
 
 
 class ReliabilityMetricsArtifact(BaseModel):
-    """Assessment-level index of independent per-run reliability records."""
+    """Cross-scenario index of independent per-run reliability records."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 

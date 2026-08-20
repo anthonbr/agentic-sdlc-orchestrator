@@ -289,7 +289,7 @@ shell authority to Task Agents.
 
 ## 9. Ambiguity Governance and Governed Replanning
 
-The ambiguity reviewer scenario starts with: “Enhance the URL shortener so shortened URLs automatically expire after a period of time.” Revision 0 identifies unresolved choices including TTL duration and start, expired redirect/analytics behavior, existing-code scope, and persistence. Because `needs_clarification=true`, deterministic readiness is `BLOCKED`; the human interrupt offers only `REQUEST_CHANGES` or `REJECT`, the planner has zero calls, and neither a specification nor TaskGraph exists.
+The ambiguity demonstration scenario starts with: “Enhance the URL shortener so shortened URLs automatically expire after a period of time.” Revision 0 identifies unresolved choices including TTL duration and start, expired redirect/analytics behavior, existing-code scope, and persistence. Because `needs_clarification=true`, deterministic readiness is `BLOCKED`; the human interrupt offers only `REQUEST_CHANGES` or `REJECT`, the planner has zero calls, and neither a specification nor TaskGraph exists.
 
 The recorded `REQUEST_CHANGES` decision clarifies a fixed 24-hour TTL from creation, process-local storage, HTTP 404 at and after expiration, no migration, and access-time checking. Revision 1 preserves the decision lineage, becomes `READY`, and is human-approved. Only then is the exact revised analysis packaged as the authoritative specification and supplied to planning; the approved TaskGraph records that revised source identity.
 
@@ -305,9 +305,9 @@ This is an evidence-completeness and workspace-integrity boundary, not general r
 
 ## 11. Traceability and Reliability Evidence
 
-Within a workflow run, frozen Pydantic contracts make canonical plan, execution, artifact, workspace, mutation, and final project-readiness records immutable by contract, while `operator.add` state reducers accumulate histories rather than replace them. Together they retain requirement analyses and human decisions, TaskGraph candidates and approvals, execution waves, requests, results, failures, recovery decisions, canonical engineering artifacts, bounded workspace requests, snapshots, materialization validations, change sets, conflicts, mutation results, task-attempt exit decisions, and role-to-final-snapshot readiness evidence. Deterministic UUIDv5 identifiers and content hashes bind specification, graph, task, attempt, request, artifact slot, content, references, and mutation evidence. Failed attempts remain audit evidence; only the final successful attempt's exactly validated artifact set can feed dependents. The default `InMemorySaver` checkpoint is process-local, and exported JSON/Markdown reviewer artifacts are ordinary files rather than a tamper-evident durable event store.
+Within a workflow run, frozen Pydantic contracts make canonical plan, execution, artifact, workspace, mutation, and final project-readiness records immutable by contract, while `operator.add` state reducers accumulate histories rather than replace them. Together they retain requirement analyses and human decisions, TaskGraph candidates and approvals, execution waves, requests, results, failures, recovery decisions, canonical engineering artifacts, bounded workspace requests, snapshots, materialization validations, change sets, conflicts, mutation results, task-attempt exit decisions, and role-to-final-snapshot readiness evidence. Deterministic UUIDv5 identifiers and content hashes bind specification, graph, task, attempt, request, artifact slot, content, references, and mutation evidence. Failed attempts remain audit evidence; only the final successful attempt's exactly validated artifact set can feed dependents. The default `InMemorySaver` checkpoint is process-local, and exported human-readable JSON/Markdown artifacts are ordinary files rather than a tamper-evident durable event store.
 
-The evaluator-facing requirement-to-code view is a presentation-neutral,
+The reader-facing requirement-to-code view is a presentation-neutral,
 side-effect-free projection over those records. It starts with each canonical FR,
 NFR, CON, and AC exactly once; follows only explicit TaskGraph references; derives
 artifact and target-path lineage through exact successful final-attempt,
@@ -448,7 +448,7 @@ At terminal application finalization,
 `runs/<run-id>/sdlc-artifacts/human_governance_history.md` is rendered
 deterministically from the validated sequence plus structured authoritative
 state. It labels itself derived and non-authoritative, dereferences exact human
-feedback for evaluator readability, and describes only consequences supported by
+feedback for human readability, and describes only consequences supported by
 approved specification, TaskGraph, revision, or safe-stop evidence. Brownfield
 impact analysis is described as part of Requirement Analysis governance, not as
 an invented independent approval gate. The existing manifest binds this Markdown
@@ -459,7 +459,7 @@ is read to decide approval, resume permission, requirement or TaskGraph authorit
 validation, mutation, or publication.
 
 The repository separates storage and evidence ownership. `sample_output/` is
-Git-tracked, curated reviewer/reference material; it may preserve frozen scenarios,
+Git-tracked, curated reference material; it may preserve frozen scenarios,
 is not authoritative execution history, and is never a CLI or Streamlit runtime
 destination. A live invocation instead derives one ignored
 `runs/<run-id>/sdlc-artifacts/` directory from the existing governed run ID and
@@ -498,14 +498,14 @@ End-to-end latency and MTTR are explicitly `NOT_MEASURED`: the evidence model re
 - **No unsupported timing metrics.** MTTR and end-to-end latency remain unmeasured until authoritative timing boundaries exist.
 - **Prototype recovery scope.** The design is not a distributed scheduler, persistent cross-process recovery platform, crash-durable transaction manager, CI/CD system, deployment service, or remote repository manager.
 
-## 13. Reviewer Evidence Anchors
+## 13. Reference Evidence Anchors
 
 - **V17 greenfield:** `sample_output/url-shortener-v17/` is the curated runnable publication (13 tests); its verified evidence copy is under `sdlc-artifacts/`.
 - **V18 brownfield:** `sample_output/url-shortener-v18-expiration/` is the separate evolved publication (20 tests). Its `sdlc-artifacts/workspace_execution.json` binds the selected baseline to V17's project identity, originating run, publication bundle, and source snapshot.
-- **Ambiguous requirement:** Requirement Analysis still exposes ambiguities and `BLOCKED`/`READY` planning readiness, with human revision establishing new authority. Evaluators demonstrate this in the live workflow; deterministic tests retain the regression coverage without a third frozen sample.
+- **Ambiguous requirement:** Requirement Analysis still exposes ambiguities and `BLOCKED`/`READY` planning readiness, with human revision establishing new authority. The live workflow demonstrates this behavior; deterministic tests retain the regression coverage without a third frozen sample.
 - **Reliability:** `sample_output/reliability_metrics.json` indexes deterministic measures derived from the two curated run-evidence bundles.
 
-These evaluator copies do not alter ownership: the corresponding
+These reference copies do not alter ownership: the corresponding
 `runs/<run-id>/sdlc-artifacts/` directories remain authoritative execution history,
 and `projects/<project-name>/sdlc-artifacts/` remains the manifest-verified evidence
 copy published with each durable product. Normal CLI and Streamlit execution never

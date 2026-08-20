@@ -1,4 +1,4 @@
-"""Focused tests for deterministic evaluator-facing traceability projection."""
+"""Focused tests for deterministic reader-facing traceability projection."""
 
 from __future__ import annotations
 
