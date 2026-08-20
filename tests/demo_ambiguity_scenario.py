@@ -1,4 +1,4 @@
-"""Deterministic third reviewer scenario for governed ambiguity resolution."""
+"""Deterministic third demonstration scenario for governed ambiguity resolution."""
 
 from __future__ import annotations
 
@@ -502,7 +502,7 @@ class AmbiguityRepositoryContextPathProvider:
 
 
 def ambiguity_input() -> WorkflowState:
-    """Return the exact intentionally ambiguous reviewer intake."""
+    """Return the exact intentionally ambiguous demonstration intake."""
 
     return {
         "project_name": "URL Shortener Expiration",
@@ -782,7 +782,7 @@ def fixed_canonical_time() -> Iterator[None]:
 
 @dataclass(frozen=True)
 class AmbiguityDemoRun:
-    """Captured checkpoints and evidence from one deterministic reviewer run."""
+    """Captured checkpoints and evidence from one deterministic demonstration run."""
 
     initial_state: WorkflowState
     revised_state: WorkflowState
@@ -805,7 +805,7 @@ def run_ambiguity_demo(
     artifact_dir: Path | None = None,
     run_id: str = AMBIGUITY_RUN_ID,
 ) -> AmbiguityDemoRun:
-    """Execute all three governed reviewer checkpoints without network access."""
+    """Execute all three governed workflow checkpoints without network access."""
 
     workspace_parent.mkdir(parents=True, exist_ok=True)
     source_before = _project_bytes(source_root)
@@ -913,7 +913,7 @@ def run_ambiguity_demo(
 
 
 def validate_exported_application(export_root: Path) -> int:
-    """Run the exported standard-library tests as reviewer tooling, not task work."""
+    """Run exported tests as independent verification tooling, not task work."""
 
     environment = {
         "PYTHONPATH": str(export_root / "src"),

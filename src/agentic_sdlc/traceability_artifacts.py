@@ -170,7 +170,7 @@ def render_requirement_traceability_json(
 def render_requirement_traceability_markdown(
     artifact: RequirementTraceabilityArtifact,
 ) -> str:
-    """Render a concise evaluator report while retaining technical evidence IDs."""
+    """Render a concise human-readable report while retaining technical evidence IDs."""
 
     counts = artifact.status_counts
     final = artifact.run_completion_evidence
